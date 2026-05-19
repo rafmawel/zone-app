@@ -3,6 +3,7 @@
     "name": "ZONE",
     "slug": "zone-app",
     "version": "1.0.0",
+    "sdkVersion": "55.0.0",
     "orientation": "portrait",
     "scheme": "zone",
     "userInterfaceStyle": "dark",
