@@ -1,0 +1,21 @@
+node_modules/
+.expo/
+dist/
+npm-debug.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+.DS_Store
+.env*.local
+
+# Expo
+.expo/
+expo-env.d.ts.bak
+
+# IDE
+.vscode/
+.idea/
