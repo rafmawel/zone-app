@@ -101,7 +101,7 @@ export default function MuscleSetupScreen(): React.ReactElement {
         weak_points: weakPoints,
         sessions_per_week: sessions,
       });
-      router.replace('/(app)/(tabs)/program');
+      router.replace('/(app)/muscle-maxes');
     } catch {
       setError('Enregistrement impossible. Réessaie.');
     } finally {

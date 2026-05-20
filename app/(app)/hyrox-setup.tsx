@@ -83,7 +83,11 @@ export default function HyroxSetupScreen(): React.ReactElement {
         target_race_date: hasRace && raceDate ? raceDate : null,
         sessions_per_week: sessions,
       });
-      router.replace('/(app)/(tabs)/program');
+      if (level === 'debutant') {
+        router.replace('/(app)/(tabs)/program');
+      } else {
+        router.replace('/(app)/hyrox-baseline');
+      }
     } catch {
       setError('Enregistrement impossible. Réessaie.');
     } finally {
@@ -154,36 +158,62 @@ export default function HyroxSetupScreen(): React.ReactElement {
           ) : null}
 
           {step === 1 ? (
-            <>
-              <ZoneText variant="heading" style={styles.title}>
-                TES POINTS FAIBLES ?
-              </ZoneText>
-              <ZoneText variant="body" color={colors.text.secondary} style={styles.subtitle}>
-                On priorisera ces stations. Trois choix maximum.
-              </ZoneText>
-              <View style={styles.cards}>
-                {HYROX_STATIONS.map((s) => {
-                  const selected = weakStations.includes(s.id);
-                  const disabled = !selected && weakStations.length >= 3;
-                  return (
-                    <SelectableCard
-                      key={s.id}
-                      title={s.label}
-                      selected={selected}
-                      disabled={disabled}
-                      onPress={() => toggleStation(s.id)}
-                    />
-                  );
-                })}
-              </View>
-              <ZoneText
-                variant="caption"
-                color={colors.text.muted}
-                style={styles.weakNote}
-              >
-                {weakStations.length}/3 sélectionnés
-              </ZoneText>
-            </>
+            level === 'debutant' ? (
+              <>
+                <ZoneText variant="heading" style={styles.title}>
+                  PREMIER HYROX ?
+                </ZoneText>
+                <View style={styles.infoCard}>
+                  <ZoneText variant="body" color={colors.text.primary} style={styles.infoText}>
+                    Tu découvres le Hyrox. On couvrira toutes les stations de
+                    façon équilibrée.
+                  </ZoneText>
+                  <ZoneText
+                    variant="caption"
+                    color={colors.text.muted}
+                    style={styles.infoTextMuted}
+                  >
+                    L’app identifiera tes points faibles après tes premières
+                    séances.
+                  </ZoneText>
+                </View>
+              </>
+            ) : (
+              <>
+                <ZoneText variant="heading" style={styles.title}>
+                  TES POINTS FAIBLES ?
+                </ZoneText>
+                <ZoneText
+                  variant="body"
+                  color={colors.text.secondary}
+                  style={styles.subtitle}
+                >
+                  On priorisera ces stations. Trois choix maximum.
+                </ZoneText>
+                <View style={styles.cards}>
+                  {HYROX_STATIONS.map((s) => {
+                    const selected = weakStations.includes(s.id);
+                    const disabled = !selected && weakStations.length >= 3;
+                    return (
+                      <SelectableCard
+                        key={s.id}
+                        title={s.label}
+                        selected={selected}
+                        disabled={disabled}
+                        onPress={() => toggleStation(s.id)}
+                      />
+                    );
+                  })}
+                </View>
+                <ZoneText
+                  variant="caption"
+                  color={colors.text.muted}
+                  style={styles.weakNote}
+                >
+                  {weakStations.length}/3 sélectionnés
+                </ZoneText>
+              </>
+            )
           ) : null}
 
           {step === 2 ? (
@@ -271,6 +301,18 @@ const styles = StyleSheet.create({
   sessionsBlock: { marginTop: 18 },
   sectionLabel: { letterSpacing: 1, fontSize: 11, marginBottom: 8 },
   weakNote: { textAlign: 'center', marginTop: 6 },
+  infoCard: {
+    marginTop: 16,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent.gold,
+    borderRadius: 14,
+    padding: 16,
+  },
+  infoText: { lineHeight: 22 },
+  infoTextMuted: { marginTop: 10, lineHeight: 18 },
   raceBlock: { marginTop: 12 },
   raceInput: {
     backgroundColor: colors.bg.elevated,

@@ -187,6 +187,9 @@ export interface HyroxProfile {
   has_target_race: boolean;
   target_race_date: string | null;
   sessions_per_week: number;
+  baseline_skierg_500m_sec?: number | null;
+  baseline_rowing_500m_sec?: number | null;
+  baseline_wall_balls_2min?: number | null;
   updated_at: Timestamp | null;
 }
 
@@ -682,4 +685,17 @@ export async function getActiveScheduleForWeek(
   const snap = await getDoc(doc(db, 'users', uid, 'schedules', weekStart));
   if (!snap.exists()) return null;
   return snap.data() as WeeklyScheduleDoc;
+}
+
+export interface HyroxBaselineInput {
+  baseline_skierg_500m_sec: number;
+  baseline_rowing_500m_sec: number;
+  baseline_wall_balls_2min: number;
+}
+
+export async function saveHyroxBaseline(uid: string, baseline: HyroxBaselineInput): Promise<void> {
+  await updateDoc(doc(db, 'users', uid, 'state', 'hyrox_profile'), {
+    ...baseline,
+    updated_at: serverTimestamp(),
+  });
 }
