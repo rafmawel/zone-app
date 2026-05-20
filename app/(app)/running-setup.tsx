@@ -60,8 +60,6 @@ interface State {
   raceDate: string;
 }
 
-const SECOND_OPTIONS = [0, 10, 20, 30, 40, 50];
-
 function roundTo10(n: number): number {
   return Math.max(0, Math.round(n / 10) * 10) % 60;
 }
@@ -278,14 +276,36 @@ function PaceStep({
   vdot: number;
 }): React.ReactElement {
   const minutes = Math.floor(paceSec / 60);
-  const seconds = paceSec % 60;
+  const seconds = roundTo10(paceSec % 60);
+  const [editing, setEditing] = useState<boolean>(false);
+  const [editText, setEditText] = useState<string>('');
+
   const setMinutes = (m: number): void => {
     const clamped = Math.max(4, Math.min(12, m));
     onChange(clamped * 60 + seconds);
   };
   const setSeconds = (s: number): void => {
-    onChange(minutes * 60 + s);
+    const wrapped = ((s % 60) + 60) % 60;
+    onChange(minutes * 60 + wrapped);
   };
+
+  const openEdit = (): void => {
+    setEditText(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+    setEditing(true);
+  };
+
+  const commitEdit = (): void => {
+    const match = editText.replace(/\s+/g, '').match(/^(\d{1,2}):(\d{1,2})$/);
+    if (match) {
+      const m = Math.max(4, Math.min(12, parseInt(match[1], 10)));
+      const sParsed = parseInt(match[2], 10);
+      const s = Math.max(0, Math.min(59, Number.isFinite(sParsed) ? sParsed : 0));
+      const rounded = Math.round(s / 10) * 10 % 60;
+      onChange(m * 60 + rounded);
+    }
+    setEditing(false);
+  };
+
   return (
     <View>
       <ZoneText variant="heading" style={styles.title}>
@@ -296,74 +316,47 @@ function PaceStep({
       </ZoneText>
 
       <View style={styles.pacePickerCard}>
-        <View style={styles.pacePickerRow}>
-          <View style={styles.paceColumn}>
-            <ZoneText variant="caption" color={colors.text.muted} style={styles.paceColLabel}>
-              MIN
-            </ZoneText>
-            <View style={styles.stepperWrap}>
-              <TouchableOpacity
-                onPress={() => setMinutes(minutes - 1)}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                activeOpacity={0.7}
-                style={styles.stepperBtn}
-              >
-                <Minus size={18} color={colors.accent.gold} />
-              </TouchableOpacity>
-              <ZoneText variant="heading" style={styles.paceValue}>
-                {minutes}
-              </ZoneText>
-              <TouchableOpacity
-                onPress={() => setMinutes(minutes + 1)}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                activeOpacity={0.7}
-                style={styles.stepperBtn}
-              >
-                <Plus size={18} color={colors.accent.gold} />
-              </TouchableOpacity>
-            </View>
-          </View>
+        <View style={styles.paceBlocksRow}>
+          <PaceBlock
+            value={minutes}
+            label="MIN"
+            onIncrement={() => setMinutes(minutes + 1)}
+            onDecrement={() => setMinutes(minutes - 1)}
+          />
           <ZoneText variant="heading" style={styles.paceColon}>
             :
           </ZoneText>
-          <View style={styles.paceColumn}>
-            <ZoneText variant="caption" color={colors.text.muted} style={styles.paceColLabel}>
-              SEC
-            </ZoneText>
-            <View style={styles.secondsRow}>
-              {SECOND_OPTIONS.map((s) => {
-                const active = s === roundTo10(seconds);
-                return (
-                  <TouchableOpacity
-                    key={s}
-                    onPress={() => setSeconds(s)}
-                    activeOpacity={0.8}
-                    style={[
-                      styles.secondsCell,
-                      {
-                        backgroundColor: active ? colors.accent.gold : colors.bg.elevated,
-                        borderColor: active ? colors.accent.gold : colors.border,
-                      },
-                    ]}
-                  >
-                    <ZoneText
-                      style={{
-                        color: active ? colors.bg.primary : colors.text.secondary,
-                        fontFamily: 'Inter-Bold',
-                        fontSize: 12,
-                      }}
-                    >
-                      {s.toString().padStart(2, '0')}
-                    </ZoneText>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
+          <PaceBlock
+            value={seconds}
+            label="SEC"
+            format={(n) => n.toString().padStart(2, '0')}
+            onIncrement={() => setSeconds(seconds + 10)}
+            onDecrement={() => setSeconds(seconds - 10)}
+          />
         </View>
-        <ZoneText variant="heading" style={styles.paceBig}>
-          {formatPace(paceSec)}
-        </ZoneText>
+
+        {editing ? (
+          <TextInput
+            value={editText}
+            onChangeText={setEditText}
+            onBlur={commitEdit}
+            onSubmitEditing={commitEdit}
+            autoFocus
+            keyboardType="numbers-and-punctuation"
+            returnKeyType="done"
+            placeholder="MM:SS"
+            placeholderTextColor={colors.text.muted}
+            selectionColor={colors.accent.gold}
+            maxLength={5}
+            style={styles.paceBigInput}
+          />
+        ) : (
+          <TouchableOpacity onPress={openEdit} activeOpacity={0.7}>
+            <ZoneText variant="heading" style={styles.paceBig}>
+              {formatPace(paceSec)}
+            </ZoneText>
+          </TouchableOpacity>
+        )}
         <ZoneText variant="caption" color={colors.text.muted} style={styles.vdotLine}>
           VDOT estimé : {vdot} · Niveau {vdotLevelLabel(vdot).toLowerCase()}
         </ZoneText>
@@ -374,6 +367,47 @@ function PaceStep({
         <PresetChip label="Inter. (5:30-7:30)" onPress={() => onChange(6 * 60 + 30)} />
         <PresetChip label="Avancé (<5:30)" onPress={() => onChange(5 * 60)} />
       </View>
+    </View>
+  );
+}
+
+function PaceBlock({
+  value,
+  label,
+  onIncrement,
+  onDecrement,
+  format,
+}: {
+  value: number;
+  label: string;
+  onIncrement: () => void;
+  onDecrement: () => void;
+  format?: (n: number) => string;
+}): React.ReactElement {
+  return (
+    <View style={styles.paceBlock}>
+      <TouchableOpacity
+        onPress={onIncrement}
+        activeOpacity={0.7}
+        hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+        style={styles.paceBlockBtn}
+      >
+        <Plus size={26} color={colors.accent.gold} />
+      </TouchableOpacity>
+      <ZoneText variant="heading" style={styles.paceBlockValue}>
+        {format ? format(value) : value}
+      </ZoneText>
+      <TouchableOpacity
+        onPress={onDecrement}
+        activeOpacity={0.7}
+        hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+        style={styles.paceBlockBtn}
+      >
+        <Minus size={26} color={colors.accent.gold} />
+      </TouchableOpacity>
+      <ZoneText variant="caption" color={colors.text.muted} style={styles.paceBlockLabel}>
+        {label}
+      </ZoneText>
     </View>
   );
 }
@@ -749,32 +783,45 @@ const styles = StyleSheet.create({
     marginTop: 16,
     alignItems: 'center',
   },
-  pacePickerRow: { flexDirection: 'row', alignItems: 'flex-end' },
-  paceColumn: { alignItems: 'center' },
-  paceColLabel: { letterSpacing: 1, fontSize: 10, marginBottom: 6 },
-  stepperWrap: { flexDirection: 'row', alignItems: 'center' },
-  stepperBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  paceBlocksRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  paceBlock: { alignItems: 'center', marginHorizontal: 4 },
+  paceBlockBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  paceValue: { fontSize: 36, color: colors.text.primary, minWidth: 60, textAlign: 'center', lineHeight: 40 },
-  paceColon: { fontSize: 36, color: colors.text.primary, marginHorizontal: 6, lineHeight: 40 },
-  secondsRow: { flexDirection: 'row' },
-  secondsCell: {
-    width: 36,
-    height: 36,
-    marginHorizontal: 2,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+  paceBlockValue: {
+    fontSize: 64,
+    color: colors.accent.gold,
+    minWidth: 90,
+    textAlign: 'center',
+    lineHeight: 70,
+    marginVertical: 6,
   },
-  paceBig: { fontSize: 56, color: colors.accent.gold, marginTop: 16, lineHeight: 60 },
+  paceBlockLabel: { letterSpacing: 1, fontSize: 10, marginTop: 6 },
+  paceColon: { fontSize: 48, color: colors.text.muted, marginHorizontal: 6, lineHeight: 52 },
+  paceBig: {
+    fontSize: 48,
+    color: colors.accent.gold,
+    marginTop: 20,
+    lineHeight: 52,
+    textAlign: 'center',
+  },
+  paceBigInput: {
+    fontSize: 48,
+    lineHeight: 52,
+    marginTop: 20,
+    color: colors.accent.gold,
+    fontFamily: 'BebasNeue',
+    textAlign: 'center',
+    paddingVertical: 0,
+    minWidth: 200,
+    alignSelf: 'center',
+  },
   vdotLine: { marginTop: 6, fontSize: 12 },
   presetsRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 16 },
   presetChip: {
