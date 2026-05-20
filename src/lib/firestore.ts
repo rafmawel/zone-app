@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -698,4 +699,17 @@ export async function saveHyroxBaseline(uid: string, baseline: HyroxBaselineInpu
     ...baseline,
     updated_at: serverTimestamp(),
   });
+}
+
+export type ResettableSport = 'weightlifting' | 'running' | 'musculation' | 'hyrox';
+
+const SPORT_STATE_DOC: Record<ResettableSport, string> = {
+  weightlifting: 'program',
+  running: 'running_profile',
+  musculation: 'muscle_profile',
+  hyrox: 'hyrox_profile',
+};
+
+export async function resetSportProfile(uid: string, sport: ResettableSport): Promise<void> {
+  await deleteDoc(doc(db, 'users', uid, 'state', SPORT_STATE_DOC[sport]));
 }

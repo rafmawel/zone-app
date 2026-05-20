@@ -7,16 +7,27 @@ import { auth } from '@/lib/firebase';
 import {
   getAllTimeStats,
   getExerciseMaxes,
+  getHyroxProfile,
+  getMuscleProfile,
+  getRunningProfile,
   getUserProfile,
   getUserProgram,
   getUserSports,
+  resetSportProfile,
   type AllTimeStats,
   type ExerciseMax,
+  type HyroxProfile,
+  type MuscleProfile,
+  type ResettableSport,
+  type RunningProfile,
   type UserProfile,
   type UserProgram,
   type UserSport,
 } from '@/lib/firestore';
 import { getBlockName } from '@/lib/programEngine';
+import { MUSCLE_GOAL_LABELS } from '@/lib/muscleEngine';
+import { HYROX_LEVEL_LABELS } from '@/lib/hyroxEngine';
+import { vdotLevelLabel } from '@/lib/runningEngine';
 import { getExerciseById } from '@/data/exercises';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
@@ -58,7 +69,11 @@ export default function ProfileScreen(): React.ReactElement {
   const [sports, setSports] = useState<UserSport[]>([]);
   const [maxes, setMaxes] = useState<ExerciseMax[]>([]);
   const [stats, setStats] = useState<AllTimeStats | null>(null);
+  const [runningProfile, setRunningProfile] = useState<RunningProfile | null>(null);
+  const [muscleProfile, setMuscleProfile] = useState<MuscleProfile | null>(null);
+  const [hyroxProfile, setHyroxProfile] = useState<HyroxProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [resettingSport, setResettingSport] = useState<ResettableSport | null>(null);
 
   const loadAll = useCallback(async (): Promise<void> => {
     const user = auth.currentUser;
@@ -67,24 +82,51 @@ export default function ProfileScreen(): React.ReactElement {
       return;
     }
     try {
-      const [p, pr, sp, m, st] = await Promise.all([
+      const [p, pr, sp, m, st, rp, mp, hp] = await Promise.all([
         getUserProfile(user.uid),
         getUserProgram(user.uid),
         getUserSports(user.uid),
         getExerciseMaxes(user.uid),
         getAllTimeStats(user.uid),
+        getRunningProfile(user.uid),
+        getMuscleProfile(user.uid),
+        getHyroxProfile(user.uid),
       ]);
       setProfile(p);
       setProgram(pr);
       setSports(sp);
       setMaxes(m);
       setStats(st);
+      setRunningProfile(rp);
+      setMuscleProfile(mp);
+      setHyroxProfile(hp);
     } catch {
       // keep nulls
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const SPORT_ROUTES: Record<ResettableSport, '/(app)/maxes' | '/(app)/running-setup' | '/(app)/muscle-setup' | '/(app)/hyrox-setup'> = {
+    weightlifting: '/(app)/maxes',
+    running: '/(app)/running-setup',
+    musculation: '/(app)/muscle-setup',
+    hyrox: '/(app)/hyrox-setup',
+  };
+
+  const onReconfigure = async (sport: ResettableSport): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+    setResettingSport(sport);
+    try {
+      await resetSportProfile(user.uid, sport);
+    } catch {
+      // even on failure we still navigate; the setup will overwrite
+    } finally {
+      setResettingSport(null);
+      router.push(SPORT_ROUTES[sport]);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -242,6 +284,53 @@ export default function ProfileScreen(): React.ReactElement {
                 : '-'
             }
           />
+
+          <ZoneText
+            variant="caption"
+            color={colors.text.muted}
+            style={styles.subEyebrow}
+          >
+            MES SPORTS
+          </ZoneText>
+          {program ? (
+            <SportRow
+              emoji="🏋️"
+              name="Haltérophilie"
+              summary={`Niveau ${program.level} · ${program.sessions_per_week}× / sem`}
+              loading={resettingSport === 'weightlifting'}
+              onPress={() => onReconfigure('weightlifting')}
+            />
+          ) : null}
+          {runningProfile ? (
+            <SportRow
+              emoji="🏃"
+              name="Course à pied"
+              summary={`VDOT ${runningProfile.vdot} · ${vdotLevelLabel(runningProfile.vdot)} · ${runningProfile.sessions_per_week}× / sem`}
+              loading={resettingSport === 'running'}
+              onPress={() => onReconfigure('running')}
+            />
+          ) : null}
+          {muscleProfile ? (
+            <SportRow
+              emoji="💪"
+              name="Musculation"
+              summary={`${MUSCLE_GOAL_LABELS[muscleProfile.goal]} · ${muscleProfile.sessions_per_week}× / sem`}
+              loading={resettingSport === 'musculation'}
+              onPress={() => onReconfigure('musculation')}
+            />
+          ) : null}
+          {hyroxProfile ? (
+            <SportRow
+              emoji="🔥"
+              name="Hyrox"
+              summary={`${HYROX_LEVEL_LABELS[hyroxProfile.level]} · ${hyroxProfile.sessions_per_week}× / sem`}
+              loading={resettingSport === 'hyrox'}
+              onPress={() => onReconfigure('hyrox')}
+            />
+          ) : null}
+          {!program && !runningProfile && !muscleProfile && !hyroxProfile ? (
+            <EmptyHint text="Aucun sport activé. Démarre depuis l’onglet Programme." />
+          ) : null}
         </View>
 
         <TouchableOpacity
@@ -278,6 +367,47 @@ function StatTile({
           {value}
         </ZoneText>
       )}
+    </View>
+  );
+}
+
+function SportRow({
+  emoji,
+  name,
+  summary,
+  loading,
+  onPress,
+}: {
+  emoji: string;
+  name: string;
+  summary: string;
+  loading: boolean;
+  onPress: () => void;
+}): React.ReactElement {
+  return (
+    <View style={styles.sportRow}>
+      <ZoneText style={styles.sportEmoji}>{emoji}</ZoneText>
+      <View style={styles.sportMain}>
+        <ZoneText variant="label" style={styles.sportName}>
+          {name}
+        </ZoneText>
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.sportSummary}>
+          {summary}
+        </ZoneText>
+      </View>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.7}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        disabled={loading}
+      >
+        <ZoneText
+          color={loading ? colors.text.muted : colors.accent.gold}
+          style={styles.reconfigureLink}
+        >
+          {loading ? 'En cours' : 'Reconfigurer'}
+        </ZoneText>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -384,6 +514,23 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   infoLabel: { fontSize: 12 },
+  subEyebrow: { letterSpacing: 2, fontSize: 11, marginTop: 18, marginBottom: 8 },
+  sportRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 6,
+  },
+  sportEmoji: { fontSize: 22, marginRight: 12 },
+  sportMain: { flex: 1 },
+  sportName: { color: colors.text.primary, fontSize: 14 },
+  sportSummary: { fontSize: 11, marginTop: 2 },
+  reconfigureLink: { fontFamily: 'Inter-Medium', fontSize: 12 },
   infoValueRow: { flexDirection: 'row', alignItems: 'center' },
   infoValue: { color: colors.text.primary, fontFamily: 'Inter-Medium', fontSize: 13, marginRight: 6 },
   empty: {
