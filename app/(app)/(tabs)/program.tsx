@@ -17,6 +17,8 @@ import {
   getExerciseMaxes,
   todayDateString,
   type DailyCheckin,
+  type HyroxProfile,
+  type MuscleProfile,
   type RunningProfile,
   type TrainingSession,
   type UserProgram,
@@ -32,6 +34,13 @@ import {
   type RunningSessionType,
   type WeekIndexRunning,
 } from '@/lib/runningEngine';
+import { MUSCLE_GOAL_LABELS } from '@/lib/muscleEngine';
+import { HYROX_LEVEL_LABELS } from '@/lib/hyroxEngine';
+import {
+  generateOptimalWeek,
+  sportColor,
+  type SchedulerSport,
+} from '@/lib/multiSportScheduler';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
@@ -81,6 +90,8 @@ export default function ProgramScreen(): React.ReactElement {
   const [runningProfile, setRunningProfile] = useState<RunningProfile | null>(null);
   const [runningLoaded, setRunningLoaded] = useState<boolean>(false);
   const [generatingRun, setGeneratingRun] = useState<boolean>(false);
+  const [muscleProfile, setMuscleProfile] = useState<MuscleProfile | null>(null);
+  const [hyroxProfile, setHyroxProfile] = useState<HyroxProfile | null>(null);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -149,6 +160,25 @@ export default function ProgramScreen(): React.ReactElement {
       () => setRunningLoaded(true),
     );
     return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const unsubM = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'muscle_profile'),
+      (snap) => setMuscleProfile(snap.exists() ? (snap.data() as MuscleProfile) : null),
+      () => undefined,
+    );
+    const unsubH = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'hyrox_profile'),
+      (snap) => setHyroxProfile(snap.exists() ? (snap.data() as HyroxProfile) : null),
+      () => undefined,
+    );
+    return () => {
+      unsubM();
+      unsubH();
+    };
   }, []);
 
   const onStartRun = async (): Promise<void> => {
@@ -371,6 +401,16 @@ export default function ProgramScreen(): React.ReactElement {
           </View>
         ) : null}
 
+        <MuscleCard profile={muscleProfile} onSetup={() => router.push('/(app)/muscle-setup')} />
+        <HyroxCard profile={hyroxProfile} onSetup={() => router.push('/(app)/hyrox-setup')} />
+
+        <WeeklyPlannerSection
+          program={program}
+          runningProfile={runningProfile}
+          muscleProfile={muscleProfile}
+          hyroxProfile={hyroxProfile}
+        />
+
         <View style={styles.upcomingHeader}>
           <ZoneText variant="caption" color={colors.text.muted} style={styles.upcomingEyebrow}>
             PROCHAINES SÉANCES
@@ -498,6 +538,193 @@ function RunningProgramBody({
   );
 }
 
+function MuscleCard({
+  profile,
+  onSetup,
+}: {
+  profile: MuscleProfile | null;
+  onSetup: () => void;
+}): React.ReactElement {
+  return (
+    <View style={styles.runningCard}>
+      <View style={styles.programHeader}>
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.programEyebrow}>
+          PROGRAMME MUSCULATION
+        </ZoneText>
+        {profile ? (
+          <ZoneText variant="caption" color={colors.accent.gold}>
+            {profile.sessions_per_week}×/sem
+          </ZoneText>
+        ) : null}
+      </View>
+      {profile ? (
+        <>
+          <ZoneText variant="heading" style={styles.programBlock}>
+            BLOC 1 · ACCUMULATION
+          </ZoneText>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.programIntro}>
+            Objectif {MUSCLE_GOAL_LABELS[profile.goal].toLowerCase()} · MEV → MAV
+          </ZoneText>
+          <View style={styles.programCta}>
+            <Button title="Bientôt" variant="secondary" disabled onPress={() => undefined} />
+          </View>
+        </>
+      ) : (
+        <>
+          <ZoneText variant="heading" style={styles.programBlock}>
+            ACTIVER LA MUSCULATION
+          </ZoneText>
+          <ZoneText variant="body" color={colors.text.secondary} style={styles.programIntro}>
+            Volume MEV / MAV / MRV personnalisé, splits choisis automatiquement.
+          </ZoneText>
+          <View style={styles.programCta}>
+            <Button title="Configurer la muscu" variant="secondary" onPress={onSetup} />
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
+function HyroxCard({
+  profile,
+  onSetup,
+}: {
+  profile: HyroxProfile | null;
+  onSetup: () => void;
+}): React.ReactElement {
+  return (
+    <View style={styles.runningCard}>
+      <View style={styles.programHeader}>
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.programEyebrow}>
+          PROGRAMME HYROX
+        </ZoneText>
+        {profile ? (
+          <ZoneText variant="caption" color={colors.accent.gold}>
+            {HYROX_LEVEL_LABELS[profile.level]}
+          </ZoneText>
+        ) : null}
+      </View>
+      {profile ? (
+        <>
+          <ZoneText variant="heading" style={styles.programBlock}>
+            BLOC 1 · BASE & STATIONS
+          </ZoneText>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.programIntro}>
+            {profile.sessions_per_week} séances/semaine · 60 % course, 40 % stations
+          </ZoneText>
+          <View style={styles.programCta}>
+            <Button title="Bientôt" variant="secondary" disabled onPress={() => undefined} />
+          </View>
+        </>
+      ) : (
+        <>
+          <ZoneText variant="heading" style={styles.programBlock}>
+            ACTIVER LE MODULE HYROX
+          </ZoneText>
+          <ZoneText variant="body" color={colors.text.secondary} style={styles.programIntro}>
+            Course + 8 stations. Énergie ciblée, périodisation 3 blocs.
+          </ZoneText>
+          <View style={styles.programCta}>
+            <Button title="Configurer Hyrox" variant="secondary" onPress={onSetup} />
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
+const FR_DAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+function WeeklyPlannerSection({
+  program,
+  runningProfile,
+  muscleProfile,
+  hyroxProfile,
+}: {
+  program: UserProgram | null;
+  runningProfile: RunningProfile | null;
+  muscleProfile: MuscleProfile | null;
+  hyroxProfile: HyroxProfile | null;
+}): React.ReactElement | null {
+  const schedule = useMemo(() => {
+    const activeSports: { sport: SchedulerSport; sessionsPerWeek: number }[] = [];
+    if (program) activeSports.push({ sport: 'weightlifting', sessionsPerWeek: program.sessions_per_week });
+    if (runningProfile)
+      activeSports.push({ sport: 'running', sessionsPerWeek: runningProfile.sessions_per_week });
+    if (muscleProfile)
+      activeSports.push({ sport: 'musculation', sessionsPerWeek: muscleProfile.sessions_per_week });
+    if (hyroxProfile) activeSports.push({ sport: 'hyrox', sessionsPerWeek: hyroxProfile.sessions_per_week });
+    if (activeSports.length === 0) return null;
+    return generateOptimalWeek(activeSports, {
+      long_run_day: runningProfile?.long_run_pref ?? 'dimanche',
+    });
+  }, [program, runningProfile, muscleProfile, hyroxProfile]);
+
+  if (!schedule) return null;
+
+  const totalSessions = schedule.days.reduce((acc, d) => acc + d.sessions.length, 0);
+  const sundayRecovery = schedule.days[6]?.recovery_score ?? 100;
+  const todayIdx = (new Date().getDay() + 6) % 7;
+
+  return (
+    <View style={styles.plannerWrap}>
+      <ZoneText variant="caption" color={colors.text.muted} style={styles.programEyebrow}>
+        MA SEMAINE
+      </ZoneText>
+      <ZoneText variant="heading" style={styles.plannerTitle}>
+        PLANNING
+      </ZoneText>
+      <View style={styles.weekRowOuter}>
+        {schedule.days.map((d, idx) => (
+          <View key={d.date} style={styles.dayColumn}>
+            <ZoneText
+              variant="caption"
+              color={idx === todayIdx ? colors.accent.gold : colors.text.muted}
+              style={styles.dayLetter}
+            >
+              {FR_DAYS[idx]}
+            </ZoneText>
+            <ZoneText
+              variant="caption"
+              color={idx === todayIdx ? colors.text.primary : colors.text.muted}
+              style={styles.dayNumber}
+            >
+              {parseInt(d.date.slice(-2), 10)}
+            </ZoneText>
+            <View style={styles.dotsStack}>
+              {d.sessions.length === 0 ? (
+                <View style={[styles.sessionDot, { backgroundColor: colors.border }]} />
+              ) : (
+                d.sessions.map((s, i) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.sessionDot,
+                      { backgroundColor: sportColor(s.sport as SchedulerSport) },
+                    ]}
+                  />
+                ))
+              )}
+            </View>
+            {d.warnings.some((w) => w.level === 'danger') ? (
+              <ZoneText style={styles.warningDot}>!</ZoneText>
+            ) : null}
+          </View>
+        ))}
+      </View>
+      <View style={styles.weekSummary}>
+        <ZoneText variant="caption" color={colors.text.secondary}>
+          Cette semaine : {totalSessions} séance{totalSessions > 1 ? 's' : ''}
+        </ZoneText>
+        <ZoneText variant="caption" color={colors.text.muted}>
+          Récupération dimanche {sundayRecovery}%
+        </ZoneText>
+      </View>
+    </View>
+  );
+}
+
 function formatSessionDate(date: string): string {
   try {
     const [y, m, d] = date.split('-').map((p) => parseInt(p, 10));
@@ -572,6 +799,31 @@ const styles = StyleSheet.create({
   todayBox: { marginTop: 14 },
   todayName: { color: colors.text.primary, fontSize: 16, marginTop: 4 },
   todayMeta: { fontSize: 12, marginTop: 2 },
+  plannerWrap: {
+    marginHorizontal: 24,
+    marginTop: 18,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 14,
+  },
+  plannerTitle: { fontSize: 18, color: colors.text.primary, letterSpacing: 2, marginTop: 2 },
+  weekRowOuter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
+  dayColumn: { alignItems: 'center', width: 36 },
+  dayLetter: { fontFamily: 'Inter-Bold', fontSize: 11, letterSpacing: 1 },
+  dayNumber: { fontSize: 12, marginTop: 2 },
+  dotsStack: { marginTop: 6, alignItems: 'center' },
+  sessionDot: { width: 8, height: 8, borderRadius: 4, marginBottom: 3 },
+  warningDot: { color: colors.danger, fontFamily: 'Inter-Bold', fontSize: 12, marginTop: 2 },
+  weekSummary: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
   upcomingHeader: { paddingHorizontal: 24, marginTop: 20, marginBottom: 8 },
   upcomingEyebrow: { letterSpacing: 2, fontSize: 11 },
   upcomingEmpty: {

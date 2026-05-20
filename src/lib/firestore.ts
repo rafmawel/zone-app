@@ -168,6 +168,48 @@ export interface RunningSessionGPSPoint {
   ts: number;
 }
 
+export type MuscleGoal = 'hypertrophy' | 'strength' | 'mixed' | 'fitness';
+export type MuscleEquipment = 'barbell_plates' | 'dumbbells' | 'full_gym';
+
+export interface MuscleProfile {
+  goal: MuscleGoal;
+  equipment: MuscleEquipment[];
+  weak_points: string[];
+  sessions_per_week: number;
+  updated_at: Timestamp | null;
+}
+
+export type HyroxLevel = 'debutant' | 'regulier' | 'competiteur' | 'pro';
+
+export interface HyroxProfile {
+  level: HyroxLevel;
+  weak_stations: string[];
+  has_target_race: boolean;
+  target_race_date: string | null;
+  sessions_per_week: number;
+  updated_at: Timestamp | null;
+}
+
+export interface WeeklyScheduleDayDoc {
+  date: string;
+  day_index: number;
+  sessions: {
+    sport: string;
+    session_type: string;
+    planned_duration_minutes: number;
+    intensity: 'low' | 'medium' | 'high';
+  }[];
+  warnings: { level: 'info' | 'caution' | 'danger'; message: string }[];
+  load_score: number;
+  recovery_score: number;
+}
+
+export interface WeeklyScheduleDoc {
+  week_start: string;
+  days: WeeklyScheduleDayDoc[];
+  updated_at: Timestamp | null;
+}
+
 export interface RunSession {
   id: string;
   date: string;
@@ -595,4 +637,49 @@ export async function getUpcomingRuns(uid: string, max: number): Promise<RunSess
   } catch {
     return [];
   }
+}
+
+export async function saveMuscleProfile(uid: string, profile: Omit<MuscleProfile, 'updated_at'>): Promise<void> {
+  await setDoc(doc(db, 'users', uid, 'state', 'muscle_profile'), {
+    ...profile,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function getMuscleProfile(uid: string): Promise<MuscleProfile | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'muscle_profile'));
+  if (!snap.exists()) return null;
+  return snap.data() as MuscleProfile;
+}
+
+export async function saveHyroxProfile(uid: string, profile: Omit<HyroxProfile, 'updated_at'>): Promise<void> {
+  await setDoc(doc(db, 'users', uid, 'state', 'hyrox_profile'), {
+    ...profile,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function getHyroxProfile(uid: string): Promise<HyroxProfile | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'hyrox_profile'));
+  if (!snap.exists()) return null;
+  return snap.data() as HyroxProfile;
+}
+
+export async function saveWeeklySchedule(
+  uid: string,
+  schedule: Omit<WeeklyScheduleDoc, 'updated_at'>,
+): Promise<void> {
+  await setDoc(doc(db, 'users', uid, 'schedules', schedule.week_start), {
+    ...schedule,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function getActiveScheduleForWeek(
+  uid: string,
+  weekStart: string,
+): Promise<WeeklyScheduleDoc | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'schedules', weekStart));
+  if (!snap.exists()) return null;
+  return snap.data() as WeeklyScheduleDoc;
 }
