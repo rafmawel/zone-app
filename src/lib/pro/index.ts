@@ -11,3 +11,4 @@ export * from './prilepinEngine';
 export * from './hypertrophyProEngine';
 export * from './runningProEngine';
 export * from './readinessEngine';
+export * from './workloadHelpers';
