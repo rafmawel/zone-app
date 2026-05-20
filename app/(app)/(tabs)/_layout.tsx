@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { Calendar, Dumbbell, Home, User } from 'lucide-react-native';
+import { BookOpen, Calendar, Dumbbell, Home, User } from 'lucide-react-native';
 import { colors } from '@/theme/colors';
 
 export default function AppLayout(): React.ReactElement {
@@ -29,10 +29,17 @@ export default function AppLayout(): React.ReactElement {
         }}
       />
       <Tabs.Screen
-        name="training"
+        name="program"
         options={{
-          title: 'Entraînement',
+          title: 'Programme',
           tabBarIcon: ({ color }) => <Dumbbell size={24} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="library"
+        options={{
+          title: 'Bibliothèque',
+          tabBarIcon: ({ color }) => <BookOpen size={24} color={color} />,
         }}
       />
       <Tabs.Screen

@@ -1,11 +1,25 @@
-import React, { useMemo, useState } from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Keyboard,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { SlideInRight, SlideOutLeft } from 'react-native-reanimated';
 import { ArrowLeft, Minus, Plus } from 'lucide-react-native';
-import { auth } from '@/lib/firebase';
-import { saveExerciseMax, todayDateString, type ExerciseMax } from '@/lib/firestore';
-import { initializeUserProgram } from '@/lib/programInit';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '@/lib/firebase';
+import {
+  getTodayCheckin,
+  saveExerciseMax,
+  todayDateString,
+  type ExerciseMax,
+  type UserProfile,
+} from '@/lib/firestore';
+import { ensureFirstPlannedSession, initializeUserProgram } from '@/lib/programInit';
 import { estimateOneRepMax } from '@/lib/programEngine';
 import { getExerciseById } from '@/data/exercises';
 import { colors } from '@/theme/colors';
@@ -16,11 +30,20 @@ import { ZoneText } from '@/components/ui/ZoneText';
 const KEY_LIFTS = ['snatch', 'clean_and_jerk', 'front_squat', 'strict_press'] as const;
 type KeyLift = (typeof KEY_LIFTS)[number];
 
-const LEVEL_BASELINES: Record<string, Record<KeyLift, number>> = {
-  debutant: { snatch: 30, clean_and_jerk: 40, front_squat: 50, strict_press: 30 },
-  intermediaire: { snatch: 60, clean_and_jerk: 75, front_squat: 90, strict_press: 50 },
-  avance: { snatch: 85, clean_and_jerk: 110, front_squat: 130, strict_press: 70 },
-  confirme: { snatch: 110, clean_and_jerk: 140, front_squat: 170, strict_press: 90 },
+type LevelKey = 'beginner' | 'intermediate' | 'advanced' | 'elite';
+
+const LEVEL_BASELINES: Record<LevelKey, Record<KeyLift, number>> = {
+  beginner: { snatch: 30, clean_and_jerk: 40, front_squat: 50, strict_press: 30 },
+  intermediate: { snatch: 60, clean_and_jerk: 80, front_squat: 80, strict_press: 50 },
+  advanced: { snatch: 90, clean_and_jerk: 110, front_squat: 110, strict_press: 70 },
+  elite: { snatch: 120, clean_and_jerk: 150, front_squat: 140, strict_press: 90 },
+};
+
+const ONBOARDING_TO_LEVEL_KEY: Record<string, LevelKey> = {
+  debutant: 'beginner',
+  intermediaire: 'intermediate',
+  avance: 'advanced',
+  confirme: 'elite',
 };
 
 interface DraftMax {
@@ -29,17 +52,53 @@ interface DraftMax {
   reps: number;
 }
 
+function defaultDrafts(levelKey: LevelKey): Record<KeyLift, DraftMax> {
+  const base = LEVEL_BASELINES[levelKey];
+  return {
+    snatch: { knows: true, weight: base.snatch, reps: 1 },
+    clean_and_jerk: { knows: true, weight: base.clean_and_jerk, reps: 1 },
+    front_squat: { knows: true, weight: base.front_squat, reps: 1 },
+    strict_press: { knows: true, weight: base.strict_press, reps: 1 },
+  };
+}
+
+function roundTo2_5(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.round(n / 2.5) * 2.5);
+}
+
 export default function MaxesScreen(): React.ReactElement {
   const router = useRouter();
+  const [levelKey, setLevelKey] = useState<LevelKey>('intermediate');
   const [stepIdx, setStepIdx] = useState<number>(0);
-  const [drafts, setDrafts] = useState<Record<KeyLift, DraftMax>>(() => ({
-    snatch: { knows: true, weight: 60, reps: 1 },
-    clean_and_jerk: { knows: true, weight: 75, reps: 1 },
-    front_squat: { knows: true, weight: 90, reps: 1 },
-    strict_press: { knows: true, weight: 50, reps: 1 },
-  }));
+  const [drafts, setDrafts] = useState<Record<KeyLift, DraftMax>>(() =>
+    defaultDrafts('intermediate'),
+  );
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        if (cancelled || !snap.exists()) return;
+        const profile = snap.data() as Partial<UserProfile>;
+        const mapped = profile.level ? ONBOARDING_TO_LEVEL_KEY[profile.level] : undefined;
+        if (mapped) {
+          setLevelKey(mapped);
+          setDrafts(defaultDrafts(mapped));
+        }
+      } catch {
+        // keep defaults
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const lift = KEY_LIFTS[stepIdx];
   const exercise = getExerciseById(lift);
@@ -48,6 +107,7 @@ export default function MaxesScreen(): React.ReactElement {
     () => estimateOneRepMax(draft.weight, draft.reps),
     [draft.weight, draft.reps],
   );
+  const baseline = LEVEL_BASELINES[levelKey][lift];
 
   const setDraft = (patch: Partial<DraftMax>): void => {
     setDrafts((prev) => ({ ...prev, [lift]: { ...prev[lift], ...patch } }));
@@ -66,10 +126,25 @@ export default function MaxesScreen(): React.ReactElement {
       setStepIdx((s) => s + 1);
       return;
     }
-    await persist();
+    await persist(drafts);
   };
 
-  const persist = async (): Promise<void> => {
+  const skipAll = async (): Promise<void> => {
+    const filled: Record<KeyLift, DraftMax> = {
+      snatch: { knows: false, weight: LEVEL_BASELINES[levelKey].snatch, reps: 1 },
+      clean_and_jerk: {
+        knows: false,
+        weight: LEVEL_BASELINES[levelKey].clean_and_jerk,
+        reps: 1,
+      },
+      front_squat: { knows: false, weight: LEVEL_BASELINES[levelKey].front_squat, reps: 1 },
+      strict_press: { knows: false, weight: LEVEL_BASELINES[levelKey].strict_press, reps: 1 },
+    };
+    setDrafts(filled);
+    await persist(filled);
+  };
+
+  const persist = async (source: Record<KeyLift, DraftMax>): Promise<void> => {
     const user = auth.currentUser;
     if (!user) {
       setError('Session expirée.');
@@ -79,7 +154,7 @@ export default function MaxesScreen(): React.ReactElement {
     setSaving(true);
     try {
       for (const id of KEY_LIFTS) {
-        const d = drafts[id];
+        const d = source[id];
         const est = estimateOneRepMax(d.weight, d.reps);
         const max: ExerciseMax = {
           exercise_id: id,
@@ -91,8 +166,15 @@ export default function MaxesScreen(): React.ReactElement {
         };
         await saveExerciseMax(user.uid, max);
       }
-      await initializeUserProgram(user.uid);
-      router.replace('/(app)/(tabs)/training');
+      const program = await initializeUserProgram(user.uid);
+      const ci = await getTodayCheckin(user.uid).catch(() => null);
+      const zoneScore = ci?.zone_score ?? null;
+      try {
+        await ensureFirstPlannedSession(user.uid, program, zoneScore);
+      } catch {
+        // non-blocking: dashboard will show "no session" until next manual generate
+      }
+      router.replace('/(app)/(tabs)/program');
     } catch {
       setError('Enregistrement impossible. Réessaie.');
     } finally {
@@ -100,14 +182,25 @@ export default function MaxesScreen(): React.ReactElement {
     }
   };
 
-  const baseline = LEVEL_BASELINES.intermediaire[lift];
-
   return (
     <SafeScreen>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={goPrev} hitSlop={12} activeOpacity={0.7}>
+      <View style={styles.backRow}>
+        <TouchableOpacity
+          onPress={goPrev}
+          activeOpacity={0.7}
+          hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+        >
           <ArrowLeft size={24} color={colors.text.primary} />
         </TouchableOpacity>
+      </View>
+
+      <View style={styles.heroRow}>
+        <ZoneText variant="caption" color={colors.accent.gold} style={styles.eyebrow}>
+          Mouvement {stepIdx + 1}/{KEY_LIFTS.length}
+        </ZoneText>
+        <ZoneText variant="heading" style={styles.title}>
+          {exercise ? exercise.name.toUpperCase() : ''}
+        </ZoneText>
         <View style={styles.dotsRow}>
           {KEY_LIFTS.map((_, i) => (
             <View
@@ -119,7 +212,6 @@ export default function MaxesScreen(): React.ReactElement {
             />
           ))}
         </View>
-        <View style={styles.headerSpacer} />
       </View>
 
       <Animated.View
@@ -128,113 +220,113 @@ export default function MaxesScreen(): React.ReactElement {
         exiting={SlideOutLeft.duration(160)}
         style={styles.body}
       >
-        <ZoneText variant="caption" color={colors.accent.gold} style={styles.eyebrow}>
-          Mouvement {stepIdx + 1}/{KEY_LIFTS.length}
-        </ZoneText>
-        <ZoneText variant="heading" style={styles.title}>
-          {exercise ? exercise.name.toUpperCase() : ''}
-        </ZoneText>
-        <ZoneText variant="body" color={colors.text.secondary} style={styles.subtitle}>
-          Quel est ton max actuel ?
-        </ZoneText>
-
-        <View style={styles.toggleRow}>
-          <ToggleChip
-            label="Je connais mon max"
-            active={draft.knows}
-            onPress={() => setDraft({ knows: true })}
-          />
-          <ToggleChip
-            label="Je ne sais pas"
-            active={!draft.knows}
-            onPress={() => setDraft({ knows: false, weight: baseline, reps: 1 })}
-          />
-        </View>
-
-        <View style={styles.pickerCard}>
-          <ZoneText variant="caption" color={colors.text.muted} style={styles.pickerLabel}>
-            CHARGE
-          </ZoneText>
-          <View style={styles.pickerRow}>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => setDraft({ weight: Math.max(20, draft.weight - 2.5) })}
-              style={styles.pickerBtn}
-            >
-              <Minus size={22} color={colors.accent.gold} />
-            </TouchableOpacity>
-            <View style={styles.pickerValueWrap}>
-              <ZoneText variant="heading" style={styles.pickerValue}>
-                {draft.weight}
-              </ZoneText>
-              <ZoneText variant="caption" color={colors.text.muted} style={styles.pickerUnit}>
-                kg
-              </ZoneText>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={{ flex: 1 }}>
+            <View style={styles.toggleRow}>
+              <ToggleChip
+                label="Je connais mon max"
+                active={draft.knows}
+                onPress={() => setDraft({ knows: true })}
+              />
+              <ToggleChip
+                label="Je ne sais pas"
+                active={!draft.knows}
+                onPress={() => setDraft({ knows: false, weight: baseline, reps: 1 })}
+              />
             </View>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => setDraft({ weight: draft.weight + 2.5 })}
-              style={styles.pickerBtn}
-            >
-              <Plus size={22} color={colors.accent.gold} />
-            </TouchableOpacity>
-          </View>
 
-          {draft.knows ? (
-            <View style={styles.repsRow}>
-              <ZoneText variant="caption" color={colors.text.muted} style={styles.pickerLabel}>
-                C&apos;ÉTAIT POUR
+            {!draft.knows ? (
+              <ZoneText
+                variant="caption"
+                color={colors.text.muted}
+                style={styles.estimateHint}
+              >
+                Estimation basée sur ton niveau — ajuste si besoin
               </ZoneText>
-              <View style={styles.repsPicker}>
-                {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
-                  const active = n === draft.reps;
-                  return (
-                    <TouchableOpacity
-                      key={n}
-                      onPress={() => setDraft({ reps: n })}
-                      activeOpacity={0.8}
-                      style={[
-                        styles.repsCell,
-                        {
-                          backgroundColor: active ? colors.accent.gold : colors.bg.card,
-                          borderColor: active ? colors.accent.gold : colors.border,
-                        },
-                      ]}
-                    >
-                      <ZoneText
-                        style={{
-                          color: active ? colors.bg.primary : colors.text.secondary,
-                          fontFamily: 'Inter-Bold',
-                          fontSize: 13,
-                        }}
+            ) : null}
+
+            <WeightPicker
+              value={draft.weight}
+              onChange={(v) => setDraft({ weight: v })}
+            />
+
+            {draft.knows ? (
+              <View style={styles.repsBlock}>
+                <ZoneText
+                  variant="caption"
+                  color={colors.text.muted}
+                  style={styles.pickerLabel}
+                >
+                  C&apos;ÉTAIT POUR
+                </ZoneText>
+                <View style={styles.repsPicker}>
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
+                    const active = n === draft.reps;
+                    return (
+                      <TouchableOpacity
+                        key={n}
+                        onPress={() => setDraft({ reps: n })}
+                        activeOpacity={0.8}
+                        style={[
+                          styles.repsCell,
+                          {
+                            backgroundColor: active ? colors.accent.gold : colors.bg.card,
+                            borderColor: active ? colors.accent.gold : colors.border,
+                          },
+                        ]}
                       >
-                        {n}
-                      </ZoneText>
-                    </TouchableOpacity>
-                  );
-                })}
+                        <ZoneText
+                          style={{
+                            color: active ? colors.bg.primary : colors.text.secondary,
+                            fontFamily: 'Inter-Bold',
+                            fontSize: 13,
+                          }}
+                        >
+                          {n}
+                        </ZoneText>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <ZoneText
+                  variant="caption"
+                  color={colors.text.muted}
+                  style={styles.repsHint}
+                >
+                  reps
+                </ZoneText>
               </View>
-              <ZoneText variant="caption" color={colors.text.muted} style={styles.repsHint}>
-                reps
+            ) : null}
+
+            <View style={styles.estimateRow}>
+              <ZoneText variant="caption" color={colors.text.muted}>
+                1RM estimé
+              </ZoneText>
+              <ZoneText variant="heading" style={styles.estimateValue}>
+                {oneRm} kg
               </ZoneText>
             </View>
-          ) : null}
 
-          <View style={styles.estimateRow}>
-            <ZoneText variant="caption" color={colors.text.muted}>
-              1RM estimé
-            </ZoneText>
-            <ZoneText variant="heading" style={styles.estimateValue}>
-              {oneRm} kg
-            </ZoneText>
+            {error ? (
+              <ZoneText variant="caption" color={colors.danger} style={styles.error}>
+                {error}
+              </ZoneText>
+            ) : null}
+
+            {stepIdx === 0 ? (
+              <TouchableOpacity
+                onPress={skipAll}
+                activeOpacity={0.7}
+                style={styles.skipRow}
+                disabled={saving}
+              >
+                <ZoneText variant="caption" color={colors.text.muted} style={styles.skipText}>
+                  Commencer sans mes maxes
+                </ZoneText>
+              </TouchableOpacity>
+            ) : null}
           </View>
-        </View>
-
-        {error ? (
-          <ZoneText variant="caption" color={colors.danger} style={styles.error}>
-            {error}
-          </ZoneText>
-        ) : null}
+        </TouchableWithoutFeedback>
       </Animated.View>
 
       <View style={styles.footer}>
@@ -246,6 +338,74 @@ export default function MaxesScreen(): React.ReactElement {
       </View>
     </SafeScreen>
   );
+}
+
+function WeightPicker({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}): React.ReactElement {
+  const [text, setText] = useState<string>(String(value));
+
+  useEffect(() => {
+    setText(formatPickerValue(value));
+  }, [value]);
+
+  const commitText = (): void => {
+    const parsed = parseFloat(text.replace(',', '.'));
+    const next = Number.isFinite(parsed) ? roundTo2_5(parsed) : value;
+    onChange(next);
+    setText(formatPickerValue(next));
+  };
+
+  const dec = (): void => onChange(Math.max(0, +(value - 2.5).toFixed(2)));
+  const inc = (): void => onChange(+(value + 2.5).toFixed(2));
+
+  return (
+    <View style={styles.pickerCard}>
+      <ZoneText variant="caption" color={colors.text.muted} style={styles.pickerLabel}>
+        CHARGE (kg)
+      </ZoneText>
+      <View style={styles.pickerRow}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={dec}
+          hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+          style={styles.pickerBtn}
+        >
+          <Minus size={26} color={colors.accent.gold} />
+        </TouchableOpacity>
+        <View style={styles.pickerValueWrap}>
+          <TextInput
+            value={text}
+            onChangeText={setText}
+            onBlur={commitText}
+            onSubmitEditing={commitText}
+            keyboardType="decimal-pad"
+            returnKeyType="done"
+            selectionColor={colors.accent.gold}
+            cursorColor={colors.accent.gold}
+            style={styles.pickerInput}
+            maxLength={6}
+          />
+        </View>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={inc}
+          hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+          style={styles.pickerBtn}
+        >
+          <Plus size={26} color={colors.accent.gold} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function formatPickerValue(v: number): string {
+  return Number.isInteger(v) ? `${v}` : v.toFixed(1);
 }
 
 function ToggleChip({
@@ -282,51 +442,51 @@ function ToggleChip({
 }
 
 const styles = StyleSheet.create({
-  header: {
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerSpacer: { width: 24 },
-  dotsRow: { flexDirection: 'row' },
-  dot: { width: 8, height: 8, borderRadius: 4, marginHorizontal: 4 },
-  body: { flex: 1, paddingHorizontal: 24 },
+  backRow: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 4 },
+  heroRow: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16 },
   eyebrow: { letterSpacing: 2, fontFamily: 'Inter-Medium' },
-  title: { fontSize: 28, marginTop: 6, letterSpacing: 1 },
-  subtitle: { marginTop: 8, marginBottom: 16 },
-  toggleRow: { flexDirection: 'row', marginBottom: 16 },
+  title: { fontSize: 36, marginTop: 4, letterSpacing: 1 },
+  dotsRow: { flexDirection: 'row', marginTop: 12 },
+  dot: { width: 28, height: 4, borderRadius: 2, marginRight: 6 },
+  body: { flex: 1, paddingHorizontal: 24 },
+  toggleRow: { flexDirection: 'row', marginBottom: 12 },
   toggleChip: {
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     marginRight: 8,
   },
+  estimateHint: { marginBottom: 12, fontStyle: 'italic' },
   pickerCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 16,
-    padding: 20,
+    padding: 18,
   },
-  pickerLabel: { letterSpacing: 1, fontSize: 11, marginBottom: 8 },
+  pickerLabel: { letterSpacing: 1, fontSize: 11, marginBottom: 12 },
   pickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   pickerBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pickerValueWrap: { flex: 1, alignItems: 'center' },
-  pickerValue: { fontSize: 64, color: colors.accent.gold, lineHeight: 70 },
-  pickerUnit: { marginTop: -4 },
-  repsRow: { marginTop: 18 },
+  pickerInput: {
+    minWidth: 140,
+    textAlign: 'center',
+    color: colors.accent.gold,
+    fontFamily: 'BebasNeue',
+    fontSize: 64,
+    lineHeight: 70,
+    paddingVertical: 0,
+  },
+  repsBlock: { marginTop: 18 },
   repsPicker: { flexDirection: 'row', justifyContent: 'space-between' },
   repsCell: {
     flex: 1,
@@ -349,5 +509,7 @@ const styles = StyleSheet.create({
   },
   estimateValue: { fontSize: 28, color: colors.text.primary, lineHeight: 32 },
   error: { marginTop: 12, textAlign: 'center' },
+  skipRow: { alignItems: 'center', marginTop: 16, paddingVertical: 10 },
+  skipText: { textDecorationLine: 'underline', fontSize: 12 },
   footer: { padding: 24, paddingTop: 8 },
 });

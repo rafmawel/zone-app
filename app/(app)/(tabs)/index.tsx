@@ -2,10 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ChevronRight, Dumbbell } from 'lucide-react-native';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import {
-  getUpcomingSessions,
   todayDateString,
   type DailyCheckin,
   type TrainingSession,
@@ -76,16 +75,23 @@ export default function DashboardScreen(): React.ReactElement {
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
-    let cancelled = false;
-    void getUpcomingSessions(user.uid, 1)
-      .then((rows) => {
-        if (cancelled) return;
-        setNextSession(rows[0] ?? null);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
+    const q = query(
+      collection(db, 'users', user.uid, 'sessions'),
+      orderBy('date', 'asc'),
+      limit(20),
+    );
+    const unsubscribe = onSnapshot(
+      q,
+      (snap) => {
+        const today = todayDateString();
+        const upcoming = snap.docs
+          .map((d) => d.data() as TrainingSession)
+          .filter((s) => s.status === 'planned' && s.date >= today);
+        setNextSession(upcoming[0] ?? null);
+      },
+      () => setNextSession(null),
+    );
+    return unsubscribe;
   }, []);
 
   const score = checkin?.zone_score ?? 50;
@@ -214,7 +220,7 @@ export default function DashboardScreen(): React.ReactElement {
                     À planifier
                   </ZoneText>
                   <ZoneText variant="caption" color={colors.text.muted}>
-                    Démarre ton programme depuis l’onglet Entraînement
+                    Démarre ton programme depuis l’onglet Programme
                   </ZoneText>
                 </>
               )}
