@@ -15,6 +15,7 @@ export default function AppLayout(): React.ReactElement {
       <Stack.Screen name="exercise/[id]" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="maxes" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="session/[id]" options={{ animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="session-detail/[id]" options={{ animation: 'slide_from_right' }} />
     </Stack>
   );
 }

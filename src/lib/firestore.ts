@@ -341,6 +341,87 @@ export async function countCompletedSessionsSince(
   }
 }
 
+export async function getCompletedSessions(uid: string): Promise<TrainingSession[]> {
+  const q = query(
+    collection(db, 'users', uid, 'sessions'),
+    where('status', '==', 'completed'),
+    orderBy('date', 'desc'),
+    limit(60),
+  );
+  try {
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as TrainingSession);
+  } catch {
+    return [];
+  }
+}
+
+export async function getSessionById(
+  uid: string,
+  sessionId: string,
+): Promise<TrainingSession | null> {
+  return getSession(uid, sessionId);
+}
+
+export interface AllTimeStats {
+  totalSessions: number;
+  totalVolume: number;
+  bestStreak: number;
+  avgZoneScore: number;
+}
+
+export async function getAllTimeStats(uid: string): Promise<AllTimeStats> {
+  let totalSessions = 0;
+  let totalVolume = 0;
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'users', uid, 'sessions'), where('status', '==', 'completed')),
+    );
+    snap.docs.forEach((d) => {
+      totalSessions += 1;
+      const data = d.data() as TrainingSession;
+      totalVolume += data.total_volume_kg ?? 0;
+    });
+  } catch {
+    // keep defaults
+  }
+
+  let bestStreak = 0;
+  let avgZoneScore = 0;
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'users', uid, 'checkins'), orderBy('date', 'asc')),
+    );
+    const checkins = snap.docs.map((d) => d.data() as DailyCheckin);
+    if (checkins.length > 0) {
+      avgZoneScore = Math.round(
+        checkins.reduce((acc, c) => acc + (c.zone_score ?? 0), 0) / checkins.length,
+      );
+      let streak = 0;
+      let prev: Date | null = null;
+      for (const c of checkins) {
+        if ((c.zone_score ?? 0) <= 0) {
+          streak = 0;
+          prev = null;
+          continue;
+        }
+        const d = new Date(c.date);
+        if (prev && (d.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24) === 1) {
+          streak += 1;
+        } else {
+          streak = 1;
+        }
+        if (streak > bestStreak) bestStreak = streak;
+        prev = d;
+      }
+    }
+  } catch {
+    // keep defaults
+  }
+
+  return { totalSessions, totalVolume, bestStreak, avgZoneScore };
+}
+
 export async function getDaysSinceLastSession(uid: string): Promise<number> {
   const q = query(
     collection(db, 'users', uid, 'sessions'),
