@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Tabs } from 'expo-router';
-import { BookOpen, Calendar, Dumbbell, Home, User } from 'lucide-react-native';
+import { BookOpen, Calendar, Dumbbell, Home, Sparkles, User } from 'lucide-react-native';
 import { colors } from '@/theme/colors';
 import { SessionMiniBar, SESSION_MINI_BAR_HEIGHT } from '@/components/SessionMiniBar';
 import { useSession } from '@/context/SessionContext';
@@ -60,6 +60,13 @@ export default function AppLayout(): React.ReactElement {
           options={{
             title: 'Historique',
             tabBarIcon: ({ color }) => <Calendar size={24} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="analytics"
+          options={{
+            title: 'Analytics',
+            tabBarIcon: ({ color }) => <Sparkles size={24} color={color} />,
           }}
         />
         <Tabs.Screen

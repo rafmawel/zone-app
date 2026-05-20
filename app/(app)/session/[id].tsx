@@ -31,6 +31,7 @@ import {
   type UserProgram,
 } from '@/lib/firestore';
 import { checkAndAdvanceProgram, computeRestSeconds, estimateOneRepMax } from '@/lib/programEngine';
+import { computeAndSaveWorkloadEntry } from '@/lib/pro';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { getExerciseById } from '@/data/exercises';
 import { useSession, formatRestMS } from '@/context/SessionContext';
@@ -277,6 +278,16 @@ export default function SessionScreen(): React.ReactElement {
         duration_minutes: duration,
         total_volume_kg: volume,
       });
+      const avgIntensity = computeAverageIntensityPercent(allSets, maxes);
+      await computeAndSaveWorkloadEntry(user.uid, {
+        sport: 'weightlifting',
+        date: state.session.date,
+        sessionType: 'training',
+        durationMinutes: duration,
+        totalVolumeTonnage: volume,
+        bodyweightKg: 75,
+        avgIntensityPercent: avgIntensity,
+      }).catch(() => undefined);
       if (program) {
         const completedSince = await countCompletedSessionsSince(user.uid, program.mesocycle_start);
         const sortedSessions: TrainingSession[] = Array.from(
@@ -416,6 +427,23 @@ function computeVolume(sets: CompletedSet[]): number {
   let total = 0;
   for (const s of sets) total += s.actual_weight_kg * s.actual_reps;
   return Math.round(total);
+}
+
+function computeAverageIntensityPercent(
+  sets: CompletedSet[],
+  maxes: ExerciseMax[],
+): number {
+  let weightedSum = 0;
+  let totalWeight = 0;
+  for (const s of sets) {
+    const max = maxes.find((m) => m.exercise_id === s.exercise_id);
+    if (!max || max.estimated_1rm <= 0 || s.actual_weight_kg <= 0) continue;
+    const pct = (s.actual_weight_kg / max.estimated_1rm) * 100;
+    const weight = s.actual_reps;
+    weightedSum += pct * weight;
+    totalWeight += weight;
+  }
+  return totalWeight > 0 ? weightedSum / totalWeight : 70;
 }
 
 async function detectAndApplyPR(

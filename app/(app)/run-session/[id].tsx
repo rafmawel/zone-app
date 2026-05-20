@@ -16,12 +16,14 @@ import { X } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
 import {
   completeRunSession,
+  getRunningProfile,
   getRunSession,
   type RunSession,
   type RunningSessionGPSPoint,
   type RunningSessionStepPlanned,
 } from '@/lib/firestore';
 import {
+  calculateVDOTPaces,
   formatElapsed,
   formatPace,
   formatPaceShort,
@@ -32,6 +34,7 @@ import {
   sessionRpe,
   type RunningSessionType,
 } from '@/lib/runningEngine';
+import { computeAndSaveWorkloadEntry } from '@/lib/pro';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { useSession, formatRestMS } from '@/context/SessionContext';
 import { colors } from '@/theme/colors';
@@ -335,6 +338,21 @@ export default function RunSessionScreen(): React.ReactElement {
         positions: gps.positions.length ? gps.positions : undefined,
         ...(rpe !== null ? { rpe } : {}),
       });
+      try {
+        const profile = await getRunningProfile(user.uid);
+        const thresholdPace =
+          profile && profile.vdot > 0 ? calculateVDOTPaces(profile.vdot).T : 300;
+        await computeAndSaveWorkloadEntry(user.uid, {
+          sport: 'running',
+          date: run.date,
+          sessionType: run.session_type,
+          durationSeconds: finalDur,
+          avgPaceSecPerKm: Math.round(avg),
+          thresholdPaceSecPerKm: thresholdPace,
+        });
+      } catch {
+        // workload save is best-effort
+      }
       endSession();
       router.replace('/(app)/');
     } catch {

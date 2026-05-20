@@ -22,6 +22,7 @@ export default function AppLayout(): React.ReactElement {
       <Stack.Screen name="muscle-maxes" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="hyrox-setup" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="hyrox-baseline" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="paywall" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
     </Stack>
   );
 }
