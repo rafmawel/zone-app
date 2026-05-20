@@ -357,8 +357,15 @@ export default function SessionScreen(): React.ReactElement {
       </View>
 
       <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12} activeOpacity={0.7}>
-          <X size={22} color={colors.text.muted} />
+        <TouchableOpacity
+          onPress={() => router.back()}
+          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Quitter la séance et revenir en arrière"
+          style={styles.closeBtn}
+        >
+          <X size={24} color={colors.text.primary} />
         </TouchableOpacity>
         <ZoneText variant="caption" color={colors.text.muted}>
           Exercice {exerciseIdx + 1}/{exercises.length}
@@ -440,6 +447,7 @@ function PRFlash({ pr }: { pr: ResultPR }): React.ReactElement {
     <Animated.View
       entering={FadeIn.duration(150)}
       exiting={FadeOut.duration(150)}
+      pointerEvents="none"
       style={styles.prOverlay}
     >
       <ZoneText variant="heading" style={styles.prTitle}>
@@ -816,12 +824,19 @@ const styles = StyleSheet.create({
   },
   zoneScoreText: { color: colors.text.primary, fontFamily: 'Inter-Bold', fontSize: 13 },
   headerRow: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingHorizontal: 16,
+    paddingTop: 8,
     paddingBottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  closeBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 22,
   },
   workWrap: { flex: 1, paddingHorizontal: 24 },
   exerciseName: { fontSize: 24, marginTop: 8, letterSpacing: 1, color: colors.text.primary },
