@@ -1,9 +1,9 @@
 import React, { forwardRef, useState } from 'react';
 import {
-  Pressable,
   StyleSheet,
   TextInput,
   type TextInputProps,
+  TouchableOpacity,
   View,
   type ViewStyle,
 } from 'react-native';
@@ -50,13 +50,18 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
         style={[styles.input, style]}
       />
       {togglePassword ? (
-        <Pressable onPress={() => setHidden((h) => !h)} hitSlop={12} style={styles.toggle}>
+        <TouchableOpacity
+          onPress={() => setHidden((h) => !h)}
+          hitSlop={12}
+          activeOpacity={0.7}
+          style={styles.toggle}
+        >
           {hidden ? (
             <Eye size={20} color={colors.text.secondary} />
           ) : (
             <EyeOff size={20} color={colors.text.secondary} />
           )}
-        </Pressable>
+        </TouchableOpacity>
       ) : null}
     </View>
   );

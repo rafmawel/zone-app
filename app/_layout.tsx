@@ -6,7 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import '../global.css';
 
 import { useAuth } from '@/hooks/useAuth';
@@ -15,6 +15,7 @@ import { colors } from '@/theme/colors';
 import { PulsingOrb } from '@/components/PulsingOrb';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { OnboardingProvider } from '@/context/OnboardingContext';
+import { SessionProvider } from '@/context/SessionContext';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -40,29 +41,25 @@ function RootNavigator(): React.ReactElement {
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    async function check(): Promise<void> {
-      if (!user) {
-        setOnboardingChecked(true);
-        setOnboardingCompleted(null);
-        return;
-      }
-      try {
-        const snap = await getDoc(doc(db, 'users', user.uid));
-        if (cancelled) return;
-        const data = snap.data();
-        setOnboardingCompleted(Boolean(data?.onboarding_completed));
-      } catch {
-        if (!cancelled) setOnboardingCompleted(false);
-      } finally {
-        if (!cancelled) setOnboardingChecked(true);
-      }
+    if (!user) {
+      setOnboardingCompleted(null);
+      setOnboardingChecked(true);
+      return;
     }
     setOnboardingChecked(false);
-    void check();
-    return () => {
-      cancelled = true;
-    };
+    const unsubscribe = onSnapshot(
+      doc(db, 'users', user.uid),
+      (snap) => {
+        const data = snap.data();
+        setOnboardingCompleted(Boolean(data?.onboarding_completed));
+        setOnboardingChecked(true);
+      },
+      () => {
+        setOnboardingCompleted(false);
+        setOnboardingChecked(true);
+      },
+    );
+    return unsubscribe;
   }, [user]);
 
   useEffect(() => {
@@ -111,8 +108,10 @@ export default function RootLayout(): React.ReactElement | null {
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
         <OnboardingProvider>
-          <StatusBar style="light" />
-          <RootNavigator />
+          <SessionProvider>
+            <StatusBar style="light" />
+            <RootNavigator />
+          </SessionProvider>
         </OnboardingProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

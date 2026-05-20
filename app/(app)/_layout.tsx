@@ -1,54 +1,27 @@
 import React from 'react';
-import { Tabs } from 'expo-router';
-import { Calendar, Dumbbell, Home, User } from 'lucide-react-native';
+import { Stack } from 'expo-router';
 import { colors } from '@/theme/colors';
 
 export default function AppLayout(): React.ReactElement {
   return (
-    <Tabs
+    <Stack
       screenOptions={{
         headerShown: false,
-        tabBarShowLabel: false,
-        tabBarActiveTintColor: colors.accent.gold,
-        tabBarInactiveTintColor: colors.text.muted,
-        tabBarStyle: {
-          backgroundColor: colors.bg.card,
-          borderTopWidth: 0.5,
-          borderTopColor: colors.border,
-          height: 64,
-          paddingTop: 8,
-          paddingBottom: 8,
-        },
+        contentStyle: { backgroundColor: colors.bg.primary },
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Accueil',
-          tabBarIcon: ({ color }) => <Home size={24} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="training"
-        options={{
-          title: 'Entraînement',
-          tabBarIcon: ({ color }) => <Dumbbell size={24} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="history"
-        options={{
-          title: 'Historique',
-          tabBarIcon: ({ color }) => <Calendar size={24} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profil',
-          tabBarIcon: ({ color }) => <User size={24} color={color} />,
-        }}
-      />
-    </Tabs>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="checkin" options={{ animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="exercise/[id]" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="maxes" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="session/[id]" options={{ animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="session-detail/[id]" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="running-setup" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="run-session/[id]" options={{ animation: 'none', gestureEnabled: true }} />
+      <Stack.Screen name="muscle-setup" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="muscle-maxes" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="hyrox-setup" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="hyrox-baseline" options={{ animation: 'slide_from_right' }} />
+    </Stack>
   );
 }

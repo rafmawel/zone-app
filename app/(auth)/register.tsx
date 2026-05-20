@@ -6,7 +6,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { Link, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
@@ -26,7 +26,7 @@ export default function RegisterScreen(): React.ReactElement {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const onSubmit = async (): Promise<void> => {
+  const handleSubmit = async (): Promise<void> => {
     setError(null);
     if (!email.trim() || !password || !confirm) {
       setError('Tous les champs sont requis.');
@@ -66,13 +66,14 @@ export default function RegisterScreen(): React.ReactElement {
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
           <AuthLogo />
           <ZoneText variant="heading" style={styles.title}>
             CRÉER UN COMPTE
           </ZoneText>
 
-          <View style={styles.form}>
+          <View style={styles.field}>
             <Input
               placeholder="Email"
               autoCapitalize="none"
@@ -81,6 +82,8 @@ export default function RegisterScreen(): React.ReactElement {
               value={email}
               onChangeText={setEmail}
             />
+          </View>
+          <View style={styles.field}>
             <Input
               placeholder="Mot de passe"
               autoCapitalize="none"
@@ -89,6 +92,8 @@ export default function RegisterScreen(): React.ReactElement {
               value={password}
               onChangeText={setPassword}
             />
+          </View>
+          <View style={styles.field}>
             <Input
               placeholder="Confirmer le mot de passe"
               autoCapitalize="none"
@@ -97,29 +102,30 @@ export default function RegisterScreen(): React.ReactElement {
               value={confirm}
               onChangeText={setConfirm}
             />
+          </View>
 
-            {error ? (
-              <ZoneText variant="caption" color={colors.danger} style={styles.error}>
-                {error}
-              </ZoneText>
-            ) : null}
+          {error ? (
+            <ZoneText variant="caption" color={colors.danger} style={styles.error}>
+              {error}
+            </ZoneText>
+          ) : null}
 
-            <Button title="Créer mon compte" loading={loading} onPress={onSubmit} />
+          <View style={styles.submit}>
+            <Button title="Créer mon compte" loading={loading} onPress={handleSubmit} />
           </View>
 
           <View style={styles.footer}>
             <ZoneText variant="caption" color={colors.text.secondary}>
               Déjà un compte ?{' '}
             </ZoneText>
-            <Link href="/(auth)/login">
-              <ZoneText
-                variant="caption"
-                color={colors.accent.gold}
-                style={{ fontFamily: 'Inter-Medium' }}
-              >
-                Se connecter
-              </ZoneText>
-            </Link>
+            <ZoneText
+              variant="caption"
+              color={colors.accent.gold}
+              style={styles.footerLink}
+              onPress={() => router.push('/(auth)/login')}
+            >
+              Se connecter
+            </ZoneText>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -137,12 +143,14 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     letterSpacing: 3,
   },
-  form: { gap: 12 },
-  error: { marginTop: 4, textAlign: 'center' },
+  field: { marginBottom: 12 },
+  error: { marginTop: 4, marginBottom: 8, textAlign: 'center' },
+  submit: { marginTop: 8 },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 32,
     alignItems: 'center',
   },
+  footerLink: { fontFamily: 'Inter-Medium' },
 });

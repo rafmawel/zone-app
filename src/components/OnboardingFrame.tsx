@@ -65,8 +65,8 @@ export function OnboardingFrame({
 }
 
 const styles = StyleSheet.create({
-  header: { paddingHorizontal: 24, paddingTop: 16, gap: 8 },
-  stepLabel: { fontFamily: 'Inter-Medium', letterSpacing: 1 },
+  header: { paddingHorizontal: 24, paddingTop: 16 },
+  stepLabel: { fontFamily: 'Inter-Medium', letterSpacing: 1, marginTop: 8 },
   scroll: { flex: 1 },
   content: { padding: 24, paddingBottom: 24 },
   title: { fontSize: 30, marginTop: 16, marginBottom: 8, color: colors.text.primary },
