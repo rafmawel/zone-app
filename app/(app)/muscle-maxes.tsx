@@ -181,12 +181,6 @@ export default function MuscleMaxesScreen(): React.ReactElement {
         <ZoneText variant="caption" color={colors.accent.gold} style={styles.eyebrow}>
           Exercice {stepIdx + 1}/{KEY_LIFTS.length}
         </ZoneText>
-        <ZoneText variant="heading" style={styles.heroTitle}>
-          TES CHARGES DE DÉPART
-        </ZoneText>
-        <ZoneText variant="caption" color={colors.text.secondary} style={styles.heroSubtitle}>
-          Estime tes charges pour les exercices clés. On calculera ton programme à partir de là.
-        </ZoneText>
         <View style={styles.dotsRow}>
           {KEY_LIFTS.map((_, i) => (
             <View
@@ -198,6 +192,17 @@ export default function MuscleMaxesScreen(): React.ReactElement {
             />
           ))}
         </View>
+        <ZoneText variant="heading" style={styles.liftName}>
+          {exercise ? exercise.name.toUpperCase() : ''}
+        </ZoneText>
+        <ZoneText
+          variant="caption"
+          color={colors.text.muted}
+          numberOfLines={2}
+          style={styles.heroSubtitle}
+        >
+          Estime tes charges pour les exercices clés. On calculera ton programme à partir de là.
+        </ZoneText>
       </View>
 
       <Animated.View
@@ -208,10 +213,6 @@ export default function MuscleMaxesScreen(): React.ReactElement {
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={{ flex: 1 }}>
-            <ZoneText variant="heading" style={styles.liftName}>
-              {exercise ? exercise.name.toUpperCase() : ''}
-            </ZoneText>
-
             <View style={styles.toggleRow}>
               <ToggleChip
                 label="Je connais ma charge"
@@ -411,14 +412,13 @@ function ToggleChip({
 
 const styles = StyleSheet.create({
   backRow: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 4 },
-  heroRow: { paddingHorizontal: 24, paddingTop: 4, paddingBottom: 12 },
+  heroRow: { paddingHorizontal: 24, paddingTop: 4, paddingBottom: 16 },
   eyebrow: { letterSpacing: 2, fontFamily: 'Inter-Medium' },
-  heroTitle: { fontSize: 24, marginTop: 4, letterSpacing: 1 },
-  heroSubtitle: { marginTop: 6, lineHeight: 18 },
-  dotsRow: { flexDirection: 'row', marginTop: 12 },
+  heroSubtitle: { marginTop: 8, fontSize: 13, lineHeight: 18 },
+  dotsRow: { flexDirection: 'row', marginTop: 8 },
   dot: { width: 22, height: 4, borderRadius: 2, marginRight: 6 },
   body: { flex: 1, paddingHorizontal: 24 },
-  liftName: { fontSize: 30, marginBottom: 14, color: colors.text.primary, letterSpacing: 1 },
+  liftName: { fontSize: 36, marginTop: 12, color: colors.text.primary, letterSpacing: 1 },
   toggleRow: { flexDirection: 'row', marginBottom: 12 },
   toggleChip: {
     borderWidth: 1,
