@@ -105,7 +105,7 @@ export default function ProfileScreen(): React.ReactElement {
   const email = user?.email ?? '';
   const memberSince = user?.metadata.creationTime
     ? frenchMonthYear(new Date(user.metadata.creationTime))
-    : '—';
+    : '-';
   const primarySport = sports[0];
 
   return (
@@ -134,7 +134,7 @@ export default function ProfileScreen(): React.ReactElement {
           ) : program ? (
             <View style={styles.programCard}>
               <ZoneText variant="heading" style={styles.programBlock}>
-                BLOC {program.current_block} — {getBlockName(program.current_block)}
+                BLOC {program.current_block} · {getBlockName(program.current_block)}
               </ZoneText>
               <View style={styles.weekRow}>
                 <ZoneText variant="caption" color={colors.text.muted}>
@@ -170,10 +170,10 @@ export default function ProfileScreen(): React.ReactElement {
             MES STATISTIQUES
           </ZoneText>
           <View style={styles.statsGrid}>
-            <StatTile label="Total séances" value={stats ? String(stats.totalSessions) : '—'} loading={!stats} />
-            <StatTile label="Volume total" value={stats ? formatVolume(stats.totalVolume) : '—'} loading={!stats} />
-            <StatTile label="Meilleur streak" value={stats ? `${stats.bestStreak} j` : '—'} loading={!stats} />
-            <StatTile label="Score moyen" value={stats ? String(stats.avgZoneScore || '—') : '—'} loading={!stats} />
+            <StatTile label="Total séances" value={stats ? String(stats.totalSessions) : '-'} loading={!stats} />
+            <StatTile label="Volume total" value={stats ? formatVolume(stats.totalVolume) : '-'} loading={!stats} />
+            <StatTile label="Meilleur streak" value={stats ? `${stats.bestStreak} j` : '-'} loading={!stats} />
+            <StatTile label="Score moyen" value={stats ? String(stats.avgZoneScore || '-') : '-'} loading={!stats} />
           </View>
         </View>
 
@@ -227,19 +227,19 @@ export default function ProfileScreen(): React.ReactElement {
           </ZoneText>
           <InfoRow
             label="Niveau"
-            value={profile?.level ? (LEVEL_LABEL[profile.level] ?? profile.level) : '—'}
+            value={profile?.level ? (LEVEL_LABEL[profile.level] ?? profile.level) : '-'}
           />
-          <InfoRow label="Objectif" value={primarySport?.goal ?? '—'} />
+          <InfoRow label="Objectif" value={primarySport?.goal ?? '-'} />
           <InfoRow
             label="Séances par semaine"
-            value={primarySport ? `${primarySport.sessions_per_week}` : '—'}
+            value={primarySport ? `${primarySport.sessions_per_week}` : '-'}
           />
           <InfoRow
             label="Source de données santé"
             value={
               profile?.health_data_source
                 ? (HEALTH_SOURCE_LABEL[profile.health_data_source] ?? profile.health_data_source)
-                : '—'
+                : '-'
             }
           />
         </View>

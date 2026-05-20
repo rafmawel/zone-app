@@ -96,7 +96,7 @@ export function vdotLevelLabel(vdot: number): string {
 }
 
 export function formatPace(secPerKm: number | null | undefined): string {
-  if (secPerKm === null || secPerKm === undefined || !Number.isFinite(secPerKm)) return '—';
+  if (secPerKm === null || secPerKm === undefined || !Number.isFinite(secPerKm)) return '-';
   const total = Math.max(0, Math.round(secPerKm));
   const m = Math.floor(total / 60);
   const s = total % 60;
@@ -104,7 +104,7 @@ export function formatPace(secPerKm: number | null | undefined): string {
 }
 
 export function formatPaceShort(secPerKm: number | null | undefined): string {
-  if (secPerKm === null || secPerKm === undefined || !Number.isFinite(secPerKm)) return '—';
+  if (secPerKm === null || secPerKm === undefined || !Number.isFinite(secPerKm)) return '-';
   const total = Math.max(0, Math.round(secPerKm));
   const m = Math.floor(total / 60);
   const s = total % 60;
@@ -140,7 +140,7 @@ const SESSION_PURPOSES: Record<RunningSessionType, string> = {
   SL: 'Endurance fondamentale longue, économie de course, mental.',
   TC: 'Élévation du seuil lactique en continu.',
   TB: 'Travail au seuil fractionné, plus accessible.',
-  IV: 'VO2max — adaptation cardiaque maximale.',
+  IV: 'VO2max. Adaptation cardiaque maximale.',
   RV: 'Économie de course, vitesse et neuromusculaire.',
   RA: 'Récupération active, circulation, élimination lactique.',
 };
@@ -319,7 +319,7 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
         steps.push(recoveryStep(workMin, paces.E_slow));
       }
       steps.push(cooldown(paces));
-      message = 'VO2max. Les premiers intervalles paraissent faciles — ne te grille pas.';
+      message = 'VO2max. Les premiers intervalles paraissent faciles, ne te grille pas.';
       break;
     }
     case 'RV': {
@@ -491,10 +491,10 @@ export function paceFeedback(
   if (context === 'work') {
     if (delta < -10) return '⬇️ Tu peux accélérer';
     if (delta <= 10) return '✓ Parfait';
-    if (delta <= 30) return '⬆️ Ralentis — préserve le prochain interval';
-    return '⚠️ Trop vite — tu hypothèques la séance';
+    if (delta <= 30) return '⬆️ Ralentis, préserve le prochain interval';
+    return '⚠️ Trop vite, tu hypothèques la séance';
   }
-  if (delta < -30) return '⬇️ Ralentis — tu grilles de l’énergie précieuse';
+  if (delta < -30) return '⬇️ Ralentis, tu grilles de l’énergie précieuse';
   if (delta <= 20) return '✓ Bonne allure';
   return '⬆️ Accélère légèrement';
 }

@@ -301,7 +301,7 @@ export default function SessionScreen(): React.ReactElement {
       <SafeScreen>
         <View style={styles.center}>
           <ZoneText variant="body" color={colors.text.muted}>
-            Chargement…
+            Chargement en cours
           </ZoneText>
         </View>
       </SafeScreen>
@@ -328,7 +328,7 @@ export default function SessionScreen(): React.ReactElement {
       <SummaryView
         accentColor={accentColor}
         zoneScore={zoneScore}
-        zoneLabel={zoneLevel?.label ?? '—'}
+        zoneLabel={zoneLevel?.label ?? '-'}
         duration={summary.duration}
         volume={summary.volume}
         prs={summary.prs}
@@ -518,7 +518,7 @@ function WorkView({
         </View>
         <View style={styles.targetMain}>
           <ZoneText variant="heading" style={styles.targetWeight}>
-            {plannedSet.target_weight_kg ?? '—'}
+            {plannedSet.target_weight_kg ?? '-'}
           </ZoneText>
           <ZoneText variant="caption" color={colors.text.muted}>
             kg

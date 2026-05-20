@@ -241,7 +241,7 @@ export default function MaxesScreen(): React.ReactElement {
                 color={colors.text.muted}
                 style={styles.estimateHint}
               >
-                Estimation basée sur ton niveau — ajuste si besoin
+                Estimation basée sur ton niveau, ajuste si besoin
               </ZoneText>
             ) : null}
 

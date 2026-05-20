@@ -292,7 +292,7 @@ function PaceStep({
         QUELLE EST TON ALLURE DE RÉFÉRENCE ?
       </ZoneText>
       <ZoneText variant="body" color={colors.text.secondary} style={styles.subtitle}>
-        L’allure où tu peux tenir une conversation complète — pas juste 3 mots.
+        L’allure où tu peux tenir une conversation complète, pas juste 3 mots.
       </ZoneText>
 
       <View style={styles.pacePickerCard}>
@@ -365,7 +365,7 @@ function PaceStep({
           {formatPace(paceSec)}
         </ZoneText>
         <ZoneText variant="caption" color={colors.text.muted} style={styles.vdotLine}>
-          VDOT estimé : {vdot} — Niveau {vdotLevelLabel(vdot).toLowerCase()}
+          VDOT estimé : {vdot} · Niveau {vdotLevelLabel(vdot).toLowerCase()}
         </ZoneText>
       </View>
 
@@ -421,7 +421,7 @@ function ReferenceStep({
         AS-TU UNE PERFORMANCE RÉCENTE ?
       </ZoneText>
       <ZoneText variant="body" color={colors.text.secondary} style={styles.subtitle}>
-        Optionnel — ça nous permet de calibrer ton VDOT plus précisément.
+        Optionnel. Ça nous permet de calibrer ton VDOT plus précisément.
       </ZoneText>
 
       <View style={styles.toggleRow}>

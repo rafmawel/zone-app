@@ -171,7 +171,7 @@ export default function SessionDetailScreen(): React.ReactElement {
             {zoneLevel ? (
               <View style={[styles.zoneCard, { borderLeftColor: accentColor }]}>
                 <ZoneText variant="label" style={[styles.zoneCardTitle, { color: accentColor }]}>
-                  Score Zone au départ : {zoneScore} — {zoneLevel.label}
+                  Score Zone au départ : {zoneScore} · {zoneLevel.label}
                 </ZoneText>
                 {session.zone_message ? (
                   <ZoneText variant="caption" color={colors.text.secondary} style={styles.zoneMessage}>
@@ -264,7 +264,7 @@ function ExerciseSection({
               <ZoneText
                 style={[styles.cell, styles.colRpe, { color: colors.text.secondary }]}
               >
-                {s.rpe ?? '—'}
+                {s.rpe ?? '-'}
               </ZoneText>
               <ZoneText style={[styles.cell, styles.colFlag]}>{isPR ? '🏆' : ''}</ZoneText>
             </View>

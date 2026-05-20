@@ -37,7 +37,7 @@ export default function Step5Screen(): React.ReactElement {
         <SelectableCard
           title={
             healthConnect
-              ? 'Android Health Connect — Connecté'
+              ? 'Android Health Connect · Connecté'
               : 'Connecter Android Health Connect'
           }
           subtitle="Synchronisation automatique."

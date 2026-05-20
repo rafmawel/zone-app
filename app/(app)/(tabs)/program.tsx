@@ -55,7 +55,7 @@ function bannerForScore(score: number | null): ZoneBanner | null {
     return {
       border: colors.orbe.amber,
       message:
-        "🟡 Conditions limitées. Un entraînement léger peut aider — évite l'intensité.",
+        "🟡 Conditions limitées. Un entraînement léger peut aider, mais évite l'intensité.",
     };
   }
   if (score <= 75) {
@@ -267,7 +267,7 @@ export default function ProgramScreen(): React.ReactElement {
               </ZoneText>
             </View>
             <ZoneText variant="heading" style={styles.programBlock}>
-              BLOC {program.current_block} — {getBlockName(program.current_block)}
+              BLOC {program.current_block} · {getBlockName(program.current_block)}
             </ZoneText>
             <View style={styles.weekDots}>
               {[1, 2, 3, 4].map((w) => (
@@ -429,7 +429,7 @@ function RunningProgramBody({
   return (
     <>
       <ZoneText variant="heading" style={styles.programBlock}>
-        BLOC 1 — ACCUMULATION
+        BLOC 1 · ACCUMULATION
       </ZoneText>
       <ZoneText variant="caption" color={colors.text.muted} style={styles.programIntro}>
         {profile.sessions_per_week}× / semaine · objectif {profile.goal}

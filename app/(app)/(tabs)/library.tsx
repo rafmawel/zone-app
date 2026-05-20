@@ -45,7 +45,7 @@ function bannerForScore(score: number | null): ZoneBanner | null {
     return {
       border: colors.orbe.amber,
       message:
-        "🟡 Conditions limitées. Un entraînement léger peut aider — évite l'intensité.",
+        "🟡 Conditions limitées. Un entraînement léger peut aider, mais évite l'intensité.",
     };
   }
   if (score <= 75) {

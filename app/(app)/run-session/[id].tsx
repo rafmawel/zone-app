@@ -347,7 +347,7 @@ export default function RunSessionScreen(): React.ReactElement {
       <SafeScreen>
         <View style={styles.center}>
           <ZoneText variant="body" color={colors.text.muted}>
-            Chargement…
+            Chargement en cours
           </ZoneText>
         </View>
       </SafeScreen>
@@ -600,11 +600,11 @@ function SteadyView({
         <MetricCell label="DISTANCE" value={`${distance.toFixed(2)} km`} />
         <MetricCell
           label="ALLURE"
-          value={currentPace > 0 ? formatPaceShort(currentPace) : '—'}
+          value={currentPace > 0 ? formatPaceShort(currentPace) : '-'}
         />
         <MetricCell
           label="MOY"
-          value={avgPace > 0 ? formatPaceShort(avgPace) : '—'}
+          value={avgPace > 0 ? formatPaceShort(avgPace) : '-'}
         />
       </View>
 
@@ -737,7 +737,7 @@ function IntervalView({
       </View>
 
       <ZoneText variant="caption" color={colors.text.muted} style={styles.currentPaceLine}>
-        Allure actuelle : {currentPace > 0 ? formatPaceShort(currentPace) : '—'}
+        Allure actuelle : {currentPace > 0 ? formatPaceShort(currentPace) : '-'}
       </ZoneText>
       {feedback ? (
         <ZoneText style={[styles.feedback, { color: accentColor }]}>{feedback}</ZoneText>

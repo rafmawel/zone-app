@@ -625,7 +625,7 @@ export const EXERCISES: Exercise[] = [
       "Verrouillage debout",
     ],
     feeling:
-      "Engagement total — jambes qui poussent, dos engagé, fessiers qui terminent.",
+      "Engagement total. Jambes qui poussent, dos engagé, fessiers qui terminent.",
     common_errors: [
       "Dos arrondi",
       "Barre qui s'éloigne",

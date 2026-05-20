@@ -53,7 +53,7 @@ function bannerForScore(score: number | null): ZoneBanner {
     return {
       border: colors.orbe.amber,
       message:
-        "🟡 Conditions limitées. Un entraînement léger peut aider — évite l'intensité.",
+        "🟡 Conditions limitées. Un entraînement léger peut aider, mais évite l'intensité.",
     };
   }
   if (score <= 75) {
@@ -146,7 +146,7 @@ export default function HistoryScreen(): React.ReactElement {
 
         <View style={styles.section}>
           <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
-            SCORE ZONE — 7 JOURS
+            SCORE ZONE · 7 JOURS
           </ZoneText>
           <View style={styles.chartCard} onLayout={onChartLayout}>
             {chartWidth > 0 && checkins ? (
@@ -162,10 +162,10 @@ export default function HistoryScreen(): React.ReactElement {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.statsRow}
         >
-          <StatCard label="Séances" value={stats ? String(stats.totalSessions) : '—'} loading={!stats} />
-          <StatCard label="Volume total" value={stats ? formatVolume(stats.totalVolume) : '—'} loading={!stats} />
-          <StatCard label="Meilleur streak" value={stats ? `${stats.bestStreak} j` : '—'} loading={!stats} />
-          <StatCard label="Score moyen" value={stats ? String(stats.avgZoneScore || '—') : '—'} loading={!stats} />
+          <StatCard label="Séances" value={stats ? String(stats.totalSessions) : '-'} loading={!stats} />
+          <StatCard label="Volume total" value={stats ? formatVolume(stats.totalVolume) : '-'} loading={!stats} />
+          <StatCard label="Meilleur streak" value={stats ? `${stats.bestStreak} j` : '-'} loading={!stats} />
+          <StatCard label="Score moyen" value={stats ? String(stats.avgZoneScore || '-') : '-'} loading={!stats} />
           {runs && runs.length > 0 ? (
             <>
               <StatCard

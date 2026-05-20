@@ -82,7 +82,7 @@ export function adaptToZoneScore(zoneScore: number | null): ZoneAdaptation {
   return {
     weightMultiplier: 1,
     setsDelta: 0,
-    message: 'Tu es dans la zone. Conditions optimales — on peut pousser.',
+    message: 'Tu es dans la zone. Conditions optimales. On peut pousser.',
     canPush: true,
   };
 }
