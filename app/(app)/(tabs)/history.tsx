@@ -12,6 +12,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import {
   getAllTimeStats,
+  getCompletedRuns,
   getCompletedSessions,
   getExerciseMaxes,
   getLatestCheckins,
@@ -19,8 +20,10 @@ import {
   type AllTimeStats,
   type DailyCheckin,
   type ExerciseMax,
+  type RunSession,
   type TrainingSession,
 } from '@/lib/firestore';
+import { formatPaceShort, sessionName, type RunningSessionType } from '@/lib/runningEngine';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { getExerciseById } from '@/data/exercises';
 import { colors } from '@/theme/colors';
@@ -79,6 +82,7 @@ export default function HistoryScreen(): React.ReactElement {
   const [sessions, setSessions] = useState<TrainingSession[] | null>(null);
   const [maxes, setMaxes] = useState<ExerciseMax[] | null>(null);
   const [stats, setStats] = useState<AllTimeStats | null>(null);
+  const [runs, setRuns] = useState<RunSession[] | null>(null);
   const [chartWidth, setChartWidth] = useState<number>(0);
 
   useEffect(() => {
@@ -97,7 +101,7 @@ export default function HistoryScreen(): React.ReactElement {
   const loadAll = useCallback(async (): Promise<void> => {
     const user = auth.currentUser;
     if (!user) return;
-    const [c, s, m, st] = await Promise.all([
+    const [c, s, m, st, r] = await Promise.all([
       getLatestCheckins(user.uid, 14).catch(() => [] as DailyCheckin[]),
       getCompletedSessions(user.uid).catch(() => [] as TrainingSession[]),
       getExerciseMaxes(user.uid).catch(() => [] as ExerciseMax[]),
@@ -105,11 +109,13 @@ export default function HistoryScreen(): React.ReactElement {
         () =>
           ({ totalSessions: 0, totalVolume: 0, bestStreak: 0, avgZoneScore: 0 }) as AllTimeStats,
       ),
+      getCompletedRuns(user.uid, 30).catch(() => [] as RunSession[]),
     ]);
     setCheckins(c);
     setSessions(s);
     setMaxes(m);
     setStats(st);
+    setRuns(r);
   }, []);
 
   useFocusEffect(
@@ -160,6 +166,23 @@ export default function HistoryScreen(): React.ReactElement {
           <StatCard label="Volume total" value={stats ? formatVolume(stats.totalVolume) : '—'} loading={!stats} />
           <StatCard label="Meilleur streak" value={stats ? `${stats.bestStreak} j` : '—'} loading={!stats} />
           <StatCard label="Score moyen" value={stats ? String(stats.avgZoneScore || '—') : '—'} loading={!stats} />
+          {runs && runs.length > 0 ? (
+            <>
+              <StatCard
+                label="Distance totale"
+                value={`${runs.reduce((acc, r) => acc + (r.actual_distance_km ?? 0), 0).toFixed(1)} km`}
+                loading={false}
+              />
+              <StatCard
+                label="Allure moy."
+                value={formatPaceShort(
+                  runs.reduce((acc, r) => acc + (r.avg_pace_sec_per_km ?? 0), 0) /
+                    Math.max(1, runs.length),
+                )}
+                loading={false}
+              />
+            </>
+          ) : null}
         </ScrollView>
 
         <View style={styles.section}>
@@ -185,6 +208,22 @@ export default function HistoryScreen(): React.ReactElement {
             ))
           )}
         </View>
+
+        {runs && runs.length > 0 ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <ZoneText variant="heading" style={styles.sectionTitle}>
+                MES SORTIES
+              </ZoneText>
+              <ZoneText variant="caption" color={colors.text.muted}>
+                {runs.length}
+              </ZoneText>
+            </View>
+            {runs.map((r) => (
+              <RunRow key={r.id} run={r} />
+            ))}
+          </View>
+        ) : null}
 
         <View style={styles.section}>
           <ZoneText variant="heading" style={styles.sectionTitle}>
@@ -266,6 +305,45 @@ function SessionRow({
       </View>
       <ChevronRight size={16} color={colors.text.muted} />
     </TouchableOpacity>
+  );
+}
+
+function runTypeColor(t: RunningSessionType): string {
+  switch (t) {
+    case 'EF':
+      return colors.text.muted;
+    case 'SL':
+      return colors.orbe.blue;
+    case 'TC':
+    case 'TB':
+      return colors.orbe.amber;
+    case 'IV':
+      return colors.orbe.red;
+    case 'RV':
+      return '#B074F0';
+    case 'RA':
+      return colors.success;
+  }
+}
+
+function RunRow({ run }: { run: RunSession }): React.ReactElement {
+  const color = runTypeColor(run.session_type);
+  return (
+    <View style={[styles.sessionCard, { borderLeftColor: color }]}>
+      <View style={styles.sessionMain}>
+        <View style={styles.sessionRow}>
+          <ZoneText variant="label" color={colors.accent.gold} style={styles.sessionDate}>
+            {frenchShortDate(run.date)}
+          </ZoneText>
+          <View style={[styles.scoreBubble, { backgroundColor: color }]}>
+            <ZoneText style={styles.scoreBubbleText}>{run.session_type}</ZoneText>
+          </View>
+        </View>
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.runMeta}>
+          {sessionName(run.session_type)} · {(run.actual_distance_km ?? 0).toFixed(2)} km · {formatPaceShort(run.avg_pace_sec_per_km ?? 0)} /km · {Math.round((run.actual_duration_seconds ?? 0) / 60)} min
+        </ZoneText>
+      </View>
+    </View>
   );
 }
 
@@ -364,6 +442,7 @@ const styles = StyleSheet.create({
   scoreBubbleText: { color: colors.bg.primary, fontFamily: 'Inter-Bold', fontSize: 11 },
   sessionMetaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   sessionMetaText: { fontSize: 11, marginLeft: 4 },
+  runMeta: { fontSize: 11, marginTop: 4 },
   prCard: {
     flexDirection: 'row',
     alignItems: 'center',

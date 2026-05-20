@@ -137,6 +137,56 @@ export interface ExerciseMax {
   is_pr: boolean;
 }
 
+export type RunningRaceDistance = '5km' | '10km' | 'semi' | 'marathon';
+export type RunningSessionType = 'EF' | 'SL' | 'TC' | 'TB' | 'IV' | 'RV' | 'RA';
+export type RunningSessionStatus = 'planned' | 'completed' | 'skipped';
+export type LongRunPreference = 'samedi' | 'dimanche' | 'flexible';
+
+export interface RunningProfile {
+  vdot: number;
+  easy_pace_sec_per_km: number;
+  goal: string;
+  reference_distance: RunningRaceDistance | null;
+  reference_time_seconds: number | null;
+  sessions_per_week: number;
+  target_race_date: string | null;
+  long_run_pref: LongRunPreference;
+  updated_at: Timestamp | null;
+}
+
+export interface RunningSessionStepPlanned {
+  kind: 'warmup' | 'cooldown' | 'work' | 'recovery' | 'steady';
+  label: string;
+  duration_seconds: number | null;
+  target_pace_sec_per_km: number | null;
+  distance_meters: number | null;
+}
+
+export interface RunningSessionGPSPoint {
+  lat: number;
+  lng: number;
+  ts: number;
+}
+
+export interface RunSession {
+  id: string;
+  date: string;
+  status: RunningSessionStatus;
+  session_type: RunningSessionType;
+  steps: RunningSessionStepPlanned[];
+  estimated_duration_min: number;
+  estimated_distance_km: number;
+  zone_score_at_start: number | null;
+  zone_message: string | null;
+  rpe?: number;
+  actual_duration_seconds?: number;
+  actual_distance_km?: number;
+  avg_pace_sec_per_km?: number;
+  positions?: RunningSessionGPSPoint[];
+  created_at: Timestamp | null;
+  completed_at?: Timestamp | null;
+}
+
 export function todayDateString(d: Date = new Date()): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -439,5 +489,110 @@ export async function getDaysSinceLastSession(uid: string): Promise<number> {
     return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
   } catch {
     return 2;
+  }
+}
+
+export async function saveRunningProfile(uid: string, profile: Omit<RunningProfile, 'updated_at'>): Promise<void> {
+  await setDoc(doc(db, 'users', uid, 'state', 'running_profile'), {
+    ...profile,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function getRunningProfile(uid: string): Promise<RunningProfile | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'running_profile'));
+  if (!snap.exists()) return null;
+  return snap.data() as RunningProfile;
+}
+
+export async function updateVDOT(uid: string, newVDOT: number): Promise<void> {
+  await updateDoc(doc(db, 'users', uid, 'state', 'running_profile'), {
+    vdot: newVDOT,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export interface CreateRunSessionInput {
+  date: string;
+  session_type: RunningSessionType;
+  steps: RunningSessionStepPlanned[];
+  estimated_duration_min: number;
+  estimated_distance_km: number;
+  zone_score_at_start: number | null;
+  zone_message: string | null;
+}
+
+export async function createRunSession(uid: string, input: CreateRunSessionInput): Promise<string> {
+  const ref = doc(collection(db, 'users', uid, 'runs'));
+  await setDoc(ref, {
+    id: ref.id,
+    status: 'planned',
+    ...input,
+    created_at: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function getRunSession(uid: string, runId: string): Promise<RunSession | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'runs', runId));
+  if (!snap.exists()) return null;
+  return snap.data() as RunSession;
+}
+
+export interface CompleteRunInput {
+  duration_seconds: number;
+  distance_km: number;
+  avg_pace_sec_per_km: number;
+  positions?: RunningSessionGPSPoint[];
+  rpe?: number;
+}
+
+export async function completeRunSession(
+  uid: string,
+  runId: string,
+  input: CompleteRunInput,
+): Promise<void> {
+  await updateDoc(doc(db, 'users', uid, 'runs', runId), {
+    status: 'completed',
+    completed_at: serverTimestamp(),
+    actual_duration_seconds: input.duration_seconds,
+    actual_distance_km: input.distance_km,
+    avg_pace_sec_per_km: input.avg_pace_sec_per_km,
+    ...(input.rpe !== undefined ? { rpe: input.rpe } : {}),
+    ...(input.positions ? { positions: input.positions } : {}),
+  });
+}
+
+export async function getCompletedRuns(uid: string, max: number): Promise<RunSession[]> {
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, 'users', uid, 'runs'),
+        where('status', '==', 'completed'),
+        orderBy('date', 'desc'),
+        limit(max),
+      ),
+    );
+    return snap.docs.map((d) => d.data() as RunSession);
+  } catch {
+    return [];
+  }
+}
+
+export async function getUpcomingRuns(uid: string, max: number): Promise<RunSession[]> {
+  try {
+    const today = todayDateString();
+    const snap = await getDocs(
+      query(
+        collection(db, 'users', uid, 'runs'),
+        where('status', '==', 'planned'),
+        where('date', '>=', today),
+        orderBy('date', 'asc'),
+        limit(max),
+      ),
+    );
+    return snap.docs.map((d) => d.data() as RunSession);
+  } catch {
+    return [];
   }
 }

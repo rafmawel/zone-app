@@ -13,13 +13,25 @@ import {
 import { auth, db } from '@/lib/firebase';
 import {
   createPlannedSession,
+  createRunSession,
   getExerciseMaxes,
   todayDateString,
   type DailyCheckin,
+  type RunningProfile,
   type TrainingSession,
   type UserProgram,
 } from '@/lib/firestore';
 import { generateWeeklySession, getBlockName } from '@/lib/programEngine';
+import {
+  buildSessionPlan,
+  calculateVDOTPaces,
+  formatPace,
+  getWeeklyDistribution,
+  sessionName,
+  type ProgramBlockRunning,
+  type RunningSessionType,
+  type WeekIndexRunning,
+} from '@/lib/runningEngine';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
@@ -66,6 +78,9 @@ export default function ProgramScreen(): React.ReactElement {
   const [programLoaded, setProgramLoaded] = useState<boolean>(false);
   const [upcoming, setUpcoming] = useState<TrainingSession[]>([]);
   const [generating, setGenerating] = useState<boolean>(false);
+  const [runningProfile, setRunningProfile] = useState<RunningProfile | null>(null);
+  const [runningLoaded, setRunningLoaded] = useState<boolean>(false);
+  const [generatingRun, setGeneratingRun] = useState<boolean>(false);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -118,6 +133,68 @@ export default function ProgramScreen(): React.ReactElement {
     );
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) {
+      setRunningLoaded(true);
+      return;
+    }
+    const unsubscribe = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'running_profile'),
+      (snap) => {
+        setRunningProfile(snap.exists() ? (snap.data() as RunningProfile) : null);
+        setRunningLoaded(true);
+      },
+      () => setRunningLoaded(true),
+    );
+    return unsubscribe;
+  }, []);
+
+  const onStartRun = async (): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user || !runningProfile) return;
+    setGeneratingRun(true);
+    try {
+      const paces = calculateVDOTPaces(runningProfile.vdot);
+      const block: ProgramBlockRunning = 1;
+      const week: WeekIndexRunning = 1;
+      const today = new Date();
+      const dayIdx = (today.getDay() + 6) % 7;
+      const weeklyPlan = getWeeklyDistribution(runningProfile.sessions_per_week, block, week);
+      const todayItem = weeklyPlan.items.find((i) => i.dayIndex === dayIdx);
+      let type: RunningSessionType =
+        todayItem && todayItem.type !== 'REST' ? todayItem.type : 'EF';
+      if (score !== null && score <= 30) type = 'RA';
+      const level =
+        runningProfile.vdot < 35
+          ? 'beginner'
+          : runningProfile.vdot < 55
+            ? 'intermediate'
+            : 'advanced';
+      const plan = buildSessionPlan({ type, paces, level, block, week });
+      const id = await createRunSession(user.uid, {
+        date: todayDateString(),
+        session_type: plan.type,
+        steps: plan.steps.map((s) => ({
+          kind: s.kind,
+          label: s.label,
+          duration_seconds: s.durationSeconds,
+          target_pace_sec_per_km: s.targetPaceSecPerKm,
+          distance_meters: s.distanceMeters,
+        })),
+        estimated_duration_min: plan.estimatedDurationMin,
+        estimated_distance_km: plan.estimatedDistanceKm,
+        zone_score_at_start: score,
+        zone_message: plan.message,
+      });
+      router.push(`/(app)/run-session/${id}`);
+    } catch {
+      // surfaced via no-op
+    } finally {
+      setGeneratingRun(false);
+    }
+  };
 
   const banner = bannerForScore(score);
   const todayPlanned = useMemo(
@@ -247,6 +324,53 @@ export default function ProgramScreen(): React.ReactElement {
           </View>
         )}
 
+        {runningLoaded ? (
+          <View style={styles.runningCard}>
+            <View style={styles.programHeader}>
+              <ZoneText
+                variant="caption"
+                color={colors.text.muted}
+                style={styles.programEyebrow}
+              >
+                PROGRAMME COURSE
+              </ZoneText>
+              {runningProfile ? (
+                <ZoneText variant="caption" color={colors.accent.gold}>
+                  VDOT {runningProfile.vdot}
+                </ZoneText>
+              ) : null}
+            </View>
+            {runningProfile ? (
+              <RunningProgramBody
+                profile={runningProfile}
+                loading={generatingRun}
+                onStart={onStartRun}
+              />
+            ) : (
+              <>
+                <ZoneText variant="heading" style={styles.programBlock}>
+                  ACTIVER LE MODULE COURSE
+                </ZoneText>
+                <ZoneText
+                  variant="body"
+                  color={colors.text.secondary}
+                  style={styles.programIntro}
+                >
+                  Estime ton allure de référence pour générer un plan
+                  scientifiquement structuré (VDOT + 80/20).
+                </ZoneText>
+                <View style={styles.programCta}>
+                  <Button
+                    title="Configurer la course"
+                    variant="secondary"
+                    onPress={() => router.push('/(app)/running-setup')}
+                  />
+                </View>
+              </>
+            )}
+          </View>
+        ) : null}
+
         <View style={styles.upcomingHeader}>
           <ZoneText variant="caption" color={colors.text.muted} style={styles.upcomingEyebrow}>
             PROCHAINES SÉANCES
@@ -282,6 +406,95 @@ export default function ProgramScreen(): React.ReactElement {
         )}
       </ScrollView>
     </SafeScreen>
+  );
+}
+
+function RunningProgramBody({
+  profile,
+  loading,
+  onStart,
+}: {
+  profile: RunningProfile;
+  loading: boolean;
+  onStart: () => void;
+}): React.ReactElement {
+  const router = useRouter();
+  const paces = useMemo(() => calculateVDOTPaces(profile.vdot), [profile.vdot]);
+  const today = new Date();
+  const dayIdx = (today.getDay() + 6) % 7;
+  const weekly = getWeeklyDistribution(profile.sessions_per_week, 1, 1);
+  const todayItem = weekly.items.find((i) => i.dayIndex === dayIdx);
+  const todayType: RunningSessionType | 'REST' = todayItem ? todayItem.type : 'EF';
+
+  return (
+    <>
+      <ZoneText variant="heading" style={styles.programBlock}>
+        BLOC 1 — ACCUMULATION
+      </ZoneText>
+      <ZoneText variant="caption" color={colors.text.muted} style={styles.programIntro}>
+        {profile.sessions_per_week}× / semaine · objectif {profile.goal}
+      </ZoneText>
+
+      <View style={styles.weekDotsRow}>
+        {weekly.items.map((item) => {
+          const isToday = item.dayIndex === dayIdx;
+          const color =
+            item.type === 'REST'
+              ? colors.border
+              : item.type === 'EF' || item.type === 'SL' || item.type === 'RA'
+                ? colors.orbe.blue
+                : colors.accent.gold;
+          return (
+            <View
+              key={item.dayIndex}
+              style={[
+                styles.weekDay,
+                {
+                  backgroundColor: color,
+                  borderColor: isToday ? colors.accent.gold : 'transparent',
+                  borderWidth: isToday ? 2 : 0,
+                },
+              ]}
+            />
+          );
+        })}
+      </View>
+
+      <View style={styles.todayBox}>
+        <ZoneText
+          variant="caption"
+          color={colors.text.muted}
+          style={styles.programEyebrow}
+        >
+          AUJOURD’HUI
+        </ZoneText>
+        <ZoneText variant="label" style={styles.todayName}>
+          {todayType === 'REST' ? 'REPOS' : sessionName(todayType)}
+        </ZoneText>
+        {todayType !== 'REST' ? (
+          <ZoneText variant="caption" color={colors.text.secondary} style={styles.todayMeta}>
+            Cible E {formatPace(paces.E_fast)} · T {formatPace(paces.T)}
+          </ZoneText>
+        ) : null}
+      </View>
+
+      <View style={styles.programCta}>
+        <Button
+          title={todayType === 'REST' ? 'Sortie facultative' : 'Voir ma sortie'}
+          loading={loading}
+          onPress={onStart}
+        />
+      </View>
+      <TouchableOpacity
+        onPress={() => router.push('/(app)/running-setup')}
+        activeOpacity={0.7}
+        style={styles.recalcRow}
+      >
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.recalcText}>
+          Recalibrer ma course
+        </ZoneText>
+      </TouchableOpacity>
+    </>
   );
 }
 
@@ -345,6 +558,20 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   recalcText: { marginLeft: 6, fontSize: 12 },
+  runningCard: {
+    marginHorizontal: 24,
+    marginTop: 12,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 16,
+  },
+  weekDotsRow: { flexDirection: 'row', marginTop: 12 },
+  weekDay: { width: 24, height: 8, borderRadius: 4, marginRight: 4 },
+  todayBox: { marginTop: 14 },
+  todayName: { color: colors.text.primary, fontSize: 16, marginTop: 4 },
+  todayMeta: { fontSize: 12, marginTop: 2 },
   upcomingHeader: { paddingHorizontal: 24, marginTop: 20, marginBottom: 8 },
   upcomingEyebrow: { letterSpacing: 2, fontSize: 11 },
   upcomingEmpty: {
