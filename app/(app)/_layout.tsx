@@ -49,6 +49,13 @@ export default function AppLayout(): React.ReactElement {
           tabBarIcon: ({ color }) => <User size={24} color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="checkin"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
     </Tabs>
   );
 }

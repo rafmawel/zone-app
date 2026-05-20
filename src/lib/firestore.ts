@@ -3,8 +3,13 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
+  orderBy,
+  query,
+  serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   type Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -51,6 +56,37 @@ export interface UserSport {
   target_race?: string;
 }
 
+export interface DailyCheckin {
+  date: string;
+  sleep_duration: number;
+  sleep_quality: number;
+  feeling: number;
+  muscle_soreness: number;
+  stress: number;
+  created_at: Timestamp | null;
+  zone_score: number;
+}
+
+export type TrainingSessionSport = 'weightlifting' | 'running';
+export type TrainingSessionStatus = 'planned' | 'completed' | 'skipped';
+
+export interface TrainingSession {
+  id: string;
+  date: string;
+  sport_key: TrainingSessionSport;
+  status: TrainingSessionStatus;
+  rpe?: number;
+  duration_minutes?: number;
+  created_at: Timestamp | null;
+}
+
+export function todayDateString(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const snap = await getDoc(doc(db, 'users', uid));
   if (!snap.exists()) return null;
@@ -75,4 +111,79 @@ export async function setUserSport(
   data: UserSport,
 ): Promise<void> {
   await setDoc(doc(db, 'users', uid, 'sports', sportKey), data);
+}
+
+export async function getTodayCheckin(uid: string): Promise<DailyCheckin | null> {
+  const date = todayDateString();
+  const snap = await getDoc(doc(db, 'users', uid, 'checkins', date));
+  if (!snap.exists()) return null;
+  return snap.data() as DailyCheckin;
+}
+
+export interface SaveCheckinInput {
+  date: string;
+  sleep_duration: number;
+  sleep_quality: number;
+  feeling: number;
+  muscle_soreness: number;
+  stress: number;
+  zone_score: number;
+}
+
+export async function saveCheckin(uid: string, input: SaveCheckinInput): Promise<void> {
+  await setDoc(doc(db, 'users', uid, 'checkins', input.date), {
+    ...input,
+    created_at: serverTimestamp(),
+  });
+}
+
+export async function getLatestCheckins(uid: string, max: number): Promise<DailyCheckin[]> {
+  const q = query(
+    collection(db, 'users', uid, 'checkins'),
+    orderBy('date', 'desc'),
+    limit(max),
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => d.data() as DailyCheckin);
+}
+
+export async function getUpcomingSessions(
+  uid: string,
+  max: number,
+): Promise<TrainingSession[]> {
+  const today = todayDateString();
+  const q = query(
+    collection(db, 'users', uid, 'sessions'),
+    where('date', '>=', today),
+    where('status', '==', 'planned'),
+    orderBy('date', 'asc'),
+    limit(max),
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => d.data() as TrainingSession);
+}
+
+export async function getTodayZoneScore(uid: string): Promise<number> {
+  const ci = await getTodayCheckin(uid);
+  return ci?.zone_score ?? 50;
+}
+
+export async function getDaysSinceLastSession(uid: string): Promise<number> {
+  const q = query(
+    collection(db, 'users', uid, 'sessions'),
+    where('status', '==', 'completed'),
+    orderBy('date', 'desc'),
+    limit(1),
+  );
+  try {
+    const snap = await getDocs(q);
+    if (snap.empty) return 2;
+    const last = snap.docs[0].data() as TrainingSession;
+    const lastDate = new Date(last.date);
+    const today = new Date();
+    const diffMs = today.getTime() - lastDate.getTime();
+    return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+  } catch {
+    return 2;
+  }
 }
