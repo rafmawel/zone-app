@@ -1,10 +1,8 @@
 import React from 'react';
 import {
   ActivityIndicator,
-  Pressable,
-  type PressableProps,
   StyleSheet,
-  View,
+  TouchableOpacity,
   type ViewStyle,
 } from 'react-native';
 import { colors } from '@/theme/colors';
@@ -12,13 +10,14 @@ import { ZoneText } from './ZoneText';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost';
 
-export interface ButtonProps extends Omit<PressableProps, 'children' | 'style'> {
+export interface ButtonProps {
   title: string;
   variant?: ButtonVariant;
   loading?: boolean;
   disabled?: boolean;
   style?: ViewStyle;
   fullWidth?: boolean;
+  onPress?: () => void;
 }
 
 export function Button({
@@ -28,49 +27,34 @@ export function Button({
   disabled = false,
   style,
   fullWidth = true,
-  ...rest
+  onPress,
 }: ButtonProps): React.ReactElement {
   const isDisabled = disabled || loading;
-
-  const containerStyle: ViewStyle[] = [
-    styles.base,
-    fullWidth ? styles.fullWidth : null,
-    variant === 'primary' ? styles.primary : null,
-    variant === 'secondary' ? styles.secondary : null,
-    variant === 'ghost' ? styles.ghost : null,
-    isDisabled ? styles.disabled : null,
-    style ?? {},
-  ].filter(Boolean) as ViewStyle[];
-
-  const textColor =
-    variant === 'primary'
-      ? colors.bg.primary
-      : variant === 'secondary'
-        ? colors.accent.gold
-        : colors.accent.gold;
+  const textColor = variant === 'primary' ? colors.bg.primary : colors.accent.gold;
 
   return (
-    <Pressable
-      {...rest}
+    <TouchableOpacity
+      onPress={onPress}
       disabled={isDisabled}
-      style={({ pressed }) => [
-        ...containerStyle,
-        pressed && !isDisabled ? { opacity: 0.85 } : null,
+      activeOpacity={0.8}
+      style={[
+        styles.base,
+        fullWidth && styles.fullWidth,
+        variant === 'primary' && styles.primary,
+        variant === 'secondary' && styles.secondary,
+        variant === 'ghost' && styles.ghost,
+        isDisabled && styles.disabled,
+        style,
       ]}
     >
-      <View style={styles.row}>
-        {loading ? (
-          <ActivityIndicator color={textColor} size="small" />
-        ) : (
-          <ZoneText
-            variant="label"
-            style={{ color: textColor, fontFamily: 'Inter-Bold', fontSize: 16 }}
-          >
-            {title}
-          </ZoneText>
-        )}
-      </View>
-    </Pressable>
+      {loading ? (
+        <ActivityIndicator color={textColor} size="small" />
+      ) : (
+        <ZoneText variant="label" style={{ color: textColor, fontSize: 16 }}>
+          {title}
+        </ZoneText>
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -83,17 +67,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   fullWidth: { alignSelf: 'stretch' },
-  primary: {
-    backgroundColor: colors.accent.gold,
-  },
+  primary: { backgroundColor: colors.accent.gold },
   secondary: {
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: colors.accent.gold,
   },
-  ghost: {
-    backgroundColor: 'transparent',
-  },
+  ghost: { backgroundColor: 'transparent' },
   disabled: { opacity: 0.4 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 });

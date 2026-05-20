@@ -4,8 +4,6 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -15,6 +13,7 @@ import { auth, db } from '@/lib/firebase';
 import { frenchAuthError } from '@/lib/authErrors';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
+import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { AuthLogo } from '@/components/AuthLogo';
@@ -111,31 +110,22 @@ export default function RegisterScreen(): React.ReactElement {
             </ZoneText>
           ) : null}
 
-          <TouchableOpacity
-            disabled={loading}
-            style={{
-              backgroundColor: '#C9A84C',
-              padding: 16,
-              borderRadius: 12,
-              alignItems: 'center',
-              marginBottom: 12,
-              opacity: loading ? 0.6 : 1,
-            }}
-            onPress={handleSubmit}
-          >
-            <Text style={{ color: '#0A0A0A', fontWeight: 'bold', fontSize: 16 }}>
-              {loading ? 'CRÉATION…' : 'CRÉER MON COMPTE'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.submit}>
+            <Button title="Créer mon compte" loading={loading} onPress={handleSubmit} />
+          </View>
 
           <View style={styles.footer}>
-            <Text style={{ color: '#888888', fontSize: 12 }}>Déjà un compte ? </Text>
-            <Text
-              style={{ color: '#C9A84C', fontSize: 12, fontWeight: '500' }}
+            <ZoneText variant="caption" color={colors.text.secondary}>
+              Déjà un compte ?{' '}
+            </ZoneText>
+            <ZoneText
+              variant="caption"
+              color={colors.accent.gold}
+              style={styles.footerLink}
               onPress={() => router.push('/(auth)/login')}
             >
               Se connecter
-            </Text>
+            </ZoneText>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -155,10 +145,12 @@ const styles = StyleSheet.create({
   },
   field: { marginBottom: 12 },
   error: { marginTop: 4, marginBottom: 8, textAlign: 'center' },
+  submit: { marginTop: 8 },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 32,
     alignItems: 'center',
   },
+  footerLink: { fontFamily: 'Inter-Medium' },
 });

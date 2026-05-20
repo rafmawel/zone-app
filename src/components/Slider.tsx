@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { colors } from '@/theme/colors';
 import { ZoneText } from './ui/ZoneText';
 
@@ -26,9 +26,10 @@ export function Slider({ min, max, value, onChange, label }: SliderProps): React
         {items.map((n) => {
           const active = n === value;
           return (
-            <Pressable
+            <TouchableOpacity
               key={n}
               onPress={() => onChange(n)}
+              activeOpacity={0.8}
               style={[
                 styles.pill,
                 {
@@ -46,7 +47,7 @@ export function Slider({ min, max, value, onChange, label }: SliderProps): React
               >
                 {n}
               </ZoneText>
-            </Pressable>
+            </TouchableOpacity>
           );
         })}
       </View>
@@ -56,7 +57,7 @@ export function Slider({ min, max, value, onChange, label }: SliderProps): React
 
 const styles = StyleSheet.create({
   label: { marginBottom: 10, color: colors.text.secondary },
-  row: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  row: { flexDirection: 'row', flexWrap: 'wrap' },
   pill: {
     minWidth: 44,
     height: 44,
@@ -65,5 +66,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 12,
+    marginRight: 8,
+    marginBottom: 8,
   },
 });

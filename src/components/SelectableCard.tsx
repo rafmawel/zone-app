@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { StyleSheet, TouchableOpacity, View, type ViewStyle } from 'react-native';
 import { colors } from '@/theme/colors';
 import { ZoneText } from './ui/ZoneText';
 
@@ -25,14 +25,16 @@ export function SelectableCard({
   style,
 }: SelectableCardProps): React.ReactElement {
   return (
-    <Pressable
+    <TouchableOpacity
       onPress={disabled ? undefined : onPress}
-      style={({ pressed }) => [
+      disabled={disabled}
+      activeOpacity={0.85}
+      style={[
         styles.card,
         {
           borderColor: selected ? colors.accent.gold : colors.border,
           backgroundColor: selected ? colors.bg.elevated : colors.bg.card,
-          opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
+          opacity: disabled ? 0.5 : 1,
         },
         style,
       ]}
@@ -55,7 +57,7 @@ export function SelectableCard({
             {title}
           </ZoneText>
           {subtitle ? (
-            <ZoneText variant="caption" style={{ marginTop: 4 }}>
+            <ZoneText variant="caption" style={styles.subtitle}>
               {subtitle}
             </ZoneText>
           ) : null}
@@ -68,7 +70,7 @@ export function SelectableCard({
           </View>
         ) : null}
       </View>
-    </Pressable>
+    </TouchableOpacity>
   );
 }
 
@@ -79,14 +81,16 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
   },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  emoji: { fontSize: 22 },
+  row: { flexDirection: 'row', alignItems: 'center' },
+  emoji: { fontSize: 22, marginRight: 12 },
   textCol: { flex: 1 },
+  subtitle: { marginTop: 4 },
   badge: {
     backgroundColor: colors.accent.goldDark,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 4,
+    marginLeft: 12,
   },
   badgeText: { fontFamily: 'Inter-Medium', fontSize: 11 },
 });

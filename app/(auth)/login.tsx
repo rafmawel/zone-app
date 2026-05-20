@@ -4,8 +4,6 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -14,6 +12,7 @@ import { auth } from '@/lib/firebase';
 import { frenchAuthError } from '@/lib/authErrors';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
+import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { AuthLogo } from '@/components/AuthLogo';
@@ -86,46 +85,30 @@ export default function LoginScreen(): React.ReactElement {
             </ZoneText>
           ) : null}
 
-          <TouchableOpacity
-            disabled={loading}
-            style={{
-              backgroundColor: '#C9A84C',
-              padding: 16,
-              borderRadius: 12,
-              alignItems: 'center',
-              marginBottom: 12,
-              opacity: loading ? 0.6 : 1,
-            }}
-            onPress={handleSubmit}
-          >
-            <Text style={{ color: '#0A0A0A', fontWeight: 'bold', fontSize: 16 }}>
-              {loading ? 'CONNEXION…' : 'SE CONNECTER'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.submit}>
+            <Button title="Se connecter" loading={loading} onPress={handleSubmit} />
+          </View>
 
-          <TouchableOpacity
-            style={{
-              backgroundColor: 'transparent',
-              padding: 16,
-              borderRadius: 12,
-              alignItems: 'center',
-              marginBottom: 12,
-            }}
-            onPress={() => router.push('/(auth)/forgot-password')}
-          >
-            <Text style={{ color: '#C9A84C', fontWeight: 'bold', fontSize: 16 }}>
-              MOT DE PASSE OUBLIÉ ?
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.linkRow}>
+            <Button
+              title="Mot de passe oublié ?"
+              variant="ghost"
+              onPress={() => router.push('/(auth)/forgot-password')}
+            />
+          </View>
 
           <View style={styles.footer}>
-            <Text style={{ color: '#888888', fontSize: 12 }}>Pas encore de compte ? </Text>
-            <Text
-              style={{ color: '#C9A84C', fontSize: 12, fontWeight: '500' }}
+            <ZoneText variant="caption" color={colors.text.secondary}>
+              Pas encore de compte ?{' '}
+            </ZoneText>
+            <ZoneText
+              variant="caption"
+              color={colors.accent.gold}
+              style={styles.footerLink}
               onPress={() => router.push('/(auth)/register')}
             >
               S&apos;inscrire
-            </Text>
+            </ZoneText>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -145,10 +128,13 @@ const styles = StyleSheet.create({
   },
   field: { marginBottom: 12 },
   error: { marginTop: 4, marginBottom: 8, textAlign: 'center' },
+  submit: { marginTop: 8 },
+  linkRow: { marginTop: 8 },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 32,
     alignItems: 'center',
   },
+  footerLink: { fontFamily: 'Inter-Medium' },
 });
