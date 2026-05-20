@@ -32,6 +32,7 @@ import {
 } from '@/lib/firestore';
 import { checkAndAdvanceProgram, computeRestSeconds, estimateOneRepMax } from '@/lib/programEngine';
 import { computeAndSaveWorkloadEntry } from '@/lib/pro';
+import { usePro } from '@/hooks/usePro';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { getExerciseById } from '@/data/exercises';
 import { useSession, formatRestMS } from '@/context/SessionContext';
@@ -62,6 +63,7 @@ interface SessionSummary {
 
 export default function SessionScreen(): React.ReactElement {
   const router = useRouter();
+  const { isPro } = usePro();
   const params = useLocalSearchParams<{ id: string }>();
   const sessionId = params.id ?? '';
   const { activeSession, startSession, updateSessionProgress, endSession } = useSession();
@@ -360,6 +362,11 @@ export default function SessionScreen(): React.ReactElement {
         <ZoneText variant="caption" numberOfLines={2} style={styles.zoneStripText}>
           {state.session.zone_message ?? 'En route.'}
         </ZoneText>
+        {isPro ? (
+          <View style={styles.proBadge}>
+            <ZoneText style={styles.proBadgeText}>PRO</ZoneText>
+          </View>
+        ) : null}
         {zoneScore !== null ? (
           <View style={styles.zoneScoreBubble}>
             <ZoneText style={styles.zoneScoreText}>{zoneScore}</ZoneText>
@@ -832,6 +839,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  proBadge: {
+    borderColor: colors.accent.gold,
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    marginHorizontal: 8,
+  },
+  proBadgeText: {
+    color: colors.accent.gold,
+    fontFamily: 'Inter-Bold',
+    fontSize: 8,
+    letterSpacing: 1,
   },
   zoneStripText: {
     flex: 1,
