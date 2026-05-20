@@ -56,6 +56,13 @@ export default function AppLayout(): React.ReactElement {
           tabBarStyle: { display: 'none' },
         }}
       />
+      <Tabs.Screen
+        name="exercise/[id]"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
     </Tabs>
   );
 }
