@@ -6,7 +6,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { Link } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { frenchAuthError } from '@/lib/authErrors';
@@ -18,6 +18,7 @@ import { ZoneText } from '@/components/ui/ZoneText';
 import { AuthLogo } from '@/components/AuthLogo';
 
 export default function ForgotPasswordScreen(): React.ReactElement {
+  const router = useRouter();
   const [email, setEmail] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +52,7 @@ export default function ForgotPasswordScreen(): React.ReactElement {
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
           <AuthLogo />
           <ZoneText variant="heading" style={styles.title}>
@@ -60,7 +62,7 @@ export default function ForgotPasswordScreen(): React.ReactElement {
             Entre ton email pour recevoir un lien de réinitialisation.
           </ZoneText>
 
-          <View style={styles.form}>
+          <View style={styles.field}>
             <Input
               placeholder="Email"
               autoCapitalize="none"
@@ -69,31 +71,32 @@ export default function ForgotPasswordScreen(): React.ReactElement {
               value={email}
               onChangeText={setEmail}
             />
+          </View>
 
-            {error ? (
-              <ZoneText variant="caption" color={colors.danger} style={styles.message}>
-                {error}
-              </ZoneText>
-            ) : null}
-            {sent ? (
-              <ZoneText variant="caption" color={colors.success} style={styles.message}>
-                Lien envoyé. Vérifie ta boîte mail.
-              </ZoneText>
-            ) : null}
+          {error ? (
+            <ZoneText variant="caption" color={colors.danger} style={styles.message}>
+              {error}
+            </ZoneText>
+          ) : null}
+          {sent ? (
+            <ZoneText variant="caption" color={colors.success} style={styles.message}>
+              Lien envoyé. Vérifie ta boîte mail.
+            </ZoneText>
+          ) : null}
 
+          <View style={styles.submit}>
             <Button title="Envoyer le lien" loading={loading} onPress={onSubmit} />
           </View>
 
           <View style={styles.footer}>
-            <Link href="/(auth)/login">
-              <ZoneText
-                variant="caption"
-                color={colors.accent.gold}
-                style={{ fontFamily: 'Inter-Medium' }}
-              >
-                Retour à la connexion
-              </ZoneText>
-            </Link>
+            <ZoneText
+              variant="caption"
+              color={colors.accent.gold}
+              style={styles.footerLink}
+              onPress={() => router.push('/(auth)/login')}
+            >
+              Retour à la connexion
+            </ZoneText>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -112,7 +115,9 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
   },
   subtitle: { textAlign: 'center', marginBottom: 24 },
-  form: { gap: 12 },
-  message: { marginTop: 4, textAlign: 'center' },
+  field: { marginBottom: 12 },
+  message: { marginTop: 4, marginBottom: 8, textAlign: 'center' },
+  submit: { marginTop: 8 },
   footer: { alignItems: 'center', marginTop: 24 },
+  footerLink: { fontFamily: 'Inter-Medium' },
 });

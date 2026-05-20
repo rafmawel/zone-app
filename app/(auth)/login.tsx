@@ -6,7 +6,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { Link, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { frenchAuthError } from '@/lib/authErrors';
@@ -50,13 +50,14 @@ export default function LoginScreen(): React.ReactElement {
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
           <AuthLogo />
           <ZoneText variant="heading" style={styles.title}>
             CONNEXION
           </ZoneText>
 
-          <View style={styles.form}>
+          <View style={styles.field}>
             <Input
               placeholder="Email"
               autoCapitalize="none"
@@ -65,6 +66,8 @@ export default function LoginScreen(): React.ReactElement {
               value={email}
               onChangeText={setEmail}
             />
+          </View>
+          <View style={styles.field}>
             <Input
               placeholder="Mot de passe"
               autoCapitalize="none"
@@ -74,33 +77,38 @@ export default function LoginScreen(): React.ReactElement {
               value={password}
               onChangeText={setPassword}
             />
+          </View>
 
-            {error ? (
-              <ZoneText variant="caption" color={colors.danger} style={styles.error}>
-                {error}
-              </ZoneText>
-            ) : null}
+          {error ? (
+            <ZoneText variant="caption" color={colors.danger} style={styles.error}>
+              {error}
+            </ZoneText>
+          ) : null}
 
+          <View style={styles.submit}>
             <Button title="Se connecter" loading={loading} onPress={onSubmit} />
+          </View>
 
-            <Link href="/(auth)/forgot-password" asChild>
-              <Button title="Mot de passe oublié ?" variant="ghost" />
-            </Link>
+          <View style={styles.linkRow}>
+            <Button
+              title="Mot de passe oublié ?"
+              variant="ghost"
+              onPress={() => router.push('/(auth)/forgot-password')}
+            />
           </View>
 
           <View style={styles.footer}>
             <ZoneText variant="caption" color={colors.text.secondary}>
               Pas encore de compte ?{' '}
             </ZoneText>
-            <Link href="/(auth)/register" onPress={() => router.push('/(auth)/register')}>
-              <ZoneText
-                variant="caption"
-                color={colors.accent.gold}
-                style={{ fontFamily: 'Inter-Medium' }}
-              >
-                S&apos;inscrire
-              </ZoneText>
-            </Link>
+            <ZoneText
+              variant="caption"
+              color={colors.accent.gold}
+              style={styles.footerLink}
+              onPress={() => router.push('/(auth)/register')}
+            >
+              S&apos;inscrire
+            </ZoneText>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -118,12 +126,15 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     letterSpacing: 3,
   },
-  form: { gap: 12 },
-  error: { marginTop: 4, textAlign: 'center' },
+  field: { marginBottom: 12 },
+  error: { marginTop: 4, marginBottom: 8, textAlign: 'center' },
+  submit: { marginTop: 8 },
+  linkRow: { marginTop: 8 },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 32,
     alignItems: 'center',
   },
+  footerLink: { fontFamily: 'Inter-Medium' },
 });
