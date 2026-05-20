@@ -713,3 +713,105 @@ const SPORT_STATE_DOC: Record<ResettableSport, string> = {
 export async function resetSportProfile(uid: string, sport: ResettableSport): Promise<void> {
   await deleteDoc(doc(db, 'users', uid, 'state', SPORT_STATE_DOC[sport]));
 }
+
+export interface WorkloadEntry {
+  date: string;
+  tss: number;
+  sport: string;
+  sessionType: string;
+  durationMinutes: number;
+  intensityFactor: number;
+}
+
+export interface PerformanceModelSnapshot {
+  date: string;
+  ctl: number;
+  atl: number;
+  tsb: number;
+  calculatedAt: Timestamp | null;
+}
+
+export interface SubscriptionStatus {
+  isPro: boolean;
+  trialUsed: boolean;
+  expiresAt: string | null;
+  platform: 'android' | 'ios' | null;
+  updatedAt: Timestamp | null;
+}
+
+export async function saveDailyTSS(
+  uid: string,
+  entry: WorkloadEntry,
+): Promise<void> {
+  const id = `${entry.date}_${entry.sport}`;
+  await setDoc(doc(db, 'users', uid, 'workload', id), entry);
+}
+
+export async function getWorkloadHistory(
+  uid: string,
+  daysBack: number,
+): Promise<WorkloadEntry[]> {
+  const safeDays = Math.max(1, Math.floor(daysBack));
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, 'users', uid, 'workload'),
+        orderBy('date', 'desc'),
+        limit(safeDays),
+      ),
+    );
+    return snap.docs.map((d) => d.data() as WorkloadEntry);
+  } catch {
+    return [];
+  }
+}
+
+export async function savePerformanceSnapshot(
+  uid: string,
+  snapshot: PerformanceModelSnapshot,
+): Promise<void> {
+  const ref = doc(db, 'users', uid, 'state', 'performance_model');
+  const snap = await getDoc(ref);
+  const existing = snap.exists()
+    ? ((snap.data() as { snapshots?: PerformanceModelSnapshot[] }).snapshots ?? [])
+    : [];
+  const filtered = existing.filter((s) => s.date !== snapshot.date);
+  const next = [...filtered, snapshot]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-180);
+  await setDoc(ref, {
+    snapshots: next,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function getPerformanceModel(
+  uid: string,
+): Promise<PerformanceModelSnapshot[]> {
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'performance_model'));
+  if (!snap.exists()) return [];
+  const data = snap.data() as { snapshots?: PerformanceModelSnapshot[] };
+  return data.snapshots ?? [];
+}
+
+export async function getSubscriptionStatus(
+  uid: string,
+): Promise<SubscriptionStatus | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'subscription'));
+  if (!snap.exists()) return null;
+  return snap.data() as SubscriptionStatus;
+}
+
+export async function updateSubscriptionStatus(
+  uid: string,
+  status: Partial<SubscriptionStatus>,
+): Promise<void> {
+  await setDoc(
+    doc(db, 'users', uid, 'state', 'subscription'),
+    {
+      ...status,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
