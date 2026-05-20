@@ -35,6 +35,7 @@ import {
   type RunningSessionType,
 } from '@/lib/runningEngine';
 import { computeAndSaveWorkloadEntry } from '@/lib/pro';
+import { usePro } from '@/hooks/usePro';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { useSession, formatRestMS } from '@/context/SessionContext';
 import { colors } from '@/theme/colors';
@@ -86,6 +87,7 @@ function stepDurationSeconds(step: RunningSessionStepPlanned): number {
 
 export default function RunSessionScreen(): React.ReactElement {
   const router = useRouter();
+  const { isPro } = usePro();
   const params = useLocalSearchParams<{ id: string }>();
   const runId = params.id ?? '';
   const { startSession, updateSessionProgress, endSession } = useSession();
@@ -466,6 +468,11 @@ export default function RunSessionScreen(): React.ReactElement {
             <ZoneText style={styles.zoneStripText}>
               {run.zone_message ?? 'En route.'}
             </ZoneText>
+            {isPro ? (
+              <View style={styles.proBadge}>
+                <ZoneText style={styles.proBadgeText}>PRO</ZoneText>
+              </View>
+            ) : null}
           </View>
           <View style={styles.typeBadge}>
             <ZoneText style={styles.typeBadgeText}>{sessionType}</ZoneText>
@@ -511,6 +518,11 @@ export default function RunSessionScreen(): React.ReactElement {
     <SafeScreen edges={['top', 'left', 'right']}>
       <View style={[styles.zoneStrip, { backgroundColor: accentColor }]}>
         <ZoneText style={styles.zoneStripText}>{run.zone_message ?? 'En route.'}</ZoneText>
+        {isPro ? (
+          <View style={styles.proBadge}>
+            <ZoneText style={styles.proBadgeText}>PRO</ZoneText>
+          </View>
+        ) : null}
       </View>
       <View style={styles.headerRow}>
         <TouchableOpacity
@@ -835,8 +847,31 @@ const styles = StyleSheet.create({
   zoneStrip: {
     paddingHorizontal: 16,
     paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  zoneStripText: { color: colors.bg.primary, fontFamily: 'Inter-Bold', fontSize: 12, letterSpacing: 0.3 },
+  zoneStripText: {
+    flex: 1,
+    color: colors.bg.primary,
+    fontFamily: 'Inter-Bold',
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
+  proBadge: {
+    borderColor: colors.accent.gold,
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    marginLeft: 8,
+  },
+  proBadgeText: {
+    color: colors.accent.gold,
+    fontFamily: 'Inter-Bold',
+    fontSize: 8,
+    letterSpacing: 1,
+  },
   preContent: { paddingHorizontal: 24, paddingBottom: 24 },
   typeBadge: {
     alignSelf: 'flex-start',

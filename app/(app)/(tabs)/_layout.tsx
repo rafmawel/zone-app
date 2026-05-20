@@ -28,6 +28,12 @@ export default function AppLayout(): React.ReactElement {
             paddingTop: 8,
             paddingBottom: 8,
           },
+          tabBarItemStyle: {
+            flex: 1,
+            minWidth: 0,
+            paddingHorizontal: 0,
+          },
+          tabBarLabelStyle: { display: 'none' },
           sceneStyle: {
             paddingBottom: showMini ? SESSION_MINI_BAR_HEIGHT : 0,
             backgroundColor: colors.bg.primary,
@@ -38,42 +44,42 @@ export default function AppLayout(): React.ReactElement {
           name="index"
           options={{
             title: 'Accueil',
-            tabBarIcon: ({ color }) => <Home size={24} color={color} />,
+            tabBarIcon: ({ color }) => <Home size={22} color={color} />,
           }}
         />
         <Tabs.Screen
           name="program"
           options={{
             title: 'Programme',
-            tabBarIcon: ({ color }) => <Dumbbell size={24} color={color} />,
+            tabBarIcon: ({ color }) => <Dumbbell size={22} color={color} />,
           }}
         />
         <Tabs.Screen
           name="library"
           options={{
             title: 'Bibliothèque',
-            tabBarIcon: ({ color }) => <BookOpen size={24} color={color} />,
+            tabBarIcon: ({ color }) => <BookOpen size={22} color={color} />,
           }}
         />
         <Tabs.Screen
           name="history"
           options={{
             title: 'Historique',
-            tabBarIcon: ({ color }) => <Calendar size={24} color={color} />,
+            tabBarIcon: ({ color }) => <Calendar size={22} color={color} />,
           }}
         />
         <Tabs.Screen
           name="analytics"
           options={{
             title: 'Analytics',
-            tabBarIcon: ({ color }) => <Sparkles size={24} color={color} />,
+            tabBarIcon: ({ color }) => <Sparkles size={22} color={color} />,
           }}
         />
         <Tabs.Screen
           name="profile"
           options={{
             title: 'Profil',
-            tabBarIcon: ({ color }) => <User size={24} color={color} />,
+            tabBarIcon: ({ color }) => <User size={22} color={color} />,
           }}
         />
       </Tabs>

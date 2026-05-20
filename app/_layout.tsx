@@ -11,6 +11,7 @@ import '../global.css';
 
 import { useAuth } from '@/hooks/useAuth';
 import { db } from '@/lib/firebase';
+import { initializePurchases } from '@/lib/subscriptions';
 import { colors } from '@/theme/colors';
 import { PulsingOrb } from '@/components/PulsingOrb';
 import { ZoneText } from '@/components/ui/ZoneText';
@@ -46,6 +47,7 @@ function RootNavigator(): React.ReactElement {
       setOnboardingChecked(true);
       return;
     }
+    void initializePurchases(user.uid);
     setOnboardingChecked(false);
     const unsubscribe = onSnapshot(
       doc(db, 'users', user.uid),

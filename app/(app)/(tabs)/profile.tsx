@@ -1,9 +1,11 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
-import { ChevronRight } from 'lucide-react-native';
+import { Check, ChevronRight, Sparkles } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
+import { showManageSubscriptions, getProExpiryDate } from '@/lib/subscriptions';
+import { usePro } from '@/hooks/usePro';
 import {
   getAllTimeStats,
   getExerciseMaxes,
@@ -33,6 +35,7 @@ import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { Button } from '@/components/ui/Button';
 import { frenchMonthYear, frenchShortDate } from '@/lib/frenchDate';
 
 const LEVEL_LABEL: Record<string, string> = {
@@ -64,6 +67,8 @@ function avatarInitials(email: string | null | undefined): string {
 
 export default function ProfileScreen(): React.ReactElement {
   const router = useRouter();
+  const { isPro } = usePro();
+  const [proExpiry, setProExpiry] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [program, setProgram] = useState<UserProgram | null>(null);
   const [sports, setSports] = useState<UserSport[]>([]);
@@ -134,6 +139,21 @@ export default function ProfileScreen(): React.ReactElement {
     }, [loadAll]),
   );
 
+  useEffect(() => {
+    if (!isPro) {
+      setProExpiry(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const exp = await getProExpiryDate();
+      if (!cancelled) setProExpiry(exp);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isPro]);
+
   const onSignOut = async (): Promise<void> => {
     try {
       await signOut(auth);
@@ -165,6 +185,57 @@ export default function ProfileScreen(): React.ReactElement {
           <ZoneText variant="caption" color={colors.text.muted} style={styles.memberSince}>
             Membre depuis {memberSince}
           </ZoneText>
+        </View>
+
+        <View style={styles.section}>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
+            MON ABONNEMENT
+          </ZoneText>
+          {isPro ? (
+            <View style={styles.subscriptionCardPro}>
+              <View style={styles.subscriptionHeader}>
+                <View style={styles.subscriptionTitleRow}>
+                  <Sparkles size={18} color={colors.accent.gold} />
+                  <ZoneText variant="heading" style={styles.subscriptionTitleGold}>
+                    ZONE PRO · Actif
+                  </ZoneText>
+                </View>
+                <Check size={18} color={colors.accent.gold} />
+              </View>
+              <ZoneText variant="caption" color={colors.text.muted} style={styles.subscriptionMeta}>
+                {proExpiry
+                  ? `Renouvellement le ${frenchShortDate(proExpiry)}`
+                  : 'Abonnement actif'}
+              </ZoneText>
+              <TouchableOpacity
+                onPress={() => {
+                  void showManageSubscriptions();
+                }}
+                hitSlop={8}
+                style={styles.manageLink}
+              >
+                <ZoneText variant="caption" color={colors.accent.gold}>
+                  Gérer l'abonnement
+                </ZoneText>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.subscriptionCard}>
+              <ZoneText variant="heading" style={styles.subscriptionTitleMuted}>
+                Zone Gratuit
+              </ZoneText>
+              <ZoneText variant="caption" color={colors.text.muted} style={styles.subscriptionMeta}>
+                Débloque l'analyse complète et le coach hebdomadaire.
+              </ZoneText>
+              <Button
+                title="PASSER À PRO"
+                variant="primary"
+                onPress={() => router.push('/(app)/paywall')}
+                fullWidth={false}
+                style={styles.upgradeBtn}
+              />
+            </View>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -438,6 +509,54 @@ function EmptyHint({ text }: { text: string }): React.ReactElement {
 
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 48 },
+  subscriptionCard: {
+    marginTop: 8,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  subscriptionCardPro: {
+    marginTop: 8,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+  },
+  subscriptionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  subscriptionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  subscriptionTitleGold: {
+    fontSize: 18,
+    color: colors.accent.gold,
+    letterSpacing: 1.2,
+  },
+  subscriptionTitleMuted: {
+    fontSize: 18,
+    color: colors.text.primary,
+    letterSpacing: 1.2,
+  },
+  subscriptionMeta: {
+    marginTop: 6,
+  },
+  manageLink: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+  },
+  upgradeBtn: {
+    marginTop: 12,
+    paddingHorizontal: 18,
+    alignSelf: 'flex-start',
+  },
   headerWrap: { alignItems: 'center', marginBottom: 8 },
   avatar: {
     width: 56,
