@@ -15,6 +15,7 @@ import { colors } from '@/theme/colors';
 import { PulsingOrb } from '@/components/PulsingOrb';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { OnboardingProvider } from '@/context/OnboardingContext';
+import { SessionProvider } from '@/context/SessionContext';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -107,8 +108,10 @@ export default function RootLayout(): React.ReactElement | null {
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
         <OnboardingProvider>
-          <StatusBar style="light" />
-          <RootNavigator />
+          <SessionProvider>
+            <StatusBar style="light" />
+            <RootNavigator />
+          </SessionProvider>
         </OnboardingProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

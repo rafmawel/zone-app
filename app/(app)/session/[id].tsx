@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Animated, {
@@ -9,7 +9,6 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-  type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
 import { Minus, Plus, X } from 'lucide-react-native';
@@ -34,6 +33,7 @@ import {
 import { checkAndAdvanceProgram, computeRestSeconds, estimateOneRepMax } from '@/lib/programEngine';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { getExerciseById } from '@/data/exercises';
+import { useSession, formatRestMS } from '@/context/SessionContext';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
@@ -53,31 +53,37 @@ interface SessionState {
   error: string | null;
 }
 
+interface SessionSummary {
+  duration: number;
+  volume: number;
+  prs: ResultPR[];
+}
+
 export default function SessionScreen(): React.ReactElement {
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string }>();
   const sessionId = params.id ?? '';
+  const { activeSession, startSession, updateSessionProgress, endSession } = useSession();
 
   const [state, setState] = useState<SessionState>({ loading: true, session: null, error: null });
   const [maxes, setMaxes] = useState<ExerciseMax[]>([]);
   const [program, setProgram] = useState<UserProgram | null>(null);
-  const [exerciseIdx, setExerciseIdx] = useState<number>(0);
-  const [setIdx, setSetIdx] = useState<number>(0);
-  const [phase, setPhase] = useState<'work' | 'rest' | 'done'>('work');
   const [actualReps, setActualReps] = useState<number>(0);
   const [actualWeight, setActualWeight] = useState<number>(0);
   const [setRpe, setSetRpe] = useState<number | null>(null);
   const [completedSets, setCompletedSets] = useState<CompletedSet[]>([]);
-  const [restRemaining, setRestRemaining] = useState<number>(0);
-  const [restTotal, setRestTotal] = useState<number>(0);
   const [pr, setPr] = useState<ResultPR | null>(null);
-  const [summary, setSummary] = useState<{ duration: number; volume: number; prs: ResultPR[] } | null>(
-    null,
-  );
+  const [summary, setSummary] = useState<SessionSummary | null>(null);
   const startedAtRef = useRef<number>(Date.now());
-  const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ringProgress = useSharedValue(0);
+  const prsRef = useRef<ResultPR[]>([]);
 
+  // Register session with context on mount (idempotent across remounts)
+  useEffect(() => {
+    if (sessionId) startSession(sessionId);
+  }, [sessionId, startSession]);
+
+  // Load session document + maxes + program from Firestore
   useEffect(() => {
     let cancelled = false;
     async function load(): Promise<void> {
@@ -100,15 +106,9 @@ export default function SessionScreen(): React.ReactElement {
         setMaxes(m);
         setProgram(p);
         setState({ loading: false, session, error: null });
-        const first = session.planned_exercises?.[0]?.sets?.[0];
-        if (first) {
-          setActualWeight(first.target_weight_kg ?? 0);
-          setActualReps(parseTargetReps(first.target_reps));
-        }
+        setCompletedSets(session.completed_sets ?? []);
       } catch {
-        if (!cancelled) {
-          setState({ loading: false, session: null, error: 'Erreur de chargement.' });
-        }
+        if (!cancelled) setState({ loading: false, session: null, error: 'Erreur de chargement.' });
       }
     }
     void load();
@@ -117,47 +117,72 @@ export default function SessionScreen(): React.ReactElement {
     };
   }, [sessionId]);
 
-  const exercises = state.session?.planned_exercises ?? [];
-  const currentExercise: SessionExercise | undefined = exercises[exerciseIdx];
-  const currentSet: PlannedSet | undefined = currentExercise?.sets[setIdx];
-  const exerciseMeta = currentExercise ? getExerciseById(currentExercise.exercise_id) : undefined;
+  const exercises: SessionExercise[] = state.session?.planned_exercises ?? [];
+  const totalSetsCount = useMemo(
+    () => exercises.reduce((acc, ex) => acc + ex.sets.length, 0),
+    [exercises],
+  );
   const zoneScore = state.session?.zone_score_at_start ?? null;
   const zoneLevel = useMemo(() => (zoneScore !== null ? getZoneLevel(zoneScore) : null), [zoneScore]);
   const accentColor = zoneLevel?.color ?? colors.accent.gold;
 
-  const startRestTimer = useCallback(
-    (seconds: number) => {
-      stopRestTimer();
-      setRestTotal(seconds);
-      setRestRemaining(seconds);
+  const exerciseIdx = activeSession?.currentExerciseIndex ?? 0;
+  const setIdx = activeSession?.currentSetIndex ?? 0;
+  const currentExercise: SessionExercise | undefined = exercises[exerciseIdx];
+  const currentSet: PlannedSet | undefined = currentExercise?.sets[setIdx];
+  const exerciseMeta = currentExercise ? getExerciseById(currentExercise.exercise_id) : undefined;
+  const isResting = activeSession?.isResting === true;
+
+  // Push session metadata into context once loaded
+  useEffect(() => {
+    if (!state.session || !activeSession) return;
+    updateSessionProgress({
+      totalExercises: exercises.length,
+      totalSets: totalSetsCount,
+      zoneColor: accentColor,
+      currentExerciseName: exerciseMeta?.name ?? '',
+    });
+    // intentional: only run when the loaded session document changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.session, exerciseMeta?.name]);
+
+  // Initialize input targets when cursor moves
+  useEffect(() => {
+    if (!currentSet) return;
+    setActualWeight((prev) =>
+      currentSet.target_weight_kg !== null && currentSet.target_weight_kg !== undefined
+        ? currentSet.target_weight_kg
+        : prev,
+    );
+    setActualReps(parseTargetReps(currentSet.target_reps));
+    setSetRpe(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exerciseIdx, setIdx]);
+
+  // Animate the rest ring whenever rest state changes
+  useEffect(() => {
+    if (!isResting || !activeSession) {
       ringProgress.value = 0;
-      ringProgress.value = withTiming(1, { duration: seconds * 1000, easing: Easing.linear });
-      const startedAt = Date.now();
-      restTimerRef.current = setInterval(() => {
-        const elapsed = (Date.now() - startedAt) / 1000;
-        const remaining = Math.max(0, Math.ceil(seconds - elapsed));
-        setRestRemaining(remaining);
-        if (remaining <= 0) {
-          stopRestTimer();
-          advanceAfterRest();
-        }
-      }, 250);
-    },
-    [], // ringProgress is a stable shared value
-  );
-
-  const stopRestTimer = (): void => {
-    if (restTimerRef.current) {
-      clearInterval(restTimerRef.current);
-      restTimerRef.current = null;
+      return;
     }
-  };
-
-  useEffect(() => () => stopRestTimer(), []);
+    const total = activeSession.restTotalSeconds;
+    const remaining = activeSession.restSecondsRemaining;
+    const startProgress = total > 0 ? Math.max(0, Math.min(1, 1 - remaining / total)) : 0;
+    ringProgress.value = startProgress;
+    if (remaining > 0) {
+      ringProgress.value = withTiming(1, {
+        duration: remaining * 1000,
+        easing: Easing.linear,
+      });
+    } else {
+      ringProgress.value = 1;
+    }
+  }, [isResting, activeSession?.restTotalSeconds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSetDone = async (): Promise<void> => {
     const user = auth.currentUser;
     if (!user || !state.session || !currentExercise || !currentSet) return;
+
     const completed: CompletedSet = {
       exercise_id: currentExercise.exercise_id,
       set_number: currentSet.set_number,
@@ -169,9 +194,16 @@ export default function SessionScreen(): React.ReactElement {
     setCompletedSets((c) => [...c, completed]);
     saveCompletedSet(user.uid, sessionId, completed).catch(() => undefined);
 
-    const detected = await detectAndApplyPR(user.uid, currentExercise.exercise_id, actualWeight, actualReps, maxes);
+    const detected = await detectAndApplyPR(
+      user.uid,
+      currentExercise.exercise_id,
+      actualWeight,
+      actualReps,
+      maxes,
+    );
     if (detected) {
       setPr(detected);
+      prsRef.current = [...prsRef.current, detected];
       setMaxes((current) => {
         const next = current.filter((m) => m.exercise_id !== detected.exercise_id);
         return [
@@ -189,53 +221,64 @@ export default function SessionScreen(): React.ReactElement {
       setTimeout(() => setPr(null), 2000);
     }
 
-    const rest = computeRestSeconds(currentExercise.exercise_id, {
-      zoneScore,
-      rpe: setRpe,
-    });
-    setPhase('rest');
-    startRestTimer(rest);
-  };
-
-  const advanceAfterRest = (): void => {
-    setSetRpe(null);
-    if (!currentExercise) return;
-    const lastSet = setIdx === currentExercise.sets.length - 1;
+    const lastSetOfExercise = setIdx === currentExercise.sets.length - 1;
     const lastExercise = exerciseIdx === exercises.length - 1;
-    if (lastSet && lastExercise) {
-      void finish();
+
+    if (lastSetOfExercise && lastExercise) {
+      await finish();
       return;
     }
+
     let nextEx = exerciseIdx;
     let nextSet = setIdx + 1;
-    if (lastSet) {
+    if (lastSetOfExercise) {
       nextEx = exerciseIdx + 1;
       nextSet = 0;
     }
-    const target = exercises[nextEx]?.sets[nextSet];
-    setExerciseIdx(nextEx);
-    setSetIdx(nextSet);
-    setPhase('work');
-    if (target) {
-      setActualWeight(target.target_weight_kg ?? actualWeight);
-      setActualReps(parseTargetReps(target.target_reps));
-    }
+    const nextExerciseMeta = exercises[nextEx]
+      ? getExerciseById(exercises[nextEx].exercise_id)
+      : null;
+    const rest = computeRestSeconds(currentExercise.exercise_id, { zoneScore, rpe: setRpe });
+    const completedCount = (activeSession?.setsCompleted ?? 0) + 1;
+
+    updateSessionProgress({
+      currentExerciseIndex: nextEx,
+      currentSetIndex: nextSet,
+      currentExerciseName: nextExerciseMeta?.name ?? '',
+      setsCompleted: completedCount,
+      isResting: true,
+      restSecondsRemaining: rest,
+      restTotalSeconds: rest,
+    });
+  };
+
+  const handleSkipRest = (): void => {
+    updateSessionProgress({ isResting: false, restSecondsRemaining: 0 });
+  };
+
+  const handleAdjustRest = (delta: number): void => {
+    if (!activeSession) return;
+    const next = Math.max(10, activeSession.restSecondsRemaining + delta);
+    updateSessionProgress({ restSecondsRemaining: next, restTotalSeconds: next });
   };
 
   const finish = async (): Promise<void> => {
     const user = auth.currentUser;
     if (!user || !state.session) return;
-    setPhase('done');
     const duration = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 60000));
-    const volume = computeVolume([...completedSets]);
-    const prList: ResultPR[] = []; // (PRs surfaced inline during workout)
-    setSummary({ duration, volume, prs: prList });
+    const allSets = [...completedSets];
+    const volume = computeVolume(allSets);
+    setSummary({ duration, volume, prs: prsRef.current });
+
+    updateSessionProgress({ isResting: false, restSecondsRemaining: 0 });
 
     try {
-      await completeSession(user.uid, sessionId, { duration_minutes: duration, total_volume_kg: volume });
+      await completeSession(user.uid, sessionId, {
+        duration_minutes: duration,
+        total_volume_kg: volume,
+      });
       if (program) {
-        const start = program.mesocycle_start;
-        const completedSince = await countCompletedSessionsSince(user.uid, start);
+        const completedSince = await countCompletedSessionsSince(user.uid, program.mesocycle_start);
         const sortedSessions: TrainingSession[] = Array.from(
           { length: completedSince },
           () => ({ id: '', date: '', sport_key: 'weightlifting', status: 'completed', created_at: null }),
@@ -244,8 +287,13 @@ export default function SessionScreen(): React.ReactElement {
         await saveUserProgram(user.uid, advanced);
       }
     } catch {
-      // surfaced in UI via summary; user can retry navigating
+      // surfaced via summary; user can retry navigating
     }
+  };
+
+  const onReturnToDashboard = (): void => {
+    endSession();
+    router.replace('/(app)/');
   };
 
   if (state.loading) {
@@ -283,8 +331,9 @@ export default function SessionScreen(): React.ReactElement {
         zoneLabel={zoneLevel?.label ?? '—'}
         duration={summary.duration}
         volume={summary.volume}
+        prs={summary.prs}
         completedSets={completedSets}
-        onClose={() => router.replace('/(app)/')}
+        onClose={onReturnToDashboard}
       />
     );
   }
@@ -297,11 +346,7 @@ export default function SessionScreen(): React.ReactElement {
       <View
         style={[styles.zoneStrip, { backgroundColor: zoneLevel ? zoneLevel.color : colors.bg.elevated }]}
       >
-        <ZoneText
-          variant="caption"
-          numberOfLines={2}
-          style={styles.zoneStripText}
-        >
+        <ZoneText variant="caption" numberOfLines={2} style={styles.zoneStripText}>
           {state.session.zone_message ?? 'En route.'}
         </ZoneText>
         {zoneScore !== null ? (
@@ -320,7 +365,17 @@ export default function SessionScreen(): React.ReactElement {
         </ZoneText>
       </View>
 
-      {phase === 'work' ? (
+      {isResting ? (
+        <RestView
+          accentColor={accentColor}
+          remaining={activeSession?.restSecondsRemaining ?? 0}
+          total={activeSession?.restTotalSeconds ?? 0}
+          ringProgress={ringProgress}
+          cue={exerciseMeta?.cues[0] ?? null}
+          onSkip={handleSkipRest}
+          onAdjust={handleAdjustRest}
+        />
+      ) : (
         <WorkView
           exerciseName={exerciseMeta?.name.toUpperCase() ?? currentExercise.exercise_id}
           setIdx={setIdx}
@@ -333,23 +388,6 @@ export default function SessionScreen(): React.ReactElement {
           onChangeWeight={setActualWeight}
           onChangeRpe={setSetRpe}
           onDone={handleSetDone}
-        />
-      ) : (
-        <RestView
-          accentColor={accentColor}
-          remaining={restRemaining}
-          total={restTotal}
-          ringProgress={ringProgress}
-          cue={exerciseMeta?.cues[0] ?? null}
-          onSkip={() => {
-            stopRestTimer();
-            advanceAfterRest();
-          }}
-          onAdjust={(delta) => {
-            const newTotal = Math.max(10, restTotal + delta);
-            stopRestTimer();
-            startRestTimer(newTotal);
-          }}
         />
       )}
     </SafeScreen>
@@ -484,20 +522,8 @@ function WorkView({
       </View>
 
       <View style={styles.inputCard}>
-        <NumberStepper
-          label="POIDS (kg)"
-          value={actualWeight}
-          step={2.5}
-          min={0}
-          onChange={onChangeWeight}
-        />
-        <NumberStepper
-          label="REPS RÉALISÉES"
-          value={actualReps}
-          step={1}
-          min={0}
-          onChange={onChangeReps}
-        />
+        <NumberStepper label="POIDS (kg)" value={actualWeight} step={2.5} min={0} onChange={onChangeWeight} />
+        <NumberStepper label="REPS RÉALISÉES" value={actualReps} step={1} min={0} onChange={onChangeReps} />
         <View style={styles.rpeRow}>
           <ZoneText variant="caption" color={colors.text.muted} style={styles.rpeLabel}>
             RPE RESSENTI
@@ -563,6 +589,7 @@ function NumberStepper({
         <TouchableOpacity
           onPress={() => onChange(Math.max(min, +(value - step).toFixed(2)))}
           activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={styles.stepperBtn}
         >
           <Minus size={18} color={colors.accent.gold} />
@@ -573,6 +600,7 @@ function NumberStepper({
         <TouchableOpacity
           onPress={() => onChange(+(value + step).toFixed(2))}
           activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={styles.stepperBtn}
         >
           <Plus size={18} color={colors.accent.gold} />
@@ -594,7 +622,7 @@ function RestView({
   accentColor: string;
   remaining: number;
   total: number;
-  ringProgress: SharedValue<number>;
+  ringProgress: ReturnType<typeof useSharedValue<number>>;
   cue: string | null;
   onSkip: () => void;
   onAdjust: (delta: number) => void;
@@ -616,14 +644,7 @@ function RestView({
       </ZoneText>
       <View style={styles.ringWrap}>
         <Svg width={size} height={size}>
-          <SvgCircle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke={colors.border}
-            strokeWidth={stroke}
-            fill="none"
-          />
+          <SvgCircle cx={size / 2} cy={size / 2} r={radius} stroke={colors.border} strokeWidth={stroke} fill="none" />
           <AnimatedCircle
             cx={size / 2}
             cy={size / 2}
@@ -639,10 +660,10 @@ function RestView({
         </Svg>
         <Animated.View style={[styles.ringContent, contentStyle]}>
           <ZoneText variant="heading" style={[styles.ringValue, { color: accentColor }]}>
-            {remaining}
+            {formatRestMS(remaining)}
           </ZoneText>
           <ZoneText variant="caption" color={colors.text.muted}>
-            sec / {total}s
+            sur {total}s
           </ZoneText>
         </Animated.View>
       </View>
@@ -652,21 +673,13 @@ function RestView({
         </ZoneText>
       ) : null}
       <View style={styles.restControls}>
-        <TouchableOpacity
-          onPress={() => onAdjust(-30)}
-          activeOpacity={0.8}
-          style={styles.restAdjust}
-        >
+        <TouchableOpacity onPress={() => onAdjust(-30)} activeOpacity={0.8} style={styles.restAdjust}>
           <ZoneText style={styles.restAdjustText}>-30s</ZoneText>
         </TouchableOpacity>
         <TouchableOpacity onPress={onSkip} activeOpacity={0.85} style={styles.restSkip}>
           <ZoneText style={styles.restSkipText}>PASSER</ZoneText>
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => onAdjust(30)}
-          activeOpacity={0.8}
-          style={styles.restAdjust}
-        >
+        <TouchableOpacity onPress={() => onAdjust(30)} activeOpacity={0.8} style={styles.restAdjust}>
           <ZoneText style={styles.restAdjustText}>+30s</ZoneText>
         </TouchableOpacity>
       </View>
@@ -680,6 +693,7 @@ function SummaryView({
   zoneLabel,
   duration,
   volume,
+  prs,
   completedSets,
   onClose,
 }: {
@@ -688,6 +702,7 @@ function SummaryView({
   zoneLabel: string;
   duration: number;
   volume: number;
+  prs: ResultPR[];
   completedSets: CompletedSet[];
   onClose: () => void;
 }): React.ReactElement {
@@ -702,6 +717,26 @@ function SummaryView({
           <SummaryStat label="VOLUME" value={`${volume}`} unit="kg" />
           <SummaryStat label="SÉRIES" value={`${completedSets.length}`} unit="" />
         </View>
+        {prs.length > 0 ? (
+          <View style={styles.prsCard}>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.prsLabel}>
+              PR DE LA SÉANCE
+            </ZoneText>
+            {prs.map((p, i) => {
+              const ex = getExerciseById(p.exercise_id);
+              return (
+                <View key={`${p.exercise_id}-${i}`} style={styles.prsRow}>
+                  <ZoneText variant="label" style={styles.prsExercise}>
+                    🏆 {ex?.name ?? p.exercise_id}
+                  </ZoneText>
+                  <ZoneText variant="caption" color={colors.accent.gold} style={styles.prsValue}>
+                    {p.previous} → {p.next} kg
+                  </ZoneText>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
         {zoneScore !== null ? (
           <View style={styles.zoneSummaryCard}>
             <ZoneText variant="caption" color={colors.text.muted}>
@@ -723,7 +758,15 @@ function SummaryView({
   );
 }
 
-function SummaryStat({ label, value, unit }: { label: string; value: string; unit: string }): React.ReactElement {
+function SummaryStat({
+  label,
+  value,
+  unit,
+}: {
+  label: string;
+  value: string;
+  unit: string;
+}): React.ReactElement {
   return (
     <View style={styles.summaryStatCell}>
       <ZoneText variant="caption" color={colors.text.muted} style={styles.summaryStatLabel}>
@@ -811,12 +854,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
   },
-  stepperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-  },
+  stepperRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 },
   stepperLabel: { letterSpacing: 1, fontSize: 11 },
   stepperControl: { flexDirection: 'row', alignItems: 'center' },
   stepperBtn: {
@@ -846,7 +884,7 @@ const styles = StyleSheet.create({
   restEyebrow: { letterSpacing: 3, fontFamily: 'Inter-Bold', marginBottom: 16 },
   ringWrap: { width: 220, height: 220, alignItems: 'center', justifyContent: 'center' },
   ringContent: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-  ringValue: { fontSize: 72, lineHeight: 76 },
+  ringValue: { fontSize: 56, lineHeight: 60 },
   cueText: { textAlign: 'center', marginTop: 18, marginHorizontal: 12 },
   restControls: { flexDirection: 'row', alignItems: 'center', marginTop: 28 },
   restAdjust: {
@@ -898,6 +936,18 @@ const styles = StyleSheet.create({
   summaryStatValueRow: { flexDirection: 'row', alignItems: 'baseline' },
   summaryStatValue: { fontSize: 32, color: colors.text.primary, lineHeight: 36 },
   summaryStatUnit: { marginLeft: 4 },
+  prsCard: {
+    marginTop: 20,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+    borderRadius: 16,
+    padding: 14,
+  },
+  prsLabel: { letterSpacing: 2, fontSize: 11, marginBottom: 8 },
+  prsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 2 },
+  prsExercise: { color: colors.text.primary, fontSize: 14 },
+  prsValue: { fontFamily: 'Inter-Bold' },
   zoneSummaryCard: {
     marginTop: 24,
     backgroundColor: colors.bg.card,
