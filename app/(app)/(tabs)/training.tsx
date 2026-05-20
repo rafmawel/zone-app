@@ -190,18 +190,10 @@ export default function TrainingScreen(): React.ReactElement {
               key={c.key}
               activeOpacity={0.8}
               onPress={() => setFilter(c.key)}
-              style={[
-                styles.chip,
-                {
-                  borderColor: active ? colors.accent.gold : colors.border,
-                  backgroundColor: active ? colors.bg.elevated : colors.bg.card,
-                },
-              ]}
+              style={[styles.chip, active ? styles.chipActive : styles.chipInactive]}
             >
               <ZoneText
-                variant="label"
-                color={active ? colors.accent.gold : colors.text.secondary}
-                style={styles.chipText}
+                style={[styles.chipText, active ? styles.chipTextActive : styles.chipTextInactive]}
               >
                 {c.label}
               </ZoneText>
@@ -239,7 +231,8 @@ function ExerciseRow({
   exercise: Exercise;
   onPress: () => void;
 }): React.ReactElement {
-  const primary = exercise.muscles_primary.slice(0, 3);
+  const visible = exercise.muscles_primary.slice(0, 2);
+  const overflow = exercise.muscles_primary.length - visible.length;
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={styles.row}>
       <View style={styles.rowMain}>
@@ -250,49 +243,50 @@ function ExerciseRow({
               { backgroundColor: DIFFICULTY_COLORS[exercise.difficulty] },
             ]}
           />
-          <ZoneText variant="label" style={styles.rowName}>
+          <ZoneText variant="label" style={styles.rowName} numberOfLines={1}>
             {exercise.name}
           </ZoneText>
         </View>
         <View style={styles.rowMeta}>
-          <View style={styles.categoryBadge}>
-            <ZoneText variant="caption" color={colors.text.secondary} style={styles.badgeText}>
-              {CATEGORY_LABELS[exercise.category]}
-            </ZoneText>
-          </View>
-          <ZoneText variant="caption" color={colors.text.muted} style={styles.difficultyText}>
-            {DIFFICULTY_LABELS[exercise.difficulty]}
+          <ZoneText variant="caption" color={colors.text.secondary} style={styles.metaText}>
+            {CATEGORY_LABELS[exercise.category]} · {DIFFICULTY_LABELS[exercise.difficulty]}
           </ZoneText>
-        </View>
-        <View style={styles.muscleRow}>
-          {primary.map((m) => (
+          <View style={styles.metaSpacer} />
+          {visible.map((m) => (
             <View key={m} style={styles.musclePill}>
-              <ZoneText variant="caption" color={colors.accent.gold} style={styles.musclePillText}>
+              <ZoneText color={colors.accent.gold} style={styles.musclePillText}>
                 {MUSCLE_LABELS[m]}
               </ZoneText>
             </View>
           ))}
+          {overflow > 0 ? (
+            <View style={styles.musclePill}>
+              <ZoneText color={colors.accent.gold} style={styles.musclePillText}>
+                +{overflow}
+              </ZoneText>
+            </View>
+          ) : null}
         </View>
       </View>
-      <ChevronRight size={18} color={colors.text.muted} />
+      <ChevronRight size={16} color={colors.text.muted} />
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 12 },
+  header: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 8 },
   title: { fontSize: 28, letterSpacing: 2 },
   banner: {
     marginHorizontal: 24,
     marginTop: 4,
-    marginBottom: 8,
+    marginBottom: 4,
     backgroundColor: colors.bg.card,
     borderLeftWidth: 3,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  bannerText: { color: colors.text.primary, fontSize: 13, lineHeight: 18 },
+  bannerText: { color: colors.text.primary, fontSize: 12, lineHeight: 16 },
   searchRow: {
     marginHorizontal: 24,
     marginTop: 8,
@@ -303,28 +297,46 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 12,
     paddingHorizontal: 14,
-    height: 48,
+    height: 44,
   },
   searchInput: {
     flex: 1,
     marginLeft: 10,
     color: colors.text.primary,
     fontFamily: 'Inter-Regular',
-    fontSize: 15,
+    fontSize: 14,
     paddingVertical: 0,
   },
   chipsRow: {
     paddingHorizontal: 24,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
   },
   chip: {
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: 999,
     borderWidth: 1,
     marginRight: 8,
+    minHeight: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  chipText: { fontSize: 13, letterSpacing: 0.5 },
+  chipActive: {
+    backgroundColor: colors.accent.gold,
+    borderColor: colors.accent.gold,
+  },
+  chipInactive: {
+    backgroundColor: 'transparent',
+    borderColor: colors.border,
+  },
+  chipText: {
+    fontSize: 13,
+    letterSpacing: 0.5,
+    fontFamily: 'Inter-Medium',
+  },
+  chipTextActive: { color: colors.bg.primary, fontFamily: 'Inter-Bold' },
+  chipTextInactive: { color: colors.text.secondary },
   listContent: { paddingHorizontal: 24, paddingBottom: 32 },
   row: {
     flexDirection: 'row',
@@ -332,36 +344,27 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.card,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    marginBottom: 10,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    marginBottom: 6,
   },
-  rowMain: { flex: 1 },
+  rowMain: { flex: 1, marginRight: 6 },
   rowHeader: { flexDirection: 'row', alignItems: 'center' },
   difficultyDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
-  rowName: { color: colors.text.primary, fontSize: 16 },
+  rowName: { color: colors.text.primary, fontSize: 15, flexShrink: 1 },
   rowMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  categoryBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    backgroundColor: colors.bg.elevated,
-    borderRadius: 999,
-    marginRight: 8,
-  },
-  badgeText: { fontSize: 11 },
-  difficultyText: { fontSize: 11 },
-  muscleRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
+  metaText: { fontSize: 12 },
+  metaSpacer: { flex: 1 },
   musclePill: {
     backgroundColor: 'rgba(201,168,76,0.12)',
     borderWidth: 1,
     borderColor: 'rgba(201,168,76,0.4)',
     borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginRight: 6,
-    marginBottom: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    marginLeft: 4,
   },
-  musclePillText: { fontSize: 11 },
+  musclePillText: { fontSize: 10, fontFamily: 'Inter-Medium' },
   empty: { padding: 24, alignItems: 'center' },
 });
