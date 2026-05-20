@@ -70,6 +70,30 @@ export interface DailyCheckin {
 export type TrainingSessionSport = 'weightlifting' | 'running';
 export type TrainingSessionStatus = 'planned' | 'completed' | 'skipped';
 
+export interface PlannedSet {
+  exercise_id: string;
+  set_number: number;
+  target_reps: string;
+  target_weight_kg: number | null;
+  target_rpe: number | null;
+  rest_seconds: number;
+}
+
+export interface SessionExercise {
+  exercise_id: string;
+  sets: PlannedSet[];
+  notes?: string;
+}
+
+export interface CompletedSet {
+  exercise_id: string;
+  set_number: number;
+  actual_reps: number;
+  actual_weight_kg: number;
+  rpe: number | null;
+  completed_at: Timestamp | null;
+}
+
 export interface TrainingSession {
   id: string;
   date: string;
@@ -78,6 +102,39 @@ export interface TrainingSession {
   rpe?: number;
   duration_minutes?: number;
   created_at: Timestamp | null;
+  planned_exercises?: SessionExercise[];
+  completed_sets?: CompletedSet[];
+  zone_score_at_start?: number | null;
+  zone_message?: string | null;
+  completed_at?: Timestamp | null;
+  total_volume_kg?: number;
+}
+
+export type ProgramBlock = 1 | 2 | 3;
+export type ProgramSport = 'weightlifting' | 'running';
+
+export interface UserProgram {
+  uid: string;
+  sport_key: ProgramSport;
+  current_block: ProgramBlock;
+  current_week: number;
+  current_day: number;
+  mesocycle_start: string;
+  sessions_per_week: number;
+  level: string;
+  goal: string;
+  equipment: string;
+  created_at: Timestamp | null;
+  updated_at: Timestamp | null;
+}
+
+export interface ExerciseMax {
+  exercise_id: string;
+  weight_kg: number;
+  reps: number;
+  estimated_1rm: number;
+  date: string;
+  is_pr: boolean;
 }
 
 export function todayDateString(d: Date = new Date()): string {
@@ -166,6 +223,122 @@ export async function getUpcomingSessions(
 export async function getTodayZoneScore(uid: string): Promise<number> {
   const ci = await getTodayCheckin(uid);
   return ci?.zone_score ?? 50;
+}
+
+export async function getUserProgram(uid: string): Promise<UserProgram | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'program'));
+  if (!snap.exists()) return null;
+  return snap.data() as UserProgram;
+}
+
+export async function saveUserProgram(
+  uid: string,
+  program: Omit<UserProgram, 'created_at' | 'updated_at'> & {
+    created_at?: UserProgram['created_at'];
+  },
+): Promise<void> {
+  await setDoc(doc(db, 'users', uid, 'state', 'program'), {
+    ...program,
+    created_at: program.created_at ?? serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function getExerciseMaxes(uid: string): Promise<ExerciseMax[]> {
+  const snap = await getDocs(collection(db, 'users', uid, 'maxes'));
+  return snap.docs.map((d) => d.data() as ExerciseMax);
+}
+
+export async function saveExerciseMax(uid: string, max: ExerciseMax): Promise<void> {
+  await setDoc(doc(db, 'users', uid, 'maxes', max.exercise_id), max);
+}
+
+export interface SavePlannedSessionInput {
+  date: string;
+  sport_key: TrainingSessionSport;
+  planned_exercises: SessionExercise[];
+  zone_score_at_start: number | null;
+  zone_message: string | null;
+}
+
+export async function createPlannedSession(
+  uid: string,
+  input: SavePlannedSessionInput,
+): Promise<string> {
+  const ref = doc(collection(db, 'users', uid, 'sessions'));
+  const payload: Omit<TrainingSession, 'id' | 'created_at'> & {
+    created_at: ReturnType<typeof serverTimestamp>;
+  } = {
+    date: input.date,
+    sport_key: input.sport_key,
+    status: 'planned',
+    planned_exercises: input.planned_exercises,
+    completed_sets: [],
+    zone_score_at_start: input.zone_score_at_start,
+    zone_message: input.zone_message,
+    created_at: serverTimestamp(),
+  };
+  await setDoc(ref, { ...payload, id: ref.id });
+  return ref.id;
+}
+
+export async function getSession(
+  uid: string,
+  sessionId: string,
+): Promise<TrainingSession | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'sessions', sessionId));
+  if (!snap.exists()) return null;
+  return snap.data() as TrainingSession;
+}
+
+export async function saveCompletedSet(
+  uid: string,
+  sessionId: string,
+  set: CompletedSet,
+): Promise<void> {
+  const ref = doc(db, 'users', uid, 'sessions', sessionId);
+  const snap = await getDoc(ref);
+  const data = (snap.data() as TrainingSession | undefined) ?? null;
+  const current = data?.completed_sets ?? [];
+  const next = [...current, { ...set, completed_at: serverTimestamp() }];
+  await updateDoc(ref, { completed_sets: next });
+}
+
+export interface CompleteSessionSummary {
+  rpe?: number;
+  duration_minutes: number;
+  total_volume_kg: number;
+}
+
+export async function completeSession(
+  uid: string,
+  sessionId: string,
+  summary: CompleteSessionSummary,
+): Promise<void> {
+  await updateDoc(doc(db, 'users', uid, 'sessions', sessionId), {
+    status: 'completed',
+    completed_at: serverTimestamp(),
+    ...(summary.rpe !== undefined ? { rpe: summary.rpe } : {}),
+    duration_minutes: summary.duration_minutes,
+    total_volume_kg: summary.total_volume_kg,
+  });
+}
+
+export async function countCompletedSessionsSince(
+  uid: string,
+  isoDate: string,
+): Promise<number> {
+  const q = query(
+    collection(db, 'users', uid, 'sessions'),
+    where('status', '==', 'completed'),
+    where('date', '>=', isoDate),
+  );
+  try {
+    const snap = await getDocs(q);
+    return snap.size;
+  } catch {
+    return 0;
+  }
 }
 
 export async function getDaysSinceLastSession(uid: string): Promise<number> {

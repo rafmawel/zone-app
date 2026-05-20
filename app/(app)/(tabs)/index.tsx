@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronRight, ClipboardList, Dumbbell } from 'lucide-react-native';
+import { ChevronRight, Dumbbell } from 'lucide-react-native';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import { todayDateString, type DailyCheckin } from '@/lib/firestore';
+import {
+  getUpcomingSessions,
+  todayDateString,
+  type DailyCheckin,
+  type TrainingSession,
+} from '@/lib/firestore';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
@@ -30,10 +35,26 @@ function greetingName(): string {
   return 'Athlète';
 }
 
+function sessionTitle(session: TrainingSession): string {
+  const exCount = session.planned_exercises?.length ?? 0;
+  const sport = session.sport_key === 'running' ? 'Course' : 'Haltérophilie';
+  return `${sport} · ${exCount} exercice${exCount > 1 ? 's' : ''}`;
+}
+
+function sessionMeta(session: TrainingSession): string {
+  const sets = (session.planned_exercises ?? []).reduce(
+    (acc, ex) => acc + ex.sets.length,
+    0,
+  );
+  const minutes = Math.max(20, Math.round(sets * 2.5));
+  return `${sets} séries · environ ${minutes} min`;
+}
+
 export default function DashboardScreen(): React.ReactElement {
   const router = useRouter();
   const [checkin, setCheckin] = useState<DailyCheckin | null>(null);
   const [loaded, setLoaded] = useState<boolean>(false);
+  const [nextSession, setNextSession] = useState<TrainingSession | null>(null);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -50,6 +71,21 @@ export default function DashboardScreen(): React.ReactElement {
       () => setLoaded(true),
     );
     return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    let cancelled = false;
+    void getUpcomingSessions(user.uid, 1)
+      .then((rows) => {
+        if (cancelled) return;
+        setNextSession(rows[0] ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const score = checkin?.zone_score ?? 50;
@@ -149,22 +185,43 @@ export default function DashboardScreen(): React.ReactElement {
           </View>
         ) : null}
 
-        <View style={styles.sessionCard}>
+        <TouchableOpacity
+          activeOpacity={nextSession ? 0.85 : 1}
+          disabled={!nextSession}
+          onPress={() => {
+            if (nextSession) router.push(`/(app)/session/${nextSession.id}`);
+          }}
+          style={styles.sessionCard}
+        >
           <ZoneText variant="caption" color={colors.text.muted} style={styles.sessionEyebrow}>
             PROCHAINE SÉANCE
           </ZoneText>
           <View style={styles.sessionRow}>
             <Dumbbell size={20} color={colors.accent.gold} />
             <View style={styles.sessionTextCol}>
-              <ZoneText variant="label" style={styles.sessionTitle}>
-                À planifier
-              </ZoneText>
-              <ZoneText variant="caption" color={colors.text.muted}>
-                Module entraînement à venir
-              </ZoneText>
+              {nextSession ? (
+                <>
+                  <ZoneText variant="label" style={styles.sessionTitle}>
+                    {sessionTitle(nextSession)}
+                  </ZoneText>
+                  <ZoneText variant="caption" color={colors.text.muted}>
+                    {sessionMeta(nextSession)}
+                  </ZoneText>
+                </>
+              ) : (
+                <>
+                  <ZoneText variant="label" style={styles.sessionTitle}>
+                    À planifier
+                  </ZoneText>
+                  <ZoneText variant="caption" color={colors.text.muted}>
+                    Démarre ton programme depuis l’onglet Entraînement
+                  </ZoneText>
+                </>
+              )}
             </View>
+            {nextSession ? <ChevronRight size={18} color={colors.text.muted} /> : null}
           </View>
-        </View>
+        </TouchableOpacity>
 
         <View style={styles.statsRow}>
           <StatCard label="Cette semaine" value="0" suffix="séances" />

@@ -9,10 +9,17 @@ import {
   type ListRenderItemInfo,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Search } from 'lucide-react-native';
+import { ChevronRight, Dumbbell, Search } from 'lucide-react-native';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import { todayDateString, type DailyCheckin } from '@/lib/firestore';
+import {
+  createPlannedSession,
+  getExerciseMaxes,
+  getUserProgram,
+  todayDateString,
+  type DailyCheckin,
+  type UserProgram,
+} from '@/lib/firestore';
 import {
   EXERCISES,
   EXERCISE_CATEGORIES,
@@ -21,9 +28,11 @@ import {
   type ExerciseSport,
   type MuscleGroup,
 } from '@/data/exercises';
+import { generateWeeklySession, getBlockName } from '@/lib/programEngine';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
+import { Button } from '@/components/ui/Button';
 
 type FilterKey = ExerciseCategory | 'all' | ExerciseSport;
 
@@ -114,6 +123,9 @@ export default function TrainingScreen(): React.ReactElement {
   const [search, setSearch] = useState<string>('');
   const [filter, setFilter] = useState<FilterKey>('all');
   const [score, setScore] = useState<number | null>(null);
+  const [program, setProgram] = useState<UserProgram | null>(null);
+  const [programLoaded, setProgramLoaded] = useState<boolean>(false);
+  const [generating, setGenerating] = useState<boolean>(false);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -132,6 +144,50 @@ export default function TrainingScreen(): React.ReactElement {
     );
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) {
+      setProgramLoaded(true);
+      return;
+    }
+    const unsubscribe = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'program'),
+      (snap) => {
+        setProgram(snap.exists() ? (snap.data() as UserProgram) : null);
+        setProgramLoaded(true);
+      },
+      () => setProgramLoaded(true),
+    );
+    return unsubscribe;
+  }, []);
+
+  const onStartSession = async (): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user || !program) return;
+    setGenerating(true);
+    try {
+      const maxes = await getExerciseMaxes(user.uid);
+      const generated = generateWeeklySession({
+        program,
+        maxes,
+        dayOfWeek: program.current_day,
+        zoneScore: score,
+      });
+      const sessionId = await createPlannedSession(user.uid, {
+        date: todayDateString(),
+        sport_key: program.sport_key,
+        planned_exercises: generated.exercises,
+        zone_score_at_start: score,
+        zone_message: generated.message,
+      });
+      router.push(`/(app)/session/${sessionId}`);
+    } catch {
+      // intentional: surfaced via no-op; user can retry
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -164,6 +220,73 @@ export default function TrainingScreen(): React.ReactElement {
           </ZoneText>
         </View>
       ) : null}
+
+      {programLoaded && program ? (
+        <View style={styles.programCard}>
+          <View style={styles.programHeader}>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.programEyebrow}>
+              MON PROGRAMME
+            </ZoneText>
+            <ZoneText variant="caption" color={colors.accent.gold}>
+              Semaine {Math.min(4, program.current_week)}/4
+            </ZoneText>
+          </View>
+          <ZoneText variant="heading" style={styles.programBlock}>
+            BLOC {program.current_block} — {getBlockName(program.current_block)}
+          </ZoneText>
+          <View style={styles.weekDots}>
+            {[1, 2, 3, 4].map((w) => (
+              <View
+                key={w}
+                style={[
+                  styles.weekDot,
+                  {
+                    backgroundColor:
+                      w <= program.current_week ? colors.accent.gold : colors.border,
+                  },
+                ]}
+              />
+            ))}
+          </View>
+          <View style={styles.programMetaRow}>
+            <Dumbbell size={16} color={colors.text.muted} />
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.programMetaText}>
+              Séance du jour · {program.sessions_per_week}× / semaine
+            </ZoneText>
+          </View>
+          {banner ? (
+            <ZoneText variant="caption" color={colors.text.secondary} style={styles.programZoneNote}>
+              {banner.message.replace(/^[🔴🟡🔵🟢]\s*/u, '')}
+            </ZoneText>
+          ) : null}
+          <View style={styles.programCta}>
+            <Button title="Voir ma séance" loading={generating} onPress={onStartSession} />
+          </View>
+        </View>
+      ) : null}
+
+      {programLoaded && !program ? (
+        <View style={styles.programCard}>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.programEyebrow}>
+            MON PROGRAMME
+          </ZoneText>
+          <ZoneText variant="heading" style={styles.programBlock}>
+            DÉMARRE TON PROGRAMME
+          </ZoneText>
+          <ZoneText variant="body" color={colors.text.secondary} style={styles.programIntro}>
+            Estime tes maxes pour générer ton premier cycle de 12 semaines.
+          </ZoneText>
+          <View style={styles.programCta}>
+            <Button title="Commencer" onPress={() => router.push('/(app)/maxes')} />
+          </View>
+        </View>
+      ) : null}
+
+      <View style={styles.libraryHeader}>
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.libraryEyebrow}>
+          BIBLIOTHÈQUE
+        </ZoneText>
+      </View>
 
       <View style={styles.searchRow}>
         <Search size={18} color={colors.text.muted} />
@@ -367,4 +490,26 @@ const styles = StyleSheet.create({
   },
   musclePillText: { fontSize: 10, fontFamily: 'Inter-Medium' },
   empty: { padding: 24, alignItems: 'center' },
+  programCard: {
+    marginHorizontal: 24,
+    marginTop: 6,
+    marginBottom: 4,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 14,
+  },
+  programHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  programEyebrow: { letterSpacing: 1, fontSize: 11 },
+  programBlock: { fontSize: 20, marginTop: 2, color: colors.text.primary, letterSpacing: 1 },
+  programIntro: { marginTop: 6, lineHeight: 20 },
+  weekDots: { flexDirection: 'row', marginTop: 8 },
+  weekDot: { width: 18, height: 4, borderRadius: 2, marginRight: 6 },
+  programMetaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
+  programMetaText: { marginLeft: 6, fontSize: 12 },
+  programZoneNote: { marginTop: 8, fontSize: 12, lineHeight: 17 },
+  programCta: { marginTop: 12 },
+  libraryHeader: { paddingHorizontal: 24, marginTop: 16, marginBottom: 2 },
+  libraryEyebrow: { letterSpacing: 2, fontSize: 11 },
 });
