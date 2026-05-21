@@ -15,6 +15,7 @@ import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { CheckinBanner } from '@/components/CheckinBanner';
+import { ZoneOrbe } from '@/components/ZoneOrbe';
 
 function frenchDate(): string {
   try {
@@ -122,27 +123,18 @@ export default function DashboardScreen(): React.ReactElement {
         <View style={styles.orbeZone}>
           {!loaded ? (
             <>
-              <Skeleton width={140} height={140} borderRadius={70} />
+              <Skeleton width={160} height={160} borderRadius={80} />
               <Skeleton width={120} height={56} style={styles.scoreSkeleton} />
               <Skeleton width={140} height={14} style={styles.labelSkeleton} />
             </>
           ) : (
             <>
-              <View
-                style={[
-                  styles.orb,
-                  {
-                    backgroundColor: level ? level.color : colors.accent.gold,
-                    shadowColor: level ? level.color : colors.accent.gold,
-                  },
-                ]}
-              >
-                {!checkin ? (
-                  <ZoneText variant="heading" style={styles.orbQuestion}>
-                    ?
-                  </ZoneText>
-                ) : null}
-              </View>
+              <ZoneOrbe
+                score={checkin ? score : 50}
+                size={160}
+                animated
+                overlayText={!checkin ? '?' : undefined}
+              />
               <ZoneText
                 variant="heading"
                 style={[

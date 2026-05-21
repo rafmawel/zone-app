@@ -15,7 +15,7 @@ import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { Button } from '@/components/ui/Button';
 import { ZoneText } from '@/components/ui/ZoneText';
-import { PulsingOrb } from '@/components/PulsingOrb';
+import { ZoneOrbe } from '@/components/ZoneOrbe';
 
 const TOTAL_STEPS = 5;
 
@@ -112,7 +112,7 @@ export default function CheckinScreen(): React.ReactElement {
     return (
       <SafeScreen>
         <View style={styles.resultRoot}>
-          <PulsingOrb size={120} color={result.level.color} />
+          <ZoneOrbe score={result.score} size={140} animated />
           <ZoneText
             variant="heading"
             style={[styles.resultScore, { color: result.level.color }]}

@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { Activity, Brain, Moon, TrendingUp } from 'lucide-react-native';
 import { colors } from '@/theme/colors';
 import { ZoneText } from '@/components/ui/ZoneText';
+import { ZoneOrbe } from '@/components/ZoneOrbe';
 import type { ProReadinessScore } from '@/lib/pro';
 
 export interface ProReadinessCardProps {
@@ -40,14 +41,18 @@ export function ProReadinessCard({
       <View style={[styles.leftStrip, { backgroundColor: tint }]} />
       <View style={styles.row}>
         <View style={styles.left}>
-          <ZoneText
-            variant="heading"
-            size={72}
-            color={tint}
-            style={styles.scoreText}
-          >
-            {readiness.score}
-          </ZoneText>
+          <View style={styles.orbeWrap}>
+            <ZoneOrbe score={readiness.score} size={80} animated />
+            <View style={styles.orbeOverlay} pointerEvents="none">
+              <ZoneText
+                variant="heading"
+                size={28}
+                color={colors.text.primary}
+              >
+                {readiness.score}
+              </ZoneText>
+            </View>
+          </View>
           <ZoneText
             variant="label"
             size={12}
@@ -170,11 +175,24 @@ const styles = StyleSheet.create({
     width: 120,
     alignItems: 'flex-start',
   },
-  scoreText: {
-    letterSpacing: 1,
+  orbeWrap: {
+    width: 80,
+    height: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  orbeOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   label: {
     letterSpacing: 1.4,
+    marginTop: 6,
   },
   indicators: {
     flex: 1,

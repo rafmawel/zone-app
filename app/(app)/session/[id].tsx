@@ -33,6 +33,7 @@ import {
 import { checkAndAdvanceProgram, computeRestSeconds, estimateOneRepMax } from '@/lib/programEngine';
 import { computeAndSaveWorkloadEntry } from '@/lib/pro';
 import { usePro } from '@/hooks/usePro';
+import { ZoneOrbe } from '@/components/ZoneOrbe';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { getExerciseById } from '@/data/exercises';
 import { useSession, formatRestMS } from '@/context/SessionContext';
@@ -368,9 +369,7 @@ export default function SessionScreen(): React.ReactElement {
           </View>
         ) : null}
         {zoneScore !== null ? (
-          <View style={styles.zoneScoreBubble}>
-            <ZoneText style={styles.zoneScoreText}>{zoneScore}</ZoneText>
-          </View>
+          <ZoneOrbe score={zoneScore} size={40} animated={false} />
         ) : null}
       </View>
 

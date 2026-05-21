@@ -13,7 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { db } from '@/lib/firebase';
 import { initializePurchases } from '@/lib/subscriptions';
 import { colors } from '@/theme/colors';
-import { PulsingOrb } from '@/components/PulsingOrb';
+import { ZoneOrbeSplash } from '@/components/ZoneOrbeSplash';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { OnboardingProvider } from '@/context/OnboardingContext';
 import { SessionProvider } from '@/context/SessionContext';
@@ -23,7 +23,7 @@ SplashScreen.preventAutoHideAsync().catch(() => undefined);
 function SplashView(): React.ReactElement {
   return (
     <View style={styles.splash}>
-      <PulsingOrb size={120} />
+      <ZoneOrbeSplash />
       <ZoneText
         variant="heading"
         style={{ marginTop: 28, fontSize: 32, color: colors.accent.gold, letterSpacing: 4 }}

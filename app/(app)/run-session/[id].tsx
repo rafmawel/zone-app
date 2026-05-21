@@ -36,6 +36,7 @@ import {
 } from '@/lib/runningEngine';
 import { computeAndSaveWorkloadEntry } from '@/lib/pro';
 import { usePro } from '@/hooks/usePro';
+import { ZoneOrbe } from '@/components/ZoneOrbe';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { useSession, formatRestMS } from '@/context/SessionContext';
 import { colors } from '@/theme/colors';
@@ -473,6 +474,9 @@ export default function RunSessionScreen(): React.ReactElement {
                 <ZoneText style={styles.proBadgeText}>PRO</ZoneText>
               </View>
             ) : null}
+            {zoneScore !== null ? (
+              <ZoneOrbe score={zoneScore} size={40} animated={false} />
+            ) : null}
           </View>
           <View style={styles.typeBadge}>
             <ZoneText style={styles.typeBadgeText}>{sessionType}</ZoneText>
@@ -522,6 +526,9 @@ export default function RunSessionScreen(): React.ReactElement {
           <View style={styles.proBadge}>
             <ZoneText style={styles.proBadgeText}>PRO</ZoneText>
           </View>
+        ) : null}
+        {zoneScore !== null ? (
+          <ZoneOrbe score={zoneScore} size={40} animated={false} />
         ) : null}
       </View>
       <View style={styles.headerRow}>
