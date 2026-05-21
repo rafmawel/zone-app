@@ -12,71 +12,69 @@ export interface UseProResult {
   refresh: () => Promise<void>;
 }
 
-const DEV_FORCE_PRO = __DEV__;
+const NOOP_REFRESH = async (): Promise<void> => {};
 
 /**
  * Hook that resolves whether the current user has a Pro subscription.
  *
- * Strategy:
- *  1. Read the Firestore cache (fast).
- *  2. Ask RevenueCat for the authoritative status.
- *  3. Sync the result back to Firestore so other devices see it.
+ * In development (`__DEV__`) this short-circuits to Pro immediately so
+ * the full analytics surface is testable without RevenueCat configured.
  *
- * In development, `DEV_FORCE_PRO` short-circuits to Pro for testing.
+ * In production:
+ *  1. Reads the Firestore cache (fast).
+ *  2. Asks RevenueCat for the authoritative status.
+ *  3. Syncs the result back to Firestore so other devices see it.
  *
  * @returns `{ isPro, loading, refresh }`
  */
 export function usePro(): UseProResult {
+  if (__DEV__) {
+    return { isPro: true, loading: false, refresh: NOOP_REFRESH };
+  }
+  return useProProduction();
+}
+
+function useProProduction(): UseProResult {
   const { user, loading: authLoading } = useAuth();
   const [isPro, setIsPro] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
-  const resolve = useCallback(
-    async (uid: string | null): Promise<void> => {
-      if (DEV_FORCE_PRO) {
-        setIsPro(true);
-        setLoading(false);
-        return;
-      }
-      if (!uid) {
-        setIsPro(false);
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      // 1. Fast Firestore cache
-      try {
-        const cached = await getSubscriptionStatus(uid);
-        if (cached) {
-          setIsPro(isCacheActive(cached.isPro, cached.expiresAt));
-        }
-      } catch {
-        // ignore cache failure
-      }
-
-      // 2. Authoritative RevenueCat
-      let proFromRC = false;
-      try {
-        proFromRC = await checkProStatus();
-      } catch {
-        proFromRC = false;
-      }
-      setIsPro(proFromRC);
+  const resolve = useCallback(async (uid: string | null): Promise<void> => {
+    if (!uid) {
+      setIsPro(false);
       setLoading(false);
+      return;
+    }
+    setLoading(true);
 
-      // 3. Sync back
-      try {
-        const expiresAt = proFromRC ? await getProExpiryDate() : null;
-        await updateSubscriptionStatus(uid, {
-          isPro: proFromRC,
-          expiresAt,
-        });
-      } catch {
-        // best-effort
+    try {
+      const cached = await getSubscriptionStatus(uid);
+      if (cached) {
+        setIsPro(isCacheActive(cached.isPro, cached.expiresAt));
       }
-    },
-    [],
-  );
+    } catch {
+      // ignore cache failure
+    }
+
+    let proFromRC = false;
+    try {
+      proFromRC = await checkProStatus();
+    } catch {
+      proFromRC = false;
+    }
+    setIsPro(proFromRC);
+    setLoading(false);
+
+    try {
+      const expiresAt = proFromRC ? await getProExpiryDate() : null;
+      await updateSubscriptionStatus(uid, {
+        isPro: proFromRC,
+        expiresAt,
+      });
+    } catch {
+      // best-effort
+    }
+  }, []);
 
   useEffect(() => {
     if (authLoading) {
