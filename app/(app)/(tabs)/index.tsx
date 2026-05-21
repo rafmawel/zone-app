@@ -14,6 +14,7 @@ import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { CheckinBanner } from '@/components/CheckinBanner';
 
 function frenchDate(): string {
   try {
@@ -105,6 +106,8 @@ export default function DashboardScreen(): React.ReactElement {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
+        {loaded && !checkin ? <CheckinBanner /> : null}
+
         <View style={styles.headerZone}>
           <ZoneText variant="label" color={colors.text.secondary}>
             Bonjour, {name}
@@ -171,18 +174,6 @@ export default function DashboardScreen(): React.ReactElement {
           )}
         </View>
 
-        {loaded && !checkin ? (
-          <TouchableOpacity
-            onPress={() => router.push('/(app)/checkin')}
-            activeOpacity={0.85}
-            style={styles.ctaCard}
-          >
-            <ZoneText variant="label" style={styles.ctaText}>
-              📋 Évalue ton état du jour
-            </ZoneText>
-            <ChevronRight size={20} color={colors.accent.gold} />
-          </TouchableOpacity>
-        ) : null}
         {loaded && checkin ? (
           <View style={styles.doneCard}>
             <ZoneText variant="label" color={colors.success} style={styles.doneText}>
@@ -291,18 +282,6 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   evalLink: { marginTop: 8, fontFamily: 'Inter-Medium' },
-  ctaCard: {
-    marginTop: 24,
-    borderWidth: 1,
-    borderColor: colors.accent.gold,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  ctaText: { color: colors.accent.gold, fontSize: 16 },
   doneCard: {
     marginTop: 24,
     backgroundColor: colors.bg.card,
