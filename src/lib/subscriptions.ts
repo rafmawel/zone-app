@@ -19,7 +19,7 @@ const RC_API_KEY = 'rc_android_REPLACE_ME';
 const PRO_ENTITLEMENT_ID = 'pro';
 
 const isExpoGo = Constants.appOwnership === 'expo';
-const shouldSkipRC = isExpoGo || __DEV__;
+const shouldSkipRC = isExpoGo;
 
 let initialized = false;
 let initializing: Promise<void> | null = null;
