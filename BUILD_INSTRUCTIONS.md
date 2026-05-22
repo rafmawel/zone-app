@@ -36,9 +36,10 @@ Or scan the QR code shown in the EAS dashboard.
 ## RevenueCat setup
 1. Create an account at [app.revenuecat.com](https://app.revenuecat.com).
 2. Create an Android app and copy the public Android API key.
-3. Replace `rc_android_REPLACE_ME` in two places:
-   - `app.json` under `plugins.react-native-purchases.androidApiKey`
-   - `src/lib/subscriptions.ts` (the `RC_API_KEY` constant)
+3. Replace `rc_android_REPLACE_ME` in `src/lib/subscriptions.ts`
+   (the `RC_API_KEY` constant). The SDK is configured at runtime via
+   `Purchases.configure({ apiKey })` so no config-plugin entry is
+   needed in `app.json`.
 4. Create the in-app subscription products in Google Play Console
    (one monthly, one annual). Default expected identifiers used by the
    paywall: `$rc_monthly` and `$rc_annual` packages under the `pro`

@@ -40,12 +40,6 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Zone utilise ta position pour mesurer tes distances de course."
         }
-      ],
-      [
-        "react-native-purchases",
-        {
-          "androidApiKey": "rc_android_REPLACE_ME"
-        }
       ]
     ],
     "experiments": {
