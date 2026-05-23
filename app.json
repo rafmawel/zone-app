@@ -29,9 +29,6 @@
         "android.permission.VIBRATE"
       ]
     },
-    "web": {
-      "bundler": "metro"
-    },
     "plugins": [
       "expo-router",
       "expo-font",
@@ -44,11 +41,6 @@
     ],
     "experiments": {
       "typedRoutes": true
-    },
-    "extra": {
-      "eas": {
-        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
-      }
     }
   }
 }
