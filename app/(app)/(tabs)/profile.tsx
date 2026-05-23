@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { Check, ChevronRight, Sparkles } from 'lucide-react-native';
@@ -7,6 +7,7 @@ import { auth } from '@/lib/firebase';
 import { showManageSubscriptions, getProExpiryDate } from '@/lib/subscriptions';
 import { usePro } from '@/hooks/usePro';
 import {
+  deleteAllUserData,
   getAllTimeStats,
   getExerciseMaxes,
   getHyroxProfile,
@@ -161,6 +162,38 @@ export default function ProfileScreen(): React.ReactElement {
     } catch {
       // surfaced silently
     }
+  };
+
+  const [resetting, setResetting] = useState<boolean>(false);
+
+  const onResetAll = (): void => {
+    Alert.alert(
+      'Réinitialiser mes données',
+      "Es-tu sûr ? Cette action supprimera toutes tes séances, ton programme, tes maxes et tes données de santé. Ton compte restera actif.",
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Réinitialiser',
+          style: 'destructive',
+          onPress: async () => {
+            const user = auth.currentUser;
+            if (!user) return;
+            setResetting(true);
+            try {
+              await deleteAllUserData(user.uid);
+              await signOut(auth);
+              router.replace('/onboarding/step-1');
+            } catch {
+              setResetting(false);
+              Alert.alert(
+                'Erreur',
+                "La réinitialisation a échoué. Vérifie ta connexion et réessaie.",
+              );
+            }
+          },
+        },
+      ],
+    );
   };
 
   const user = auth.currentUser;
@@ -402,6 +435,18 @@ export default function ProfileScreen(): React.ReactElement {
           {!program && !runningProfile && !muscleProfile && !hyroxProfile ? (
             <EmptyHint text="Aucun sport activé. Démarre depuis l’onglet Programme." />
           ) : null}
+
+          <TouchableOpacity
+            onPress={onResetAll}
+            activeOpacity={0.7}
+            disabled={resetting}
+            style={styles.resetBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ZoneText style={styles.resetText}>
+              {resetting ? 'Réinitialisation en cours' : 'Réinitialiser toutes mes données'}
+            </ZoneText>
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity
@@ -662,5 +707,19 @@ const styles = StyleSheet.create({
   },
   emptyText: { textAlign: 'center' },
   logoutBtn: { marginTop: 32, alignItems: 'center', paddingVertical: 14 },
+  resetBtn: {
+    marginTop: 24,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    borderRadius: 12,
+  },
+  resetText: {
+    color: colors.danger,
+    fontFamily: 'Inter-Medium',
+    fontSize: 13,
+    letterSpacing: 0.5,
+  },
   logoutText: { color: colors.danger, fontFamily: 'Inter-Medium', fontSize: 14 },
 });

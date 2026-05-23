@@ -12,6 +12,12 @@
       "resizeMode": "contain",
       "backgroundColor": "#0A0A0A"
     },
+    "updates": {
+      "url": "https://u.expo.dev/7cfd204c-6274-4278-98c7-7b5f6a070147"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.rafmawel.zone"

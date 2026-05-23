@@ -11,6 +11,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
   type Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -811,6 +812,56 @@ export async function updateSubscriptionStatus(
     {
       ...status,
       updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+const RESET_COLLECTIONS = [
+  'checkins',
+  'sessions',
+  'runs',
+  'maxes',
+  'workload',
+  'state',
+  'sports',
+  'schedules',
+] as const;
+
+async function deleteCollection(uid: string, name: string): Promise<void> {
+  const snap = await getDocs(collection(db, 'users', uid, name));
+  if (snap.empty) return;
+  // Firestore batched writes cap at 500 ops; chunk just in case.
+  const docs = snap.docs;
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = writeBatch(db);
+    const slice = docs.slice(i, i + 400);
+    for (const d of slice) batch.delete(d.ref);
+    await batch.commit();
+  }
+}
+
+/**
+ * Delete every per-user document under `users/{uid}` and reset the
+ * top-level profile to the pre-onboarding state. The auth user itself
+ * is left intact so the caller can sign them out separately.
+ *
+ * @param uid Firebase auth UID
+ */
+export async function deleteAllUserData(uid: string): Promise<void> {
+  for (const name of RESET_COLLECTIONS) {
+    await deleteCollection(uid, name);
+  }
+  try {
+    await deleteDoc(doc(db, 'users', uid, 'state', 'performance_model'));
+  } catch {
+    // already deleted by the state-collection sweep
+  }
+  await setDoc(
+    doc(db, 'users', uid),
+    {
+      onboarding_completed: false,
+      zone_score: 50,
     },
     { merge: true },
   );

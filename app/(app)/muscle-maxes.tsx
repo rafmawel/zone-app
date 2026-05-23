@@ -283,6 +283,25 @@ export default function MuscleMaxesScreen(): React.ReactElement {
               </ZoneText>
             </View>
 
+            <TouchableOpacity
+              onPress={() =>
+                router.push({
+                  pathname: '/(app)/strength-test',
+                  params: {
+                    exerciseId: KEY_LIFTS[stepIdx],
+                    estimatedMax: String(oneRm),
+                  },
+                })
+              }
+              activeOpacity={0.7}
+              style={styles.testLinkRow}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ZoneText variant="caption" color={colors.accent.gold} style={styles.testLinkText}>
+                Je veux faire un test
+              </ZoneText>
+            </TouchableOpacity>
+
             {error ? (
               <ZoneText variant="caption" color={colors.danger} style={styles.error}>
                 {error}
@@ -478,6 +497,8 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   estimateValue: { fontSize: 28, color: colors.text.primary, lineHeight: 32 },
+  testLinkRow: { alignItems: 'center', marginTop: 6, paddingVertical: 6 },
+  testLinkText: { textDecorationLine: 'underline' },
   error: { marginTop: 12, textAlign: 'center' },
   skipRow: { alignItems: 'center', marginTop: 16, paddingVertical: 10 },
   skipText: { textDecorationLine: 'underline', fontSize: 12 },
