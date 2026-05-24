@@ -5,9 +5,11 @@ import { signOut } from 'firebase/auth';
 import { Check, ChevronRight, Sparkles } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
 import { showManageSubscriptions, getProExpiryDate } from '@/lib/subscriptions';
+import { initializeHealthConnect, openHealthConnect } from '@/lib/healthConnect';
 import { usePro } from '@/hooks/usePro';
 import {
   deleteAllUserData,
+  updateUserProfile,
   getAllTimeStats,
   getExerciseMaxes,
   getHyroxProfile,
@@ -46,11 +48,6 @@ const LEVEL_LABEL: Record<string, string> = {
   confirme: 'Confirmé',
 };
 
-const HEALTH_SOURCE_LABEL: Record<string, string> = {
-  health_connect: 'Health Connect',
-  manual: 'Manuel',
-  both: 'Health Connect + Manuel',
-};
 
 function formatVolume(kg: number): string {
   if (!Number.isFinite(kg)) return '0 kg';
@@ -165,6 +162,24 @@ export default function ProfileScreen(): React.ReactElement {
   };
 
   const [resetting, setResetting] = useState<boolean>(false);
+  const [connectingHealth, setConnectingHealth] = useState<boolean>(false);
+
+  const onConnectHealth = async (): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+    setConnectingHealth(true);
+    try {
+      const granted = await initializeHealthConnect();
+      if (granted) {
+        await updateUserProfile(user.uid, { health_data_source: 'health_connect' });
+        await loadAll();
+      }
+    } catch {
+      // optional, silent
+    } finally {
+      setConnectingHealth(false);
+    }
+  };
 
   const onResetAll = (): void => {
     Alert.alert(
@@ -380,14 +395,44 @@ export default function ProfileScreen(): React.ReactElement {
             label="Séances par semaine"
             value={primarySport ? `${primarySport.sessions_per_week}` : '-'}
           />
-          <InfoRow
-            label="Source de données santé"
-            value={
-              profile?.health_data_source
-                ? (HEALTH_SOURCE_LABEL[profile.health_data_source] ?? profile.health_data_source)
-                : '-'
-            }
-          />
+          {profile?.health_data_source === 'health_connect' ||
+          profile?.health_data_source === 'both' ? (
+            <View style={styles.healthRow}>
+              <View style={styles.healthRowMain}>
+                <View style={styles.healthRowTitle}>
+                  <View style={styles.healthDot} />
+                  <ZoneText variant="label" color={colors.text.primary}>
+                    Health Connect · Connecté
+                  </ZoneText>
+                </View>
+                <ZoneText variant="caption" color={colors.text.muted}>
+                  Données synchronisées
+                </ZoneText>
+              </View>
+              <TouchableOpacity onPress={() => openHealthConnect()} hitSlop={8}>
+                <ZoneText variant="caption" color={colors.accent.gold}>
+                  Gérer
+                </ZoneText>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              onPress={() => {
+                void onConnectHealth();
+              }}
+              activeOpacity={0.85}
+              disabled={connectingHealth}
+              style={styles.healthConnectBtn}
+            >
+              <ZoneText
+                variant="label"
+                color={colors.bg.primary}
+                style={styles.healthConnectText}
+              >
+                {connectingHealth ? 'Connexion en cours' : 'Connecter Health Connect'}
+              </ZoneText>
+            </TouchableOpacity>
+          )}
 
           <ZoneText
             variant="caption"
@@ -722,4 +767,23 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   logoutText: { color: colors.danger, fontFamily: 'Inter-Medium', fontSize: 14 },
+  healthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: colors.border,
+  },
+  healthRowMain: { flex: 1 },
+  healthRowTitle: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
+  healthDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.success },
+  healthConnectBtn: {
+    marginTop: 12,
+    backgroundColor: colors.accent.gold,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  healthConnectText: { fontSize: 14 },
 });

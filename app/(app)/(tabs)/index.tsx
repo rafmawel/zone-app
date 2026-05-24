@@ -5,6 +5,7 @@ import { ChevronRight, Dumbbell } from 'lucide-react-native';
 import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import {
+  getUserProfile,
   todayDateString,
   type DailyCheckin,
   type TrainingSession,
@@ -56,6 +57,26 @@ export default function DashboardScreen(): React.ReactElement {
   const [checkin, setCheckin] = useState<DailyCheckin | null>(null);
   const [loaded, setLoaded] = useState<boolean>(false);
   const [nextSession, setNextSession] = useState<TrainingSession | null>(null);
+  const [healthConnected, setHealthConnected] = useState<boolean>(false);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const profile = await getUserProfile(user.uid);
+        if (!cancelled) {
+          setHealthConnected(profile?.health_data_source === 'health_connect');
+        }
+      } catch {
+        // optional
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -162,6 +183,14 @@ export default function DashboardScreen(): React.ReactElement {
                   </ZoneText>
                 </TouchableOpacity>
               )}
+              {healthConnected ? (
+                <View style={styles.hcBadge}>
+                  <View style={styles.hcDot} />
+                  <ZoneText variant="caption" color={colors.text.muted} style={styles.hcText}>
+                    ❤️ Health Connect
+                  </ZoneText>
+                </View>
+              ) : null}
             </>
           )}
         </View>
@@ -274,6 +303,19 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   evalLink: { marginTop: 8, fontFamily: 'Inter-Medium' },
+  hcBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+  },
+  hcDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.success,
+  },
+  hcText: { fontSize: 11 },
   doneCard: {
     marginTop: 24,
     backgroundColor: colors.bg.card,

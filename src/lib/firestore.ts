@@ -826,6 +826,7 @@ const RESET_COLLECTIONS = [
   'state',
   'sports',
   'schedules',
+  'health_sync',
 ] as const;
 
 async function deleteCollection(uid: string, name: string): Promise<void> {
@@ -865,4 +866,37 @@ export async function deleteAllUserData(uid: string): Promise<void> {
     },
     { merge: true },
   );
+}
+
+export interface HealthSyncData {
+  date: string;
+  source: 'health_connect';
+  sleep_duration_hours: number | null;
+  sleep_quality: number | null;
+  avg_heart_rate: number | null;
+  resting_heart_rate: number | null;
+  hrv_ms: number | null;
+  steps: number | null;
+  active_calories: number | null;
+  weight_kg: number | null;
+  synced_at: Timestamp | null;
+}
+
+export async function saveHealthSync(
+  uid: string,
+  data: Omit<HealthSyncData, 'synced_at'>,
+): Promise<void> {
+  await setDoc(doc(db, 'users', uid, 'health_sync', data.date), {
+    ...data,
+    synced_at: serverTimestamp(),
+  });
+}
+
+export async function getHealthSync(
+  uid: string,
+  date: string,
+): Promise<HealthSyncData | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'health_sync', date));
+  if (!snap.exists()) return null;
+  return snap.data() as HealthSyncData;
 }

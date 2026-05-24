@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { OnboardingFrame } from '@/components/OnboardingFrame';
 import { SelectableCard } from '@/components/SelectableCard';
 import { useOnboarding } from '@/context/OnboardingContext';
+import { initializeHealthConnect } from '@/lib/healthConnect';
 import type { HealthDataSource } from '@/lib/firestore';
 
 export default function Step5Screen(): React.ReactElement {
@@ -11,6 +12,23 @@ export default function Step5Screen(): React.ReactElement {
   const { setHealthDataSource } = useOnboarding();
   const [healthConnect, setHealthConnect] = useState<boolean>(false);
   const [manual, setManual] = useState<boolean>(false);
+  const [connecting, setConnecting] = useState<boolean>(false);
+
+  const onToggleHealthConnect = async (): Promise<void> => {
+    if (healthConnect) {
+      setHealthConnect(false);
+      return;
+    }
+    setConnecting(true);
+    try {
+      const granted = await initializeHealthConnect();
+      setHealthConnect(granted);
+    } catch {
+      setHealthConnect(false);
+    } finally {
+      setConnecting(false);
+    }
+  };
 
   const onContinue = (): void => {
     const source: HealthDataSource =
@@ -37,12 +55,20 @@ export default function Step5Screen(): React.ReactElement {
         <SelectableCard
           title={
             healthConnect
-              ? 'Android Health Connect · Connecté'
-              : 'Connecter Android Health Connect'
+              ? 'Health Connect connecté'
+              : connecting
+                ? 'Connexion en cours'
+                : 'Connecter Android Health Connect'
           }
-          subtitle="Synchronisation automatique."
+          subtitle={
+            healthConnect
+              ? 'Synchronisation automatique active.'
+              : 'Synchronisation automatique.'
+          }
           selected={healthConnect}
-          onPress={() => setHealthConnect((v) => !v)}
+          onPress={() => {
+            void onToggleHealthConnect();
+          }}
         />
         <SelectableCard
           title="Saisie manuelle quotidienne"
