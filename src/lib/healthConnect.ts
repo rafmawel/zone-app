@@ -10,7 +10,7 @@
  * throwing, so the UI never blocks on Health Connect.
  */
 
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import {
   SdkAvailabilityStatus,
   getSdkStatus,
@@ -23,6 +23,7 @@ import {
 const DEEP_STAGE = 5;
 const REM_STAGE = 6;
 const MS_PER_HOUR = 1000 * 60 * 60;
+const HEALTH_CONNECT_PACKAGE = 'com.google.android.apps.healthdata';
 
 export interface HealthConnectData {
   sleepDurationHours: number | null;
@@ -34,6 +35,22 @@ export interface HealthConnectData {
   activeCalories: number | null;
   weight: number | null;
 }
+
+/**
+ * Outcome of a connection attempt, so callers can show the right
+ * French message instead of crashing.
+ *  - connected: SDK available and at least one permission granted
+ *  - denied: SDK available but the user granted no permissions
+ *  - not_installed: provider missing or needs a Play Store update
+ *  - unsupported: device / OS does not support Health Connect
+ *  - error: unexpected failure (already swallowed, never thrown)
+ */
+export type HealthConnectStatus =
+  | 'connected'
+  | 'denied'
+  | 'not_installed'
+  | 'unsupported'
+  | 'error';
 
 /**
  * Whether Health Connect is installed and usable on this device.
@@ -51,17 +68,61 @@ export async function isHealthConnectAvailable(): Promise<boolean> {
 }
 
 /**
+ * Open the Play Store page to install or update Health Connect.
+ */
+export async function openHealthConnectPlayStore(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  const market = `market://details?id=${HEALTH_CONNECT_PACKAGE}`;
+  const web = `https://play.google.com/store/apps/details?id=${HEALTH_CONNECT_PACKAGE}`;
+  try {
+    const canOpenMarket = await Linking.canOpenURL(market);
+    await Linking.openURL(canOpenMarket ? market : web);
+  } catch {
+    try {
+      await Linking.openURL(web);
+    } catch {
+      // give up silently
+    }
+  }
+}
+
+/**
  * Initialize the SDK and request the read permissions Zone needs.
  *
- * @returns true if init succeeded and at least one permission granted
+ * Every Health Connect call is guarded; this never throws. When the
+ * provider is missing or needs an update, the Play Store is opened.
+ *
+ * @returns a {@link HealthConnectStatus} describing the outcome
  */
-export async function initializeHealthConnect(): Promise<boolean> {
-  if (Platform.OS !== 'android') return false;
+export async function connectHealthConnect(): Promise<HealthConnectStatus> {
+  if (Platform.OS !== 'android') return 'unsupported';
+
+  let status: number;
   try {
-    const available = await isHealthConnectAvailable();
-    if (!available) return false;
+    status = await getSdkStatus();
+  } catch {
+    return 'error';
+  }
+
+  if (status === SdkAvailabilityStatus.SDK_UNAVAILABLE) {
+    return 'unsupported';
+  }
+  if (status === SdkAvailabilityStatus.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED) {
+    void openHealthConnectPlayStore();
+    return 'not_installed';
+  }
+  if (status !== SdkAvailabilityStatus.SDK_AVAILABLE) {
+    return 'error';
+  }
+
+  try {
     const ok = await initialize();
-    if (!ok) return false;
+    if (!ok) return 'error';
+  } catch {
+    return 'error';
+  }
+
+  try {
     const granted = await requestPermission([
       { accessType: 'read', recordType: 'SleepSession' },
       { accessType: 'read', recordType: 'HeartRate' },
@@ -72,10 +133,21 @@ export async function initializeHealthConnect(): Promise<boolean> {
       { accessType: 'read', recordType: 'ActiveCaloriesBurned' },
       { accessType: 'read', recordType: 'Weight' },
     ]);
-    return Array.isArray(granted) && granted.length > 0;
+    if (Array.isArray(granted) && granted.length > 0) return 'connected';
+    return 'denied';
   } catch {
-    return false;
+    return 'error';
   }
+}
+
+/**
+ * Backwards-compatible boolean wrapper around {@link connectHealthConnect}.
+ *
+ * @returns true only when the connection ends in the `connected` state
+ */
+export async function initializeHealthConnect(): Promise<boolean> {
+  const result = await connectHealthConnect();
+  return result === 'connected';
 }
 
 /**

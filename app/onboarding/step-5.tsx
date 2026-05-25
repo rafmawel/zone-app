@@ -1,11 +1,25 @@
 import React, { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { OnboardingFrame } from '@/components/OnboardingFrame';
 import { SelectableCard } from '@/components/SelectableCard';
 import { useOnboarding } from '@/context/OnboardingContext';
-import { initializeHealthConnect } from '@/lib/healthConnect';
+import { connectHealthConnect, type HealthConnectStatus } from '@/lib/healthConnect';
 import type { HealthDataSource } from '@/lib/firestore';
+
+function healthConnectErrorMessage(status: HealthConnectStatus): string {
+  switch (status) {
+    case 'not_installed':
+      return "Health Connect doit être installé ou mis à jour. Ouvre le Play Store puis réessaie.";
+    case 'unsupported':
+      return "Health Connect n'est pas disponible sur cet appareil.";
+    case 'denied':
+      return "Permissions refusées. Autorise l'accès à tes données pour activer la synchronisation.";
+    case 'error':
+    default:
+      return "Health Connect n'est pas disponible sur cet appareil.";
+  }
+}
 
 export default function Step5Screen(): React.ReactElement {
   const router = useRouter();
@@ -21,10 +35,19 @@ export default function Step5Screen(): React.ReactElement {
     }
     setConnecting(true);
     try {
-      const granted = await initializeHealthConnect();
-      setHealthConnect(granted);
+      const status = await connectHealthConnect();
+      if (status === 'connected') {
+        setHealthConnect(true);
+      } else {
+        setHealthConnect(false);
+        Alert.alert('Health Connect', healthConnectErrorMessage(status));
+      }
     } catch {
       setHealthConnect(false);
+      Alert.alert(
+        'Health Connect',
+        "Health Connect n'est pas disponible sur cet appareil.",
+      );
     } finally {
       setConnecting(false);
     }

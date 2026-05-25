@@ -5,7 +5,11 @@ import { signOut } from 'firebase/auth';
 import { Check, ChevronRight, Sparkles } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
 import { showManageSubscriptions, getProExpiryDate } from '@/lib/subscriptions';
-import { initializeHealthConnect, openHealthConnect } from '@/lib/healthConnect';
+import {
+  connectHealthConnect,
+  openHealthConnect,
+  type HealthConnectStatus,
+} from '@/lib/healthConnect';
 import { usePro } from '@/hooks/usePro';
 import {
   deleteAllUserData,
@@ -52,6 +56,20 @@ const LEVEL_LABEL: Record<string, string> = {
 function formatVolume(kg: number): string {
   if (!Number.isFinite(kg)) return '0 kg';
   return `${Math.round(kg).toLocaleString('fr-FR')} kg`;
+}
+
+function healthConnectErrorMessage(status: HealthConnectStatus): string {
+  switch (status) {
+    case 'not_installed':
+      return "Health Connect doit être installé ou mis à jour. Ouvre le Play Store puis réessaie.";
+    case 'unsupported':
+      return "Health Connect n'est pas disponible sur cet appareil.";
+    case 'denied':
+      return "Permissions refusées. Autorise l'accès à tes données pour activer la synchronisation.";
+    case 'error':
+    default:
+      return "Health Connect n'est pas disponible sur cet appareil.";
+  }
 }
 
 function avatarInitials(email: string | null | undefined): string {
@@ -169,13 +187,18 @@ export default function ProfileScreen(): React.ReactElement {
     if (!user) return;
     setConnectingHealth(true);
     try {
-      const granted = await initializeHealthConnect();
-      if (granted) {
+      const status = await connectHealthConnect();
+      if (status === 'connected') {
         await updateUserProfile(user.uid, { health_data_source: 'health_connect' });
         await loadAll();
+      } else {
+        Alert.alert('Health Connect', healthConnectErrorMessage(status));
       }
     } catch {
-      // optional, silent
+      Alert.alert(
+        'Health Connect',
+        "Health Connect n'est pas disponible sur cet appareil.",
+      );
     } finally {
       setConnectingHealth(false);
     }
