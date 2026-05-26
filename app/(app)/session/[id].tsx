@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Animated, {
   Easing,
@@ -11,7 +11,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
-import { Minus, Plus, X } from 'lucide-react-native';
+import { Info, Minus, Plus, X } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
 import {
   completeSession,
@@ -35,7 +35,7 @@ import { computeAndSaveWorkloadEntry } from '@/lib/pro';
 import { usePro } from '@/hooks/usePro';
 import { ZoneOrbe } from '@/components/ZoneOrbe';
 import { getZoneLevel } from '@/lib/zoneScore';
-import { getExerciseById } from '@/data/exercises';
+import { getExerciseById, type Exercise } from '@/data/exercises';
 import { useSession, formatRestMS } from '@/context/SessionContext';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
@@ -78,6 +78,7 @@ export default function SessionScreen(): React.ReactElement {
   const [completedSets, setCompletedSets] = useState<CompletedSet[]>([]);
   const [pr, setPr] = useState<ResultPR | null>(null);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
+  const [infoVisible, setInfoVisible] = useState<boolean>(false);
   const startedAtRef = useRef<number>(Date.now());
   const ringProgress = useSharedValue(0);
   const prsRef = useRef<ResultPR[]>([]);
@@ -402,6 +403,7 @@ export default function SessionScreen(): React.ReactElement {
       ) : (
         <WorkView
           exerciseName={exerciseMeta?.name.toUpperCase() ?? currentExercise.exercise_id}
+          canShowInfo={!!exerciseMeta}
           setIdx={setIdx}
           totalSets={totalSets}
           plannedSet={currentSet}
@@ -412,9 +414,79 @@ export default function SessionScreen(): React.ReactElement {
           onChangeWeight={setActualWeight}
           onChangeRpe={setSetRpe}
           onDone={handleSetDone}
+          onShowInfo={() => setInfoVisible(true)}
         />
       )}
+
+      {exerciseMeta ? (
+        <ExerciseHintSheet
+          visible={infoVisible}
+          exercise={exerciseMeta}
+          onClose={() => setInfoVisible(false)}
+          onOpenDetail={() => {
+            setInfoVisible(false);
+            router.push(`/(app)/exercise/${exerciseMeta.id}`);
+          }}
+        />
+      ) : null}
     </SafeScreen>
+  );
+}
+
+function ExerciseHintSheet({
+  visible,
+  exercise,
+  onClose,
+  onOpenDetail,
+}: {
+  visible: boolean;
+  exercise: Exercise;
+  onClose: () => void;
+  onOpenDetail: () => void;
+}): React.ReactElement {
+  const cues = exercise.cues.slice(0, 3);
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.sheetBackdrop}>
+        <TouchableOpacity style={styles.sheetBackdropFill} activeOpacity={1} onPress={onClose} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHeader}>
+            <ZoneText variant="heading" style={styles.sheetTitle}>
+              {exercise.name}
+            </ZoneText>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <X size={22} color={colors.text.primary} />
+            </TouchableOpacity>
+          </View>
+
+          {cues.map((cue, i) => (
+            <View key={i} style={styles.sheetCueRow}>
+              <View style={styles.sheetCueDot} />
+              <ZoneText variant="body" color={colors.text.primary} style={styles.sheetCueText}>
+                {cue}
+              </ZoneText>
+            </View>
+          ))}
+
+          {exercise.feeling ? (
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.sheetFeeling}>
+              Ressenti attendu : {exercise.feeling}
+            </ZoneText>
+          ) : null}
+
+          <TouchableOpacity onPress={onOpenDetail} style={styles.sheetLink} activeOpacity={0.7}>
+            <ZoneText variant="label" color={colors.accent.gold}>
+              Voir la fiche complète
+            </ZoneText>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -507,6 +579,7 @@ function PRFlash({ pr }: { pr: ResultPR }): React.ReactElement {
 
 function WorkView({
   exerciseName,
+  canShowInfo,
   setIdx,
   totalSets,
   plannedSet,
@@ -517,8 +590,10 @@ function WorkView({
   onChangeWeight,
   onChangeRpe,
   onDone,
+  onShowInfo,
 }: {
   exerciseName: string;
+  canShowInfo: boolean;
   setIdx: number;
   totalSets: number;
   plannedSet: PlannedSet;
@@ -529,12 +604,25 @@ function WorkView({
   onChangeWeight: (n: number) => void;
   onChangeRpe: (n: number) => void;
   onDone: () => void;
+  onShowInfo: () => void;
 }): React.ReactElement {
   return (
     <View style={styles.workWrap}>
-      <ZoneText variant="heading" style={styles.exerciseName}>
-        {exerciseName}
-      </ZoneText>
+      <View style={styles.exerciseNameRow}>
+        <ZoneText variant="heading" style={styles.exerciseName}>
+          {exerciseName}
+        </ZoneText>
+        {canShowInfo ? (
+          <TouchableOpacity
+            onPress={onShowInfo}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Voir les conseils techniques"
+          >
+            <Info size={18} color={colors.text.muted} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
       <ZoneText variant="caption" color={colors.text.muted} style={styles.setProgress}>
         Série {setIdx + 1}/{totalSets}
       </ZoneText>
@@ -887,8 +975,42 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
   workWrap: { flex: 1, paddingHorizontal: 24 },
-  exerciseName: { fontSize: 24, marginTop: 8, letterSpacing: 1, color: colors.text.primary },
+  exerciseNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 8,
+  },
+  exerciseName: { fontSize: 24, letterSpacing: 1, color: colors.text.primary },
   setProgress: { marginTop: 2 },
+  sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
+  sheetBackdropFill: { flex: 1 },
+  sheet: {
+    backgroundColor: colors.bg.elevated,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 36,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  sheetTitle: { fontSize: 24, letterSpacing: 0.5, color: colors.text.primary },
+  sheetCueRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10 },
+  sheetCueDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.accent.gold,
+    marginTop: 7,
+  },
+  sheetCueText: { flex: 1, lineHeight: 20 },
+  sheetFeeling: { marginTop: 6, fontStyle: 'italic', lineHeight: 18 },
+  sheetLink: { marginTop: 18, alignSelf: 'flex-start' },
   targetCard: {
     marginTop: 16,
     backgroundColor: colors.bg.card,

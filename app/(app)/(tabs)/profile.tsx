@@ -1,5 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { Check, ChevronRight, Sparkles } from 'lucide-react-native';
@@ -14,6 +22,7 @@ import { usePro } from '@/hooks/usePro';
 import {
   deleteAllUserData,
   updateUserProfile,
+  updateSubscriptionStatus,
   getAllTimeStats,
   getExerciseMaxes,
   getHyroxProfile,
@@ -53,6 +62,8 @@ const LEVEL_LABEL: Record<string, string> = {
 };
 
 
+const VALID_PROMO_CODES: string[] = ['ZONE-DEV', 'ZONE-BETA', 'ZONE-PRO-2026', 'RAPHAEL'];
+
 function formatVolume(kg: number): string {
   if (!Number.isFinite(kg)) return '0 kg';
   return `${Math.round(kg).toLocaleString('fr-FR')} kg`;
@@ -83,7 +94,11 @@ function avatarInitials(email: string | null | undefined): string {
 
 export default function ProfileScreen(): React.ReactElement {
   const router = useRouter();
-  const { isPro } = usePro();
+  const { isPro, refresh } = usePro();
+  const [promoVisible, setPromoVisible] = useState<boolean>(false);
+  const [promoCode, setPromoCode] = useState<string>('');
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [promoSaving, setPromoSaving] = useState<boolean>(false);
   const [proExpiry, setProExpiry] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [program, setProgram] = useState<UserProgram | null>(null);
@@ -204,6 +219,32 @@ export default function ProfileScreen(): React.ReactElement {
     }
   };
 
+  const onSubmitPromo = async (): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const normalized = promoCode.trim().toUpperCase();
+    if (!VALID_PROMO_CODES.includes(normalized)) {
+      setPromoError('Code invalide.');
+      return;
+    }
+    setPromoSaving(true);
+    setPromoError(null);
+    try {
+      await updateSubscriptionStatus(user.uid, {
+        isPro: true,
+        expiresAt: '2099-12-31',
+      });
+      await refresh();
+      setPromoVisible(false);
+      setPromoCode('');
+      Alert.alert('Zone Pro', 'Accès Pro activé. Bienvenue dans la zone.');
+    } catch {
+      setPromoError("Activation impossible. Réessaie.");
+    } finally {
+      setPromoSaving(false);
+    }
+  };
+
   const onResetAll = (): void => {
     Alert.alert(
       'Réinitialiser mes données',
@@ -307,6 +348,22 @@ export default function ProfileScreen(): React.ReactElement {
               />
             </View>
           )}
+
+          {!isPro ? (
+            <TouchableOpacity
+              onPress={() => {
+                setPromoError(null);
+                setPromoCode('');
+                setPromoVisible(true);
+              }}
+              hitSlop={8}
+              style={styles.promoLink}
+            >
+              <ZoneText variant="caption" color={colors.accent.gold}>
+                J'ai un code promo
+              </ZoneText>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         <View style={styles.section}>
@@ -526,6 +583,61 @@ export default function ProfileScreen(): React.ReactElement {
           <ZoneText style={styles.logoutText}>Se déconnecter</ZoneText>
         </TouchableOpacity>
       </ScrollView>
+
+      <Modal
+        visible={promoVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPromoVisible(false)}
+      >
+        <View style={styles.promoBackdrop}>
+          <View style={styles.promoCard}>
+            <ZoneText variant="heading" style={styles.promoTitle}>
+              Entre ton code d'accès
+            </ZoneText>
+            <TextInput
+              value={promoCode}
+              onChangeText={(t) => {
+                setPromoCode(t);
+                if (promoError) setPromoError(null);
+              }}
+              placeholder="ZONE-..."
+              placeholderTextColor={colors.text.muted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              style={styles.promoInput}
+            />
+            {promoError ? (
+              <ZoneText variant="caption" color={colors.danger} style={styles.promoErrorText}>
+                {promoError}
+              </ZoneText>
+            ) : null}
+            <View style={styles.promoActions}>
+              <TouchableOpacity
+                onPress={() => setPromoVisible(false)}
+                style={styles.promoCancel}
+                hitSlop={8}
+              >
+                <ZoneText variant="label" color={colors.text.muted}>
+                  Annuler
+                </ZoneText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  void onSubmitPromo();
+                }}
+                disabled={promoSaving}
+                style={styles.promoSubmit}
+                hitSlop={8}
+              >
+                <ZoneText variant="label" color={colors.bg.primary} style={styles.promoSubmitText}>
+                  {promoSaving ? '...' : 'Valider'}
+                </ZoneText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeScreen>
   );
 }
@@ -670,6 +782,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     alignSelf: 'flex-start',
   },
+  promoLink: { marginTop: 12, alignSelf: 'flex-start', paddingVertical: 4 },
+  promoBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  promoCard: {
+    width: '100%',
+    backgroundColor: colors.bg.elevated,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 20,
+  },
+  promoTitle: { fontSize: 20, letterSpacing: 0.5, marginBottom: 14, color: colors.text.primary },
+  promoInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: colors.text.primary,
+    fontFamily: 'Inter-Regular',
+    fontSize: 16,
+    letterSpacing: 1,
+  },
+  promoErrorText: { marginTop: 8 },
+  promoActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 16,
+    marginTop: 18,
+  },
+  promoCancel: { paddingVertical: 10, paddingHorizontal: 8 },
+  promoSubmit: {
+    backgroundColor: colors.accent.gold,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  promoSubmitText: { fontSize: 14 },
   headerWrap: { alignItems: 'center', marginBottom: 8 },
   avatar: {
     width: 56,
