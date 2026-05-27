@@ -7,7 +7,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { frenchAuthError } from '@/lib/authErrors';
@@ -20,6 +20,7 @@ import { AuthLogo } from '@/components/AuthLogo';
 
 export default function RegisterScreen(): React.ReactElement {
   const router = useRouter();
+  const [firstName, setFirstName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [confirm, setConfirm] = useState<string>('');
@@ -28,7 +29,7 @@ export default function RegisterScreen(): React.ReactElement {
 
   const handleSubmit = async (): Promise<void> => {
     setError(null);
-    if (!email.trim() || !password || !confirm) {
+    if (!firstName.trim() || !email.trim() || !password || !confirm) {
       setError('Tous les champs sont requis.');
       return;
     }
@@ -43,7 +44,10 @@ export default function RegisterScreen(): React.ReactElement {
     setLoading(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const name = firstName.trim();
+      await updateProfile(cred.user, { displayName: name });
       await setDoc(doc(db, 'users', cred.user.uid), {
+        name,
         onboarding_completed: false,
         created_at: serverTimestamp(),
         zone_score: 50,
@@ -73,6 +77,15 @@ export default function RegisterScreen(): React.ReactElement {
             CRÉER UN COMPTE
           </ZoneText>
 
+          <View style={styles.field}>
+            <Input
+              placeholder="Prénom"
+              autoCapitalize="words"
+              autoComplete="name"
+              value={firstName}
+              onChangeText={setFirstName}
+            />
+          </View>
           <View style={styles.field}>
             <Input
               placeholder="Email"

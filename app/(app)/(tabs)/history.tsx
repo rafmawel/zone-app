@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   type LayoutChangeEvent,
   ScrollView,
@@ -15,15 +15,19 @@ import {
   getCompletedRuns,
   getCompletedSessions,
   getExerciseMaxes,
+  getHyroxSessionHistory,
   getLatestCheckins,
   todayDateString,
   type AllTimeStats,
   type DailyCheckin,
   type ExerciseMax,
+  type HyroxSessionRecord,
   type RunSession,
   type TrainingSession,
 } from '@/lib/firestore';
 import { formatPaceShort, sessionName, type RunningSessionType } from '@/lib/runningEngine';
+import { HYROX_SESSION_LABELS } from '@/lib/hyroxEngine';
+import { formatDuration } from '@/lib/hyroxScience';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { getExerciseById } from '@/data/exercises';
 import { colors } from '@/theme/colors';
@@ -37,6 +41,11 @@ interface ZoneBanner {
   border: string;
   message: string;
 }
+
+type FeedItem =
+  | { kind: 'session'; id: string; date: string; session: TrainingSession }
+  | { kind: 'run'; id: string; date: string; run: RunSession }
+  | { kind: 'hyrox'; id: string; date: string; hyrox: HyroxSessionRecord };
 
 function bannerForScore(score: number | null): ZoneBanner {
   if (score === null) {
@@ -83,6 +92,7 @@ export default function HistoryScreen(): React.ReactElement {
   const [maxes, setMaxes] = useState<ExerciseMax[] | null>(null);
   const [stats, setStats] = useState<AllTimeStats | null>(null);
   const [runs, setRuns] = useState<RunSession[] | null>(null);
+  const [hyrox, setHyrox] = useState<HyroxSessionRecord[] | null>(null);
   const [chartWidth, setChartWidth] = useState<number>(0);
 
   useEffect(() => {
@@ -101,7 +111,7 @@ export default function HistoryScreen(): React.ReactElement {
   const loadAll = useCallback(async (): Promise<void> => {
     const user = auth.currentUser;
     if (!user) return;
-    const [c, s, m, st, r] = await Promise.all([
+    const [c, s, m, st, r, h] = await Promise.all([
       getLatestCheckins(user.uid, 14).catch(() => [] as DailyCheckin[]),
       getCompletedSessions(user.uid).catch(() => [] as TrainingSession[]),
       getExerciseMaxes(user.uid).catch(() => [] as ExerciseMax[]),
@@ -110,12 +120,14 @@ export default function HistoryScreen(): React.ReactElement {
           ({ totalSessions: 0, totalVolume: 0, bestStreak: 0, avgZoneScore: 0 }) as AllTimeStats,
       ),
       getCompletedRuns(user.uid, 30).catch(() => [] as RunSession[]),
+      getHyroxSessionHistory(user.uid, 20).catch(() => [] as HyroxSessionRecord[]),
     ]);
     setCheckins(c);
     setSessions(s);
     setMaxes(m);
     setStats(st);
     setRuns(r);
+    setHyrox(h);
   }, []);
 
   useFocusEffect(
@@ -128,6 +140,17 @@ export default function HistoryScreen(): React.ReactElement {
   const onChartLayout = (e: LayoutChangeEvent): void => {
     setChartWidth(e.nativeEvent.layout.width);
   };
+
+  // Unified, most-recent-first feed of every completed session type.
+  const feed = useMemo<FeedItem[] | null>(() => {
+    if (sessions === null && runs === null && hyrox === null) return null;
+    const items: FeedItem[] = [];
+    for (const s of sessions ?? []) items.push({ kind: 'session', id: `s-${s.id}`, date: s.date, session: s });
+    for (const r of runs ?? []) items.push({ kind: 'run', id: `r-${r.id}`, date: r.date, run: r });
+    for (const h of hyrox ?? []) items.push({ kind: 'hyrox', id: `h-${h.id}`, date: h.date, hyrox: h });
+    items.sort((a, b) => b.date.localeCompare(a.date));
+    return items;
+  }, [sessions, runs, hyrox]);
 
   return (
     <SafeScreen>
@@ -191,39 +214,31 @@ export default function HistoryScreen(): React.ReactElement {
               MES SÉANCES
             </ZoneText>
             <ZoneText variant="caption" color={colors.text.muted}>
-              {sessions ? `${sessions.length}` : ''}
+              {feed ? `${feed.length}` : ''}
             </ZoneText>
           </View>
-          {!sessions ? (
+          {!feed ? (
             <Skeleton width="100%" height={80} borderRadius={12} />
-          ) : sessions.length === 0 ? (
+          ) : feed.length === 0 ? (
             <EmptyHint text="Tu n’as pas encore terminé de séance." />
           ) : (
-            sessions.map((s) => (
-              <SessionRow
-                key={s.id}
-                session={s}
-                onPress={() => router.push(`/(app)/session-detail/${s.id}`)}
-              />
-            ))
+            feed.map((item) => {
+              if (item.kind === 'session') {
+                return (
+                  <SessionRow
+                    key={item.id}
+                    session={item.session}
+                    onPress={() => router.push(`/(app)/session-detail/${item.session.id}`)}
+                  />
+                );
+              }
+              if (item.kind === 'run') {
+                return <RunRow key={item.id} run={item.run} />;
+              }
+              return <HyroxRow key={item.id} record={item.hyrox} />;
+            })
           )}
         </View>
-
-        {runs && runs.length > 0 ? (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <ZoneText variant="heading" style={styles.sectionTitle}>
-                MES SORTIES
-              </ZoneText>
-              <ZoneText variant="caption" color={colors.text.muted}>
-                {runs.length}
-              </ZoneText>
-            </View>
-            {runs.map((r) => (
-              <RunRow key={r.id} run={r} />
-            ))}
-          </View>
-        ) : null}
 
         <View style={styles.section}>
           <ZoneText variant="heading" style={styles.sectionTitle}>
@@ -278,7 +293,12 @@ function SessionRow({
   const level = zone !== null ? getZoneLevel(zone) : null;
   const border = level?.color ?? colors.border;
   const sets = (session.completed_sets ?? []).length;
-  const sport = session.sport_key === 'running' ? 'Course' : 'Haltérophilie';
+  const sport =
+    session.discipline === 'musculation'
+      ? 'Musculation'
+      : session.sport_key === 'running'
+        ? 'Course'
+        : 'Haltérophilie';
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -341,6 +361,34 @@ function RunRow({ run }: { run: RunSession }): React.ReactElement {
         </View>
         <ZoneText variant="caption" color={colors.text.muted} style={styles.runMeta}>
           {sessionName(run.session_type)} · {(run.actual_distance_km ?? 0).toFixed(2)} km · {formatPaceShort(run.avg_pace_sec_per_km ?? 0)} /km · {Math.round((run.actual_duration_seconds ?? 0) / 60)} min
+        </ZoneText>
+      </View>
+    </View>
+  );
+}
+
+function HyroxRow({ record }: { record: HyroxSessionRecord }): React.ReactElement {
+  const label = HYROX_SESSION_LABELS[record.session_type];
+  const stationCount = record.stations?.length ?? 0;
+  const isRace = record.session_type === 'race_simulation';
+  const stationsLabel = `${stationCount} station${stationCount > 1 ? 's' : ''}`;
+  const meta =
+    isRace && record.total_time_sec
+      ? `${label} · ${formatDuration(record.total_time_sec)} · ${stationsLabel}`
+      : `${label} · ${stationsLabel}`;
+  return (
+    <View style={[styles.sessionCard, { borderLeftColor: colors.orbe.amber }]}>
+      <View style={styles.sessionMain}>
+        <View style={styles.sessionRow}>
+          <ZoneText variant="label" color={colors.accent.gold} style={styles.sessionDate}>
+            {frenchShortDate(record.date)}
+          </ZoneText>
+          <View style={styles.hyroxBadge}>
+            <ZoneText style={styles.hyroxBadgeText}>HYROX</ZoneText>
+          </View>
+        </View>
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.runMeta}>
+          {meta}
         </ZoneText>
       </View>
     </View>
@@ -439,6 +487,13 @@ const styles = StyleSheet.create({
   sessionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sessionDate: { fontSize: 13 },
   scoreBubble: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 },
+  hyroxBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: colors.orbe.amber,
+  },
+  hyroxBadgeText: { color: colors.bg.primary, fontFamily: 'Inter-Bold', fontSize: 10, letterSpacing: 1 },
   scoreBubbleText: { color: colors.bg.primary, fontFamily: 'Inter-Bold', fontSize: 11 },
   sessionMetaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   sessionMetaText: { fontSize: 11, marginLeft: 4 },

@@ -39,6 +39,8 @@ export type SessionsOrganization =
 
 export interface UserProfile {
   uid: string;
+  name?: string;
+  first_name?: string;
   created_at: Timestamp | null;
   onboarding_completed: boolean;
   level: Level | null;
