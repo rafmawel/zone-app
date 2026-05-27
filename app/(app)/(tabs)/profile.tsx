@@ -145,6 +145,7 @@ export default function ProfileScreen(): React.ReactElement {
 
   const user = auth.currentUser;
   const email = user?.email ?? '';
+  const displayName = user?.displayName?.trim() || profile?.name || profile?.first_name || null;
   const memberSince = user?.metadata.creationTime
     ? frenchMonthYear(new Date(user.metadata.creationTime))
     : '-';
@@ -159,6 +160,11 @@ export default function ProfileScreen(): React.ReactElement {
               {avatarInitials(email)}
             </ZoneText>
           </View>
+          {displayName ? (
+            <ZoneText variant="heading" style={styles.displayName}>
+              {displayName}
+            </ZoneText>
+          ) : null}
           <ZoneText variant="label" style={styles.email}>
             {email || 'Compte inconnu'}
           </ZoneText>
@@ -448,7 +454,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: { color: colors.bg.primary, fontSize: 22, lineHeight: 26 },
-  email: { marginTop: 10, color: colors.text.primary, fontSize: 14 },
+  displayName: { marginTop: 10, fontSize: 22, color: colors.text.primary, letterSpacing: 1 },
+  email: { marginTop: 4, color: colors.text.secondary, fontSize: 13 },
   memberSince: { marginTop: 2 },
   section: { marginTop: 22 },
   eyebrow: { letterSpacing: 2, fontSize: 11, marginBottom: 8 },

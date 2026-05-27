@@ -278,7 +278,12 @@ function SessionRow({
   const level = zone !== null ? getZoneLevel(zone) : null;
   const border = level?.color ?? colors.border;
   const sets = (session.completed_sets ?? []).length;
-  const sport = session.sport_key === 'running' ? 'Course' : 'Haltérophilie';
+  const sport =
+    session.discipline === 'musculation'
+      ? 'Musculation'
+      : session.sport_key === 'running'
+        ? 'Course'
+        : 'Haltérophilie';
   return (
     <TouchableOpacity
       onPress={onPress}
