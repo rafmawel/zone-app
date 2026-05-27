@@ -95,10 +95,14 @@ export interface CompletedSet {
   completed_at: Timestamp | null;
 }
 
+export type SessionDiscipline = 'weightlifting' | 'musculation' | 'running';
+
 export interface TrainingSession {
   id: string;
   date: string;
   sport_key: TrainingSessionSport;
+  /** Finer-grained training type; defaults to sport_key when absent. */
+  discipline?: SessionDiscipline;
   status: TrainingSessionStatus;
   rpe?: number;
   duration_minutes?: number;
@@ -177,6 +181,8 @@ export interface MuscleProfile {
   equipment: MuscleEquipment[];
   weak_points: string[];
   sessions_per_week: number;
+  /** When set, the active week runs at reduced volume (deload). */
+  deload_active?: boolean;
   updated_at: Timestamp | null;
 }
 
@@ -352,6 +358,7 @@ export async function saveExerciseMax(uid: string, max: ExerciseMax): Promise<vo
 export interface SavePlannedSessionInput {
   date: string;
   sport_key: TrainingSessionSport;
+  discipline?: SessionDiscipline;
   planned_exercises: SessionExercise[];
   zone_score_at_start: number | null;
   zone_message: string | null;
@@ -367,6 +374,7 @@ export async function createPlannedSession(
   } = {
     date: input.date,
     sport_key: input.sport_key,
+    discipline: input.discipline ?? input.sport_key,
     status: 'planned',
     planned_exercises: input.planned_exercises,
     completed_sets: [],
@@ -654,6 +662,14 @@ export async function getMuscleProfile(uid: string): Promise<MuscleProfile | nul
   const snap = await getDoc(doc(db, 'users', uid, 'state', 'muscle_profile'));
   if (!snap.exists()) return null;
   return snap.data() as MuscleProfile;
+}
+
+export async function setMuscleDeloadActive(uid: string, active: boolean): Promise<void> {
+  await setDoc(
+    doc(db, 'users', uid, 'state', 'muscle_profile'),
+    { deload_active: active, updated_at: serverTimestamp() },
+    { merge: true },
+  );
 }
 
 export async function saveHyroxProfile(uid: string, profile: Omit<HyroxProfile, 'updated_at'>): Promise<void> {
