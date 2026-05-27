@@ -21,9 +21,10 @@ const NOOP_REFRESH = async (): Promise<void> => {};
  * the full analytics surface is testable without RevenueCat configured.
  *
  * In production:
- *  1. Reads the Firestore cache (fast).
- *  2. Asks RevenueCat for the authoritative status.
- *  3. Syncs the result back to Firestore so other devices see it.
+ *  1. Reads the Firestore cache first. If it says Pro is active (promo
+ *     code or a previously synced subscription), return true and stop.
+ *  2. Otherwise ask RevenueCat. If it says Pro, sync back to Firestore.
+ *  3. If both say no, return false.
  *
  * @returns `{ isPro, loading, refresh }`
  */
@@ -47,15 +48,19 @@ function useProProduction(): UseProResult {
     }
     setLoading(true);
 
+    // 1. Firestore first — a promo code or synced subscription wins.
     try {
       const cached = await getSubscriptionStatus(uid);
-      if (cached) {
-        setIsPro(isCacheActive(cached.isPro, cached.expiresAt));
+      if (cached && isCacheActive(cached.isPro, cached.expiresAt)) {
+        setIsPro(true);
+        setLoading(false);
+        return;
       }
     } catch {
-      // ignore cache failure
+      // ignore cache failure and fall through to RevenueCat
     }
 
+    // 2. Only consult RevenueCat when Firestore did not grant access.
     let proFromRC = false;
     try {
       proFromRC = await checkProStatus();
@@ -65,14 +70,14 @@ function useProProduction(): UseProResult {
     setIsPro(proFromRC);
     setLoading(false);
 
-    try {
-      const expiresAt = proFromRC ? await getProExpiryDate() : null;
-      await updateSubscriptionStatus(uid, {
-        isPro: proFromRC,
-        expiresAt,
-      });
-    } catch {
-      // best-effort
+    // 3. Sync a positive RevenueCat result back so it persists offline.
+    if (proFromRC) {
+      try {
+        const expiresAt = await getProExpiryDate();
+        await updateSubscriptionStatus(uid, { isPro: true, expiresAt });
+      } catch {
+        // best-effort
+      }
     }
   }, []);
 
