@@ -717,6 +717,99 @@ export async function saveHyroxBaseline(uid: string, baseline: HyroxBaselineInpu
   });
 }
 
+export type HyroxSessionTypeKey =
+  | 'station_work'
+  | 'running_base'
+  | 'strength_base'
+  | 'race_simulation';
+
+export interface HyroxStationResult {
+  station_id: string;
+  rounds: { time_sec: number; reps?: number }[];
+  avg_time_sec: number;
+  weakness_score: number;
+}
+
+export interface HyroxRunSegment {
+  round: number;
+  duration_sec: number;
+  distance_m: number;
+  pace_sec_per_km: number;
+}
+
+export interface HyroxSessionRecord {
+  id: string;
+  date: string;
+  session_type: HyroxSessionTypeKey;
+  block_phase: number;
+  stations: HyroxStationResult[];
+  total_time_sec?: number | null;
+  cumulative_lactate?: number | null;
+  zone_score_at_start: number | null;
+  run_segments?: HyroxRunSegment[];
+  created_at: Timestamp | null;
+}
+
+export async function saveHyroxSession(
+  uid: string,
+  record: Omit<HyroxSessionRecord, 'id' | 'created_at'>,
+): Promise<string> {
+  const ref = doc(collection(db, 'users', uid, 'hyrox_sessions'));
+  await setDoc(ref, {
+    ...record,
+    id: ref.id,
+    created_at: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function getHyroxSessionHistory(
+  uid: string,
+  max: number = 30,
+): Promise<HyroxSessionRecord[]> {
+  const q = query(
+    collection(db, 'users', uid, 'hyrox_sessions'),
+    orderBy('date', 'desc'),
+    limit(max),
+  );
+  try {
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as HyroxSessionRecord);
+  } catch {
+    return [];
+  }
+}
+
+export async function updateWeakStations(uid: string, stations: string[]): Promise<void> {
+  await setDoc(
+    doc(db, 'users', uid, 'state', 'hyrox_profile'),
+    { weak_stations: stations, updated_at: serverTimestamp() },
+    { merge: true },
+  );
+}
+
+/** Per-station average completion time from recent Hyrox sessions. */
+export async function getHyroxStationAverages(
+  uid: string,
+): Promise<Record<string, number>> {
+  const history = await getHyroxSessionHistory(uid, 12);
+  const sums: Record<string, { total: number; count: number }> = {};
+  for (const session of history) {
+    for (const st of session.stations ?? []) {
+      if (!Number.isFinite(st.avg_time_sec) || st.avg_time_sec <= 0) continue;
+      const cur = sums[st.station_id] ?? { total: 0, count: 0 };
+      cur.total += st.avg_time_sec;
+      cur.count += 1;
+      sums[st.station_id] = cur;
+    }
+  }
+  const out: Record<string, number> = {};
+  for (const [id, v] of Object.entries(sums)) {
+    if (v.count > 0) out[id] = v.total / v.count;
+  }
+  return out;
+}
+
 export type ResettableSport = 'weightlifting' | 'running' | 'musculation' | 'hyrox';
 
 const SPORT_STATE_DOC: Record<ResettableSport, string> = {
