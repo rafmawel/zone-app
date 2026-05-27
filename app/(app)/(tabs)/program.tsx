@@ -14,16 +14,34 @@ import { auth, db } from '@/lib/firebase';
 import {
   createPlannedSession,
   createRunSession,
+  getCompletedSessions,
   getExerciseMaxes,
+  getHyroxStationAverages,
+  setMuscleDeloadActive,
   todayDateString,
   type DailyCheckin,
   type HyroxProfile,
   type MuscleProfile,
   type RunningProfile,
+  type SessionExercise,
   type TrainingSession,
   type UserProgram,
 } from '@/lib/firestore';
 import { generateWeeklySession, getBlockName } from '@/lib/programEngine';
+import { generateMuscleSession } from '@/lib/muscleEngine';
+import { evaluateDeloadNeed, type DeloadRecommendation } from '@/lib/muscleSessionScience';
+import {
+  blockFromWeeksToRace,
+  computeRacePrediction,
+  formatDuration,
+  hyroxWeeklyPlan,
+  HYROX_BLOCKS,
+  HYROX_DAY_LABELS,
+  type HyroxBlockPhase,
+  type HyroxDayPlan,
+  type RacePrediction,
+} from '@/lib/hyroxScience';
+import type { MuscleGroup } from '@/data/exercises';
 import {
   buildSessionPlan,
   calculateVDOTPaces,
@@ -35,7 +53,7 @@ import {
   type WeekIndexRunning,
 } from '@/lib/runningEngine';
 import { MUSCLE_GOAL_LABELS } from '@/lib/muscleEngine';
-import { HYROX_LEVEL_LABELS } from '@/lib/hyroxEngine';
+import { HYROX_LEVEL_LABELS, type HyroxLevel } from '@/lib/hyroxEngine';
 import {
   generateOptimalWeek,
   sportColor,
@@ -49,6 +67,22 @@ import { Button } from '@/components/ui/Button';
 interface ZoneBanner {
   border: string;
   message: string;
+}
+
+// Projected race km pace (sec/km) by Hyrox level, for race prediction.
+const HYROX_RUN_PACE: Record<HyroxLevel, number> = {
+  debutant: 390,
+  regulier: 330,
+  competiteur: 285,
+  pro: 240,
+};
+
+function weeksUntil(iso: string | null): number | null {
+  if (!iso) return null;
+  const target = new Date(iso);
+  if (Number.isNaN(target.getTime())) return null;
+  const diffMs = target.getTime() - Date.now();
+  return Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24 * 7)));
 }
 
 function bannerForScore(score: number | null): ZoneBanner | null {
@@ -91,7 +125,10 @@ export default function ProgramScreen(): React.ReactElement {
   const [runningLoaded, setRunningLoaded] = useState<boolean>(false);
   const [generatingRun, setGeneratingRun] = useState<boolean>(false);
   const [muscleProfile, setMuscleProfile] = useState<MuscleProfile | null>(null);
+  const [generatingMuscle, setGeneratingMuscle] = useState<boolean>(false);
+  const [deload, setDeload] = useState<DeloadRecommendation | null>(null);
   const [hyroxProfile, setHyroxProfile] = useState<HyroxProfile | null>(null);
+  const [hyroxPrediction, setHyroxPrediction] = useState<RacePrediction | null>(null);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -263,6 +300,110 @@ export default function ProgramScreen(): React.ReactElement {
     }
   };
 
+  // Evaluate the deload signal from recent musculation history.
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user || !muscleProfile) {
+      setDeload(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const completed = await getCompletedSessions(user.uid);
+        const muscleSessions = completed.filter(
+          (s) => s.discipline === 'musculation',
+        );
+        if (!cancelled) setDeload(evaluateDeloadNeed(muscleSessions, 'intermediaire'));
+      } catch {
+        if (!cancelled) setDeload(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [muscleProfile]);
+
+  const onStartMuscle = async (): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user || !muscleProfile) return;
+    setGeneratingMuscle(true);
+    try {
+      const weekday = ((new Date().getDay() + 6) % 7) + 1;
+      const generated = generateMuscleSession({
+        sessionsPerWeek: muscleProfile.sessions_per_week,
+        dayOfWeek: weekday,
+        goal: muscleProfile.goal,
+        weakPoints: (muscleProfile.weak_points ?? []) as MuscleGroup[],
+        zoneScore: score,
+      });
+      const deloadActive = muscleProfile.deload_active === true;
+      const planned: SessionExercise[] = generated.exercises.map((ex) => ({
+        exercise_id: ex.exercise_id,
+        sets: deloadActive
+          ? ex.sets.slice(0, Math.max(1, Math.ceil(ex.sets.length / 2)))
+          : ex.sets,
+      }));
+      const id = await createPlannedSession(user.uid, {
+        date: todayDateString(),
+        sport_key: 'weightlifting',
+        discipline: 'musculation',
+        planned_exercises: planned,
+        zone_score_at_start: score,
+        zone_message: deloadActive
+          ? 'Semaine de décharge · volume réduit, charges maintenues.'
+          : generated.message,
+      });
+      router.push(`/(app)/muscle-session/${id}`);
+    } catch {
+      // surfaced via no-op
+    } finally {
+      setGeneratingMuscle(false);
+    }
+  };
+
+  const onToggleDeload = async (active: boolean): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+    setMuscleProfile((p) => (p ? { ...p, deload_active: active } : p));
+    await setMuscleDeloadActive(user.uid, active).catch(() => undefined);
+  };
+
+  const hyroxWeeksToRace = useMemo(() => weeksUntil(hyroxProfile?.target_race_date ?? null), [hyroxProfile]);
+  const hyroxBlock: HyroxBlockPhase = blockFromWeeksToRace(hyroxWeeksToRace);
+
+  // Race-time projection from running pace and recent station averages.
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user || !hyroxProfile) {
+      setHyroxPrediction(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const averages = await getHyroxStationAverages(user.uid);
+        if (cancelled) return;
+        const pace = HYROX_RUN_PACE[hyroxProfile.level];
+        setHyroxPrediction(computeRacePrediction(pace, averages, null));
+      } catch {
+        if (!cancelled) setHyroxPrediction(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hyroxProfile]);
+
+  const onStartHyrox = (): void => {
+    if (!hyroxProfile) return;
+    const plan = hyroxWeeklyPlan(hyroxProfile.sessions_per_week, hyroxBlock);
+    const weekday = (new Date().getDay() + 6) % 7;
+    const today = plan[weekday];
+    const type = today === 'rest' ? 'station_work' : today;
+    router.push(`/(app)/hyrox-session/new?type=${type}&block=${hyroxBlock}`);
+  };
+
   return (
     <SafeScreen>
       <ScrollView
@@ -401,8 +542,28 @@ export default function ProgramScreen(): React.ReactElement {
           </View>
         ) : null}
 
-        <MuscleCard profile={muscleProfile} onSetup={() => router.push('/(app)/muscle-setup')} />
-        <HyroxCard profile={hyroxProfile} onSetup={() => router.push('/(app)/hyrox-setup')} />
+        <MuscleCard
+          profile={muscleProfile}
+          generating={generatingMuscle}
+          onSetup={() => router.push('/(app)/muscle-setup')}
+          onStart={onStartMuscle}
+        />
+        {muscleProfile ? (
+          <DeloadCard
+            deload={deload}
+            active={muscleProfile.deload_active === true}
+            onActivate={() => onToggleDeload(true)}
+            onExit={() => onToggleDeload(false)}
+          />
+        ) : null}
+        <HyroxCard
+          profile={hyroxProfile}
+          block={hyroxBlock}
+          weeksToRace={hyroxWeeksToRace}
+          prediction={hyroxPrediction}
+          onSetup={() => router.push('/(app)/hyrox-setup')}
+          onStart={onStartHyrox}
+        />
 
         <WeeklyPlannerSection
           program={program}
@@ -538,12 +699,61 @@ function RunningProgramBody({
   );
 }
 
+function DeloadCard({
+  deload,
+  active,
+  onActivate,
+  onExit,
+}: {
+  deload: DeloadRecommendation | null;
+  active: boolean;
+  onActivate: () => void;
+  onExit: () => void;
+}): React.ReactElement | null {
+  if (active) {
+    return (
+      <View style={[styles.deloadCard, { borderColor: colors.orbe.blue }]}>
+        <ZoneText variant="caption" color={colors.orbe.blue} style={styles.deloadEyebrow}>
+          MODE DÉCHARGE ACTIF
+        </ZoneText>
+        <ZoneText variant="body" color={colors.text.secondary} style={styles.deloadBody}>
+          Volume réduit à 50 %, charges maintenues. Tes prochaines séances muscu sont allégées.
+        </ZoneText>
+        <View style={styles.programCta}>
+          <Button title="Terminer la décharge" variant="secondary" onPress={onExit} />
+        </View>
+      </View>
+    );
+  }
+  if (!deload || !deload.recommended || !deload.protocol) return null;
+  return (
+    <View style={[styles.deloadCard, { borderColor: colors.orbe.amber }]}>
+      <ZoneText variant="caption" color={colors.orbe.amber} style={styles.deloadEyebrow}>
+        DÉCHARGE RECOMMANDÉE CETTE SEMAINE
+      </ZoneText>
+      <ZoneText variant="body" color={colors.text.primary} style={styles.deloadBody}>
+        {deload.reason} {deload.protocol.description}
+      </ZoneText>
+      <ZoneText variant="caption" color={colors.text.muted} style={styles.deloadRef}>
+        {deload.protocol.scientificBasis}
+      </ZoneText>
+      <View style={styles.programCta}>
+        <Button title="Passer en mode décharge" onPress={onActivate} />
+      </View>
+    </View>
+  );
+}
+
 function MuscleCard({
   profile,
+  generating,
   onSetup,
+  onStart,
 }: {
   profile: MuscleProfile | null;
+  generating: boolean;
   onSetup: () => void;
+  onStart: () => void;
 }): React.ReactElement {
   return (
     <View style={styles.runningCard}>
@@ -563,10 +773,14 @@ function MuscleCard({
             BLOC 1 · ACCUMULATION
           </ZoneText>
           <ZoneText variant="caption" color={colors.text.muted} style={styles.programIntro}>
-            Objectif {MUSCLE_GOAL_LABELS[profile.goal].toLowerCase()} · MEV → MAV
+            Objectif {MUSCLE_GOAL_LABELS[profile.goal].toLowerCase()} · science temps réel MEV/MAV/MRV
           </ZoneText>
           <View style={styles.programCta}>
-            <Button title="Bientôt" variant="secondary" disabled onPress={() => undefined} />
+            <Button
+              title={generating ? 'Génération…' : 'Commencer la séance'}
+              disabled={generating}
+              onPress={onStart}
+            />
           </View>
         </>
       ) : (
@@ -588,11 +802,22 @@ function MuscleCard({
 
 function HyroxCard({
   profile,
+  block,
+  weeksToRace,
+  prediction,
   onSetup,
+  onStart,
 }: {
   profile: HyroxProfile | null;
+  block: HyroxBlockPhase;
+  weeksToRace: number | null;
+  prediction: RacePrediction | null;
   onSetup: () => void;
+  onStart: () => void;
 }): React.ReactElement {
+  const blockInfo = HYROX_BLOCKS[block];
+  const plan = profile ? hyroxWeeklyPlan(profile.sessions_per_week, block) : [];
+  const todayIdx = (new Date().getDay() + 6) % 7;
   return (
     <View style={styles.runningCard}>
       <View style={styles.programHeader}>
@@ -608,13 +833,48 @@ function HyroxCard({
       {profile ? (
         <>
           <ZoneText variant="heading" style={styles.programBlock}>
-            BLOC 1 · BASE & STATIONS
+            BLOC {block} · {blockInfo.name.toUpperCase()}
           </ZoneText>
           <ZoneText variant="caption" color={colors.text.muted} style={styles.programIntro}>
-            {profile.sessions_per_week} séances/semaine · 60 % course, 40 % stations
+            {weeksToRace !== null ? `${weeksToRace} sem. avant la course · ` : ''}
+            {blockInfo.priority}
+          </ZoneText>
+
+          <View style={styles.hyroxWeekRow}>
+            {plan.map((d, i) => (
+              <View key={i} style={styles.hyroxDay}>
+                <View
+                  style={[
+                    styles.hyroxDot,
+                    {
+                      backgroundColor: d === 'rest' ? colors.border : colors.accent.gold,
+                      opacity: i === todayIdx ? 1 : 0.5,
+                    },
+                  ]}
+                />
+                <ZoneText variant="caption" color={i === todayIdx ? colors.text.primary : colors.text.muted} style={styles.hyroxDayLabel}>
+                  {FR_DAYS[i]}
+                </ZoneText>
+              </View>
+            ))}
+          </View>
+
+          {prediction ? (
+            <View style={styles.hyroxPredictionRow}>
+              <ZoneText variant="caption" color={colors.text.muted}>
+                Projection course
+              </ZoneText>
+              <ZoneText variant="label" color={colors.accent.gold}>
+                {formatDuration(prediction.totalSec)}
+              </ZoneText>
+            </View>
+          ) : null}
+
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.hyroxTodayLabel}>
+            Aujourd’hui : {HYROX_DAY_LABELS[plan[todayIdx] ?? 'station_work']}
           </ZoneText>
           <View style={styles.programCta}>
-            <Button title="Bientôt" variant="secondary" disabled onPress={() => undefined} />
+            <Button title="Commencer la séance" onPress={onStart} />
           </View>
         </>
       ) : (
@@ -794,6 +1054,23 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
   },
+  deloadCard: {
+    marginHorizontal: 24,
+    marginTop: 12,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 16,
+  },
+  hyroxWeekRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 },
+  hyroxDay: { alignItems: 'center', flex: 1 },
+  hyroxDot: { width: 10, height: 10, borderRadius: 5, marginBottom: 4 },
+  hyroxDayLabel: { fontSize: 10 },
+  hyroxPredictionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 },
+  hyroxTodayLabel: { marginTop: 10 },
+  deloadEyebrow: { letterSpacing: 1, fontSize: 11, fontFamily: 'Inter-Bold' },
+  deloadBody: { marginTop: 8, lineHeight: 20 },
+  deloadRef: { marginTop: 8, fontStyle: 'italic', lineHeight: 15 },
   weekDotsRow: { flexDirection: 'row', marginTop: 12 },
   weekDay: { width: 24, height: 8, borderRadius: 4, marginRight: 4 },
   todayBox: { marginTop: 14 },
