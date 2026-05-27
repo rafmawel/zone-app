@@ -15,6 +15,18 @@
  * to drive adaptation.
  */
 
+/**
+ * Round a target weight to a loadable barbell value (2.5 kg steps,
+ * minimum 20 kg empty barbell).
+ *
+ * @param weightKg raw computed weight
+ * @returns nearest loadable weight, minimum 20 kg
+ */
+export function roundToBar(weightKg: number): number {
+  if (!Number.isFinite(weightKg)) return 20;
+  return Math.max(20, Math.round(weightKg / 2.5) * 2.5);
+}
+
 export interface PrilepinZone {
   intensityMin: number;
   intensityMax: number;
@@ -247,7 +259,7 @@ export function generateIntensityWave(params: {
     const intensity = Math.max(50, Math.min(100, base + weekDelta[week]));
     const zone = getPrilepinZone(intensity) ?? PRILEPIN_TABLE[1];
     const reps = `${zone.repsPerSetMin}-${zone.repsPerSetMax}`;
-    const weight = Math.round((trainingMax * intensity) / 100 * 2) / 2;
+    const weight = roundToBar((trainingMax * intensity) / 100);
     sessions.push({
       dayNumber: i + 1,
       intensityPercent: Math.round(intensity * 10) / 10,

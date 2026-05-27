@@ -292,6 +292,7 @@ export default function SessionScreen(): React.ReactElement {
         bodyweightKg: 75,
         avgIntensityPercent: avgIntensity,
       }).catch(() => undefined);
+      await reconcileMaxesFromSession(user.uid, allSets, maxes).catch(() => undefined);
       if (program) {
         const completedSince = await countCompletedSessionsSince(user.uid, program.mesocycle_start);
         const sortedSessions: TrainingSession[] = Array.from(
@@ -522,6 +523,48 @@ function computeAverageIntensityPercent(
     totalWeight += weight;
   }
   return totalWeight > 0 ? weightedSum / totalWeight : 70;
+}
+
+/**
+ * After a session, ensure every exercise has an up-to-date stored 1RM.
+ *
+ * For each exercise, the best set (highest Epley estimate) is compared
+ * with the stored max. We save when there is no record yet (first time
+ * the lift is logged) or when the session beat the stored value, so
+ * maxes stay current even without an explicit PR.
+ */
+async function reconcileMaxesFromSession(
+  uid: string,
+  sets: CompletedSet[],
+  maxes: ExerciseMax[],
+): Promise<void> {
+  const bestByExercise = new Map<string, { weight: number; reps: number; est: number }>();
+  for (const s of sets) {
+    if (s.actual_weight_kg <= 0 || s.actual_reps <= 0) continue;
+    const est = estimateOneRepMax(s.actual_weight_kg, s.actual_reps);
+    const current = bestByExercise.get(s.exercise_id);
+    if (!current || est > current.est) {
+      bestByExercise.set(s.exercise_id, {
+        weight: s.actual_weight_kg,
+        reps: s.actual_reps,
+        est,
+      });
+    }
+  }
+
+  for (const [exerciseId, best] of bestByExercise) {
+    const existing = maxes.find((m) => m.exercise_id === exerciseId);
+    const previous = existing?.estimated_1rm ?? 0;
+    if (existing && best.est <= previous) continue;
+    await saveExerciseMax(uid, {
+      exercise_id: exerciseId,
+      weight_kg: best.weight,
+      reps: best.reps,
+      estimated_1rm: best.est,
+      date: todayDateString(),
+      is_pr: best.est > previous,
+    });
+  }
 }
 
 async function detectAndApplyPR(

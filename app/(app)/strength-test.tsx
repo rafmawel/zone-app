@@ -3,9 +3,14 @@ import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AlertTriangle, ArrowLeft } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
-import { saveExerciseMax, todayDateString, type ExerciseMax } from '@/lib/firestore';
-import { estimateOneRepMax } from '@/lib/programEngine';
-import { getExerciseById } from '@/data/exercises';
+import {
+  getUserProfile,
+  saveExerciseMax,
+  todayDateString,
+  type ExerciseMax,
+} from '@/lib/firestore';
+import { estimateOneRepMax, roundToBar } from '@/lib/programEngine';
+import { getExerciseById, type Exercise } from '@/data/exercises';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
@@ -31,10 +36,6 @@ interface WorkingSet {
 const WARMUP_REST_SECONDS = 90;
 const WORKING_REST_SECONDS = 180;
 const MAX_WORKING_SETS = 5;
-
-function roundToHalf(value: number): number {
-  return Math.round(value * 2) / 2;
-}
 
 function warmupSets(estimatedMax: number): WarmupSet[] {
   return [
@@ -87,14 +88,32 @@ export default function StrengthTestScreen(): React.ReactElement {
   const [warmupIndex, setWarmupIndex] = useState<number>(0);
   const [workingSets, setWorkingSets] = useState<WorkingSet[]>([]);
   const [currentWeight, setCurrentWeight] = useState<number>(
-    roundToHalf(initialMax * 0.85),
+    roundToBar(initialMax * 0.85),
   );
   const [currentReps, setCurrentReps] = useState<number>(3);
   const [resting, setResting] = useState<boolean>(false);
   const [restRemaining, setRestRemaining] = useState<number>(0);
   const [saving, setSaving] = useState<boolean>(false);
+  const [isBeginner, setIsBeginner] = useState<boolean>(false);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const restCallbackRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const profile = await getUserProfile(user.uid);
+        if (!cancelled) setIsBeginner(profile?.level === 'debutant');
+      } catch {
+        // non-blocking
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -171,7 +190,7 @@ export default function StrengthTestScreen(): React.ReactElement {
     }
 
     const bump = bumpFor(outcome);
-    const nextWeight = roundToHalf(currentWeight + bump);
+    const nextWeight = roundToBar(currentWeight + bump);
     setCurrentWeight(nextWeight);
     setCurrentReps(outcome === 'hard' ? 1 : currentReps);
     startRest(WORKING_REST_SECONDS, () => undefined);
@@ -235,7 +254,16 @@ export default function StrengthTestScreen(): React.ReactElement {
         </ZoneText>
 
         {phase === 'briefing' ? (
-          <BriefingView estimatedMax={initialMax} onStart={beginTest} />
+          <BriefingView
+            estimatedMax={initialMax}
+            exercise={exercise}
+            isBeginner={isBeginner}
+            onStart={beginTest}
+            onOpenLibrary={() => router.push('/(app)/(tabs)/library')}
+            onOpenDetail={() =>
+              exercise ? router.push(`/(app)/exercise/${exercise.id}`) : undefined
+            }
+          />
         ) : null}
 
         {phase === 'warmup' ? (
@@ -255,7 +283,7 @@ export default function StrengthTestScreen(): React.ReactElement {
             currentWeight={currentWeight}
             currentReps={currentReps}
             onAdjustWeight={(delta) =>
-              setCurrentWeight((w) => Math.max(20, roundToHalf(w + delta)))
+              setCurrentWeight((w) => roundToBar(w + delta))
             }
             onAdjustReps={(delta) =>
               setCurrentReps((r) => Math.max(1, Math.min(10, r + delta)))
@@ -285,13 +313,67 @@ export default function StrengthTestScreen(): React.ReactElement {
 
 function BriefingView({
   estimatedMax,
+  exercise,
+  isBeginner,
   onStart,
+  onOpenLibrary,
+  onOpenDetail,
 }: {
   estimatedMax: number;
+  exercise: Exercise | undefined;
+  isBeginner: boolean;
   onStart: () => void;
+  onOpenLibrary: () => void;
+  onOpenDetail: () => void;
 }): React.ReactElement {
+  const isOlympic = exercise?.category === 'olympic_lift';
+  const shortDescription = exercise
+    ? exercise.description.split('. ').slice(0, 2).join('. ').replace(/\.?$/, '.')
+    : '';
   return (
     <View style={styles.body}>
+      {exercise ? (
+        <View style={styles.exerciseCard}>
+          <ZoneText variant="label" color={colors.text.primary} style={styles.exerciseCardName}>
+            {exercise.name} ({exercise.name_en})
+          </ZoneText>
+          <View style={styles.equipBadge}>
+            <ZoneText variant="caption" color={colors.bg.primary} style={styles.equipBadgeText}>
+              BARRE + DISQUES
+            </ZoneText>
+          </View>
+          <ZoneText variant="caption" color={colors.text.secondary} style={styles.exerciseDesc}>
+            {shortDescription}
+          </ZoneText>
+          <TouchableOpacity onPress={onOpenDetail} hitSlop={8} style={styles.detailLink}>
+            <ZoneText variant="caption" color={colors.accent.gold}>
+              Voir la technique complète
+            </ZoneText>
+          </TouchableOpacity>
+          {isOlympic ? (
+            <ZoneText variant="caption" color={colors.orbe.amber} style={styles.olympicWarn}>
+              ⚠️ Maîtrise technique requise avant de tester ton max. Si tu débutes, commence par
+              apprendre le mouvement.
+            </ZoneText>
+          ) : null}
+        </View>
+      ) : null}
+
+      {isBeginner ? (
+        <View style={styles.beginnerCard}>
+          <ZoneText variant="caption" color={colors.text.primary} style={styles.beginnerText}>
+            Avant de tester tes maxes, assure-toi de maîtriser la technique de chaque mouvement.
+            Consulte la bibliothèque d'exercices.
+          </ZoneText>
+          <Button
+            title="Voir la bibliothèque"
+            variant="secondary"
+            onPress={onOpenLibrary}
+            style={styles.beginnerBtn}
+          />
+        </View>
+      ) : null}
+
       <View style={styles.warningCard}>
         <AlertTriangle size={18} color={colors.orbe.amber} />
         <View style={styles.warningBody}>
@@ -345,7 +427,7 @@ function WarmupView({
   onSkipRest: () => void;
 }): React.ReactElement {
   const current = warmups[currentIndex];
-  const weight = roundToHalf(estimatedMax * current.percent);
+  const weight = roundToBar(estimatedMax * current.percent);
   return (
     <View style={styles.body}>
       <ZoneText variant="caption" color={colors.accent.gold} style={styles.stepLabel}>
@@ -644,6 +726,35 @@ const styles = StyleSheet.create({
   title: { fontSize: 30, letterSpacing: 1.5, marginTop: 4 },
   subtitle: { marginTop: 4, marginBottom: 24 },
   body: { gap: 16 },
+  exerciseCard: {
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'flex-start',
+  },
+  exerciseCardName: { fontSize: 16, marginBottom: 8 },
+  equipBadge: {
+    backgroundColor: colors.accent.gold,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginBottom: 10,
+  },
+  equipBadgeText: { fontSize: 10, letterSpacing: 1 },
+  exerciseDesc: { lineHeight: 18 },
+  detailLink: { marginTop: 10 },
+  olympicWarn: { marginTop: 12, lineHeight: 16 },
+  beginnerCard: {
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.orbe.blue,
+  },
+  beginnerText: { lineHeight: 18, marginBottom: 12 },
+  beginnerBtn: { alignSelf: 'flex-start', paddingHorizontal: 18 },
   warningCard: {
     flexDirection: 'row',
     gap: 12,

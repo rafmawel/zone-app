@@ -23,6 +23,8 @@
  *   RIR 4+ = very easy (RPE 6-)
  */
 
+import { roundToBar } from './prilepinEngine';
+
 export type RIR = 0 | 1 | 2 | 3 | 4 | 5;
 
 export type ExerciseType =
@@ -334,6 +336,9 @@ function confidenceFor(userLevel: string): 'high' | 'medium' | 'low' {
 }
 
 function roundToStep(weight: number, type: ExerciseType): number {
+  // Barbell compounds load in 2.5 kg pairs off a 20 kg bar; lighter
+  // accessory work uses micro-steps and has no empty-bar floor.
+  if (type === 'compound_heavy') return roundToBar(weight);
   const step = type === 'isolation' ? 0.5 : 1.25;
   return Math.round(weight / step) * step;
 }
