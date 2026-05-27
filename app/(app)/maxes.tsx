@@ -333,16 +333,48 @@ export default function MaxesScreen(): React.ReactElement {
             ) : null}
 
             {stepIdx === 0 ? (
-              <TouchableOpacity
-                onPress={skipAll}
-                activeOpacity={0.7}
-                style={styles.skipRow}
-                disabled={saving}
-              >
-                <ZoneText variant="caption" color={colors.text.muted} style={styles.skipText}>
-                  Commencer sans mes maxes
-                </ZoneText>
-              </TouchableOpacity>
+              <>
+                <View style={styles.guidedRow}>
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push({
+                        pathname: '/(app)/strength-test',
+                        params: { mode: 'guided', sport: 'weightlifting', session: '1' },
+                      })
+                    }
+                    activeOpacity={0.7}
+                    style={styles.guidedChip}
+                  >
+                    <ZoneText variant="caption" color={colors.accent.gold}>
+                      Test guidé · Séance 1
+                    </ZoneText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push({
+                        pathname: '/(app)/strength-test',
+                        params: { mode: 'guided', sport: 'weightlifting', session: '2' },
+                      })
+                    }
+                    activeOpacity={0.7}
+                    style={styles.guidedChip}
+                  >
+                    <ZoneText variant="caption" color={colors.accent.gold}>
+                      Séance 2 · 48h après
+                    </ZoneText>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity
+                  onPress={skipAll}
+                  activeOpacity={0.7}
+                  style={styles.skipRow}
+                  disabled={saving}
+                >
+                  <ZoneText variant="caption" color={colors.text.muted} style={styles.skipText}>
+                    Commencer sans mes maxes
+                  </ZoneText>
+                </TouchableOpacity>
+              </>
             ) : null}
           </View>
         </TouchableWithoutFeedback>
@@ -530,7 +562,15 @@ const styles = StyleSheet.create({
   testLinkRow: { alignItems: 'center', marginTop: 6, paddingVertical: 6 },
   testLinkText: { textDecorationLine: 'underline' },
   error: { marginTop: 12, textAlign: 'center' },
-  skipRow: { alignItems: 'center', marginTop: 16, paddingVertical: 10 },
+  guidedRow: { flexDirection: 'row', gap: 10, marginTop: 16, justifyContent: 'center' },
+  guidedChip: {
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  skipRow: { alignItems: 'center', marginTop: 12, paddingVertical: 10 },
   skipText: { textDecorationLine: 'underline', fontSize: 12 },
   footer: { padding: 24, paddingTop: 8 },
 });

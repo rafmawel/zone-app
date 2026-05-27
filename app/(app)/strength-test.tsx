@@ -4,10 +4,14 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AlertTriangle, ArrowLeft } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
 import {
+  getExerciseMaxes,
+  getStrengthTestState,
   getUserProfile,
   saveExerciseMax,
+  saveStrengthTestSession1,
   todayDateString,
   type ExerciseMax,
+  type StrengthTestSport,
 } from '@/lib/firestore';
 import { estimateOneRepMax, roundToBar } from '@/lib/programEngine';
 import { getExerciseById, type Exercise } from '@/data/exercises';
@@ -36,6 +40,82 @@ interface WorkingSet {
 const WARMUP_REST_SECONDS = 90;
 const WORKING_REST_SECONDS = 180;
 const MAX_WORKING_SETS = 5;
+const SESSION_GAP_HOURS = 48;
+
+interface TestLift {
+  id: string;
+  rationale: string;
+}
+
+interface TestSession {
+  label: string;
+  lifts: TestLift[];
+}
+
+// Lifts are split across two sessions because CNS fatigue from maximal
+// efforts makes testing every lift accurately in one sitting unreliable.
+const SESSION_GROUPS: Record<StrengthTestSport, { 1: TestSession; 2: TestSession }> = {
+  weightlifting: {
+    1: {
+      label: 'Arraché et squat avant',
+      lifts: [
+        {
+          id: 'snatch',
+          rationale:
+            "Premier mouvement car le plus technique. Système nerveux frais obligatoire.",
+        },
+        {
+          id: 'front_squat',
+          rationale:
+            "Jambes déjà chauffées par l'arraché. Force brute, moins d'explosivité requise.",
+        },
+      ],
+    },
+    2: {
+      label: 'Épaulé-jeté et développé',
+      lifts: [
+        {
+          id: 'clean_and_jerk',
+          rationale:
+            "Le plus exigeant physiquement. Ouvre toujours la séance.",
+        },
+        {
+          id: 'strict_press',
+          rationale:
+            "Force de poussée pure. Épaules et triceps encore frais.",
+        },
+      ],
+    },
+  },
+  musculation: {
+    1: {
+      label: 'Développé couché et squat',
+      lifts: [
+        { id: 'bench_press', rationale: "Poussée horizontale. Pectoraux et triceps frais." },
+        { id: 'back_squat_high', rationale: "Force des jambes pendant que tu es encore explosif." },
+      ],
+    },
+    2: {
+      label: 'Soulevé, développé et rowing',
+      lifts: [
+        { id: 'deadlift', rationale: "Le plus lourd. Ouvre la séance, système nerveux frais." },
+        { id: 'strict_press', rationale: "Poussée verticale. Épaules et triceps encore disponibles." },
+        { id: 'barbell_row', rationale: "Tirage horizontal pour finir, charge plus légère." },
+      ],
+    },
+  },
+};
+
+const DEFAULT_SEED_MAX: Record<string, number> = {
+  snatch: 50,
+  clean_and_jerk: 65,
+  front_squat: 70,
+  strict_press: 40,
+  bench_press: 60,
+  back_squat_high: 80,
+  deadlift: 100,
+  barbell_row: 55,
+};
 
 function warmupSets(estimatedMax: number): WarmupSet[] {
   return [
@@ -75,13 +155,49 @@ function formatRest(seconds: number): string {
   return `${m}:${String(r).padStart(2, '0')}`;
 }
 
+type GateState = 'checking' | 'open' | 'locked';
+
 export default function StrengthTestScreen(): React.ReactElement {
   const router = useRouter();
-  const params = useLocalSearchParams<{ exerciseId?: string; estimatedMax?: string }>();
-  const exerciseId = params.exerciseId ?? '';
-  const initialMax = Math.max(20, parseFloat(params.estimatedMax ?? '0') || 60);
+  const params = useLocalSearchParams<{
+    exerciseId?: string;
+    estimatedMax?: string;
+    mode?: string;
+    sport?: string;
+    session?: string;
+  }>();
 
+  const guided = params.mode === 'guided';
+  const sport: StrengthTestSport =
+    params.sport === 'musculation' ? 'musculation' : 'weightlifting';
+  const sessionNumber: 1 | 2 = params.session === '2' ? 2 : 1;
+
+  // Build the lift queue: a single lift for the quick test, or the
+  // session's grouped lifts for the guided two-session protocol.
+  const liftQueue: TestLift[] = useMemo(() => {
+    if (guided) return SESSION_GROUPS[sport][sessionNumber].lifts;
+    return [{ id: params.exerciseId ?? '', rationale: '' }];
+  }, [guided, sport, sessionNumber, params.exerciseId]);
+
+  const [liftIndex, setLiftIndex] = useState<number>(0);
+  const [seedMaxes, setSeedMaxes] = useState<Record<string, number>>({});
+  const [gate, setGate] = useState<GateState>(guided && sessionNumber === 2 ? 'checking' : 'open');
+  const [sessionComplete, setSessionComplete] = useState<boolean>(false);
+
+  const activeLift = liftQueue[liftIndex] ?? liftQueue[0];
+  const exerciseId = activeLift?.id ?? '';
   const exercise = useMemo(() => getExerciseById(exerciseId), [exerciseId]);
+
+  const paramMax = parseFloat(params.estimatedMax ?? '0');
+  const initialMax = Math.max(
+    20,
+    guided
+      ? (seedMaxes[exerciseId] ?? DEFAULT_SEED_MAX[exerciseId] ?? 60)
+      : Number.isFinite(paramMax) && paramMax > 0
+        ? paramMax
+        : 60,
+  );
+
   const warmups = useMemo(() => warmupSets(initialMax), [initialMax]);
 
   const [phase, setPhase] = useState<Phase>('briefing');
@@ -98,22 +214,53 @@ export default function StrengthTestScreen(): React.ReactElement {
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const restCallbackRef = useRef<(() => void) | null>(null);
 
+  // Reset the per-lift phase machine whenever we move to a new lift.
+  useEffect(() => {
+    setPhase('briefing');
+    setWarmupIndex(0);
+    setWorkingSets([]);
+    setCurrentReps(3);
+    setCurrentWeight(roundToBar(initialMax * 0.85));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liftIndex]);
+
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
     let cancelled = false;
     void (async () => {
       try {
-        const profile = await getUserProfile(user.uid);
-        if (!cancelled) setIsBeginner(profile?.level === 'debutant');
+        const [profile, maxes, testState] = await Promise.all([
+          getUserProfile(user.uid),
+          getExerciseMaxes(user.uid),
+          guided && sessionNumber === 2 ? getStrengthTestState(user.uid) : Promise.resolve(null),
+        ]);
+        if (cancelled) return;
+        setIsBeginner(profile?.level === 'debutant');
+        const map: Record<string, number> = {};
+        for (const m of maxes) {
+          if (m.estimated_1rm > 0) map[m.exercise_id] = m.estimated_1rm;
+        }
+        setSeedMaxes(map);
+        if (guided && sessionNumber === 2) {
+          const iso =
+            sport === 'weightlifting'
+              ? testState?.weightlifting_session1_at
+              : testState?.musculation_session1_at;
+          const elapsedH = iso
+            ? (Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60)
+            : Number.POSITIVE_INFINITY;
+          // No session 1 record means nothing to gate against; allow.
+          setGate(iso && elapsedH < SESSION_GAP_HOURS ? 'locked' : 'open');
+        }
       } catch {
-        // non-blocking
+        if (!cancelled && guided && sessionNumber === 2) setGate('open');
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [guided, sessionNumber, sport]);
 
   useEffect(() => {
     return () => {
@@ -223,14 +370,35 @@ export default function StrengthTestScreen(): React.ReactElement {
         date: todayDateString(),
         is_pr: true,
       };
+      // Save each lift's max immediately so progress is never lost.
       await saveExerciseMax(user.uid, max);
-      router.back();
+
+      if (guided && liftIndex < liftQueue.length - 1) {
+        setSaving(false);
+        setLiftIndex((i) => i + 1);
+        return;
+      }
+
+      if (guided && sessionNumber === 1) {
+        await saveStrengthTestSession1(user.uid, sport, new Date().toISOString());
+      }
+      setSaving(false);
+      if (guided) {
+        setSessionComplete(true);
+      } else {
+        router.back();
+      }
     } catch {
       setSaving(false);
     }
   };
 
   const headerTitle = exercise ? exercise.name : 'Test de force';
+  const sessionHeader = guided
+    ? sessionNumber === 1
+      ? 'SÉANCE 1 · AUJOURD’HUI'
+      : 'SÉANCE 2 · DANS 48H MINIMUM'
+    : null;
 
   return (
     <SafeScreen>
@@ -243,8 +411,18 @@ export default function StrengthTestScreen(): React.ReactElement {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+        {sessionHeader ? (
+          <View style={styles.sessionHeaderRow}>
+            <View style={styles.sessionHeaderBar} />
+            <ZoneText variant="label" color={colors.accent.gold} style={styles.sessionHeaderText}>
+              {sessionHeader}
+            </ZoneText>
+          </View>
+        ) : null}
+
         <ZoneText variant="caption" color={colors.accent.gold} style={styles.eyebrow}>
           TEST DE FORCE
+          {guided ? ` · ${liftIndex + 1}/${liftQueue.length}` : ''}
         </ZoneText>
         <ZoneText variant="heading" style={styles.title}>
           {headerTitle.toUpperCase()}
@@ -253,10 +431,44 @@ export default function StrengthTestScreen(): React.ReactElement {
           Protocole de montée en charge progressive
         </ZoneText>
 
-        {phase === 'briefing' ? (
+        {gate === 'checking' ? (
+          <ZoneText variant="body" color={colors.text.muted} style={styles.gateChecking}>
+            Vérification de ta récupération...
+          </ZoneText>
+        ) : null}
+
+        {gate === 'locked' ? (
+          <View style={styles.gateCard}>
+            <ZoneText variant="label" color={colors.orbe.amber} style={styles.gateTitle}>
+              Séance 2 verrouillée
+            </ZoneText>
+            <ZoneText variant="body" size={13} color={colors.text.primary} style={styles.gateBody}>
+              Ton système nerveux a besoin de 48h pour récupérer de la séance 1. Reviens plus tard
+              pour tester ces mouvements en toute sécurité.
+            </ZoneText>
+            <Button title="Retour" variant="secondary" onPress={() => router.back()} />
+          </View>
+        ) : null}
+
+        {gate === 'open' && sessionComplete ? (
+          <View style={styles.gateCard}>
+            <ZoneText variant="label" color={colors.success} style={styles.gateTitle}>
+              {sessionNumber === 1 ? 'SÉANCE 1 TERMINÉE' : 'SÉANCE 2 TERMINÉE'}
+            </ZoneText>
+            <ZoneText variant="body" size={13} color={colors.text.primary} style={styles.gateBody}>
+              {sessionNumber === 1
+                ? "Reviens dans 48h pour la séance 2. Ton système nerveux a besoin de récupérer."
+                : 'Tous tes maxes sont à jour. Beau travail.'}
+            </ZoneText>
+            <Button title="Terminer" onPress={() => router.back()} />
+          </View>
+        ) : null}
+
+        {gate === 'open' && !sessionComplete && phase === 'briefing' ? (
           <BriefingView
             estimatedMax={initialMax}
             exercise={exercise}
+            rationale={activeLift?.rationale ?? ''}
             isBeginner={isBeginner}
             onStart={beginTest}
             onOpenLibrary={() => router.push('/(app)/(tabs)/library')}
@@ -266,7 +478,7 @@ export default function StrengthTestScreen(): React.ReactElement {
           />
         ) : null}
 
-        {phase === 'warmup' ? (
+        {gate === 'open' && !sessionComplete && phase === 'warmup' ? (
           <WarmupView
             estimatedMax={initialMax}
             warmups={warmups}
@@ -278,7 +490,7 @@ export default function StrengthTestScreen(): React.ReactElement {
           />
         ) : null}
 
-        {phase === 'working' ? (
+        {gate === 'open' && !sessionComplete && phase === 'working' ? (
           <WorkingView
             currentWeight={currentWeight}
             currentReps={currentReps}
@@ -296,7 +508,7 @@ export default function StrengthTestScreen(): React.ReactElement {
           />
         ) : null}
 
-        {phase === 'result' ? (
+        {gate === 'open' && !sessionComplete && phase === 'result' ? (
           <ResultView
             workingSets={workingSets}
             bestWeight={bestWorkingMax?.weight ?? 0}
@@ -314,6 +526,7 @@ export default function StrengthTestScreen(): React.ReactElement {
 function BriefingView({
   estimatedMax,
   exercise,
+  rationale,
   isBeginner,
   onStart,
   onOpenLibrary,
@@ -321,6 +534,7 @@ function BriefingView({
 }: {
   estimatedMax: number;
   exercise: Exercise | undefined;
+  rationale: string;
   isBeginner: boolean;
   onStart: () => void;
   onOpenLibrary: () => void;
@@ -332,6 +546,13 @@ function BriefingView({
     : '';
   return (
     <View style={styles.body}>
+      {rationale ? (
+        <View style={styles.rationaleCard}>
+          <ZoneText variant="caption" color={colors.text.primary} style={styles.rationaleText}>
+            {rationale}
+          </ZoneText>
+        </View>
+      ) : null}
       {exercise ? (
         <View style={styles.exerciseCard}>
           <ZoneText variant="label" color={colors.text.primary} style={styles.exerciseCardName}>
@@ -722,6 +943,30 @@ function OutcomeBtn({
 const styles = StyleSheet.create({
   headerRow: { paddingHorizontal: 20, paddingVertical: 12 },
   scroll: { paddingHorizontal: 20, paddingBottom: 40 },
+  sessionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
+  sessionHeaderBar: { width: 4, height: 18, borderRadius: 2, backgroundColor: colors.accent.gold },
+  sessionHeaderText: { letterSpacing: 1.5 },
+  gateChecking: { marginTop: 24 },
+  gateCard: {
+    marginTop: 16,
+    padding: 18,
+    borderRadius: 14,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  gateTitle: { letterSpacing: 1 },
+  gateBody: { lineHeight: 19 },
+  rationaleCard: {
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: colors.bg.elevated,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent.gold,
+  },
+  rationaleText: { lineHeight: 17, fontStyle: 'italic' },
   eyebrow: { letterSpacing: 2 },
   title: { fontSize: 30, letterSpacing: 1.5, marginTop: 4 },
   subtitle: { marginTop: 4, marginBottom: 24 },

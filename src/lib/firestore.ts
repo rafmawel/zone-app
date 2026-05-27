@@ -900,3 +900,35 @@ export async function getHealthSync(
   if (!snap.exists()) return null;
   return snap.data() as HealthSyncData;
 }
+
+export type StrengthTestSport = 'weightlifting' | 'musculation';
+
+export interface StrengthTestState {
+  weightlifting_session1_at: string | null;
+  musculation_session1_at: string | null;
+  updated_at: Timestamp | null;
+}
+
+export async function getStrengthTestState(
+  uid: string,
+): Promise<StrengthTestState | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'strength_test'));
+  if (!snap.exists()) return null;
+  return snap.data() as StrengthTestState;
+}
+
+export async function saveStrengthTestSession1(
+  uid: string,
+  sport: StrengthTestSport,
+  iso: string,
+): Promise<void> {
+  const field =
+    sport === 'weightlifting'
+      ? 'weightlifting_session1_at'
+      : 'musculation_session1_at';
+  await setDoc(
+    doc(db, 'users', uid, 'state', 'strength_test'),
+    { [field]: iso, updated_at: serverTimestamp() },
+    { merge: true },
+  );
+}
