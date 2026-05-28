@@ -1,120 +1,356 @@
-import React from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Lock, Sparkles } from 'lucide-react-native';
 import { colors } from '@/theme/colors';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Button } from '@/components/ui/Button';
+import {
+  analyzeSleepDebt,
+  calculateACWR,
+  calculatePerformanceModel,
+  calculateProReadiness,
+  getFormStatus,
+  getWeeklyLoadBudget,
+  type WorkloadDataPoint,
+  type WorkloadSport,
+} from '@/lib/pro';
+import type { ExerciseMax, RunningProfile, TrainingSession } from '@/lib/firestore';
+import { ProReadinessCard } from './ProReadinessCard';
+import { FormFatigueCard } from './FormFatigueCard';
+import { ACWRCard } from './ACWRCard';
+import { SportProgressionCard } from './SportProgressionCard';
+import { PredictionsCard } from './PredictionsCard';
+import { CoachZoneCard } from './CoachZoneCard';
 
-const FEATURES: string[] = [
-  'Forme · Fatigue · Fraîcheur (CTL/ATL/TSB)',
-  'Ratio charge/récupération (ACWR · Gabbett 2016)',
-  'Autoregulation RIR intelligente',
-  'Prédictions de performance',
-  'Risque blessure en temps réel',
-  'Coach Zone · Analyse hebdomadaire',
+const BENEFITS: string[] = [
+  'Ton niveau de forme réel — pas une estimation',
+  'Si tu pousses trop fort ou pas assez',
+  'Quand est ton prochain pic de forme',
+  'Ce que ton coach te dirait chaque semaine',
+  'Tes projections sur 2 mois',
 ];
+
+const DEMO_SPORTS: WorkloadSport[] = ['weightlifting', 'running'];
+
+function isoFromOffset(offsetDays: number): string {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - offsetDays);
+  return d.toISOString().slice(0, 10);
+}
+
+/** 8 weeks of realistic training for the fictional athlete Antoine. */
+function buildDemoWorkload(): WorkloadDataPoint[] {
+  const out: WorkloadDataPoint[] = [];
+  for (let day = 55; day >= 0; day -= 1) {
+    const weekday = (new Date(isoFromOffset(day)).getUTCDay() + 6) % 7;
+    const weekIdx = Math.floor((55 - day) / 7); // 0..7, load ramps up
+    const ramp = 1 + weekIdx * 0.06;
+    let tss = 0;
+    let sport: WorkloadSport = 'running';
+    let sessionType = 'easy';
+    if (weekday === 0) {
+      tss = 70 * ramp;
+      sport = 'weightlifting';
+      sessionType = 'strength';
+    } else if (weekday === 1) {
+      tss = 55 * ramp;
+      sport = 'running';
+      sessionType = 'tempo';
+    } else if (weekday === 3) {
+      tss = 75 * ramp;
+      sport = 'weightlifting';
+      sessionType = 'strength';
+    } else if (weekday === 5) {
+      tss = 90 * ramp;
+      sport = 'running';
+      sessionType = 'long';
+    }
+    if (tss > 0) {
+      out.push({
+        date: isoFromOffset(day),
+        tss: Math.round(tss),
+        sport,
+        sessionType,
+        durationMinutes: 60,
+        intensityFactor: 0.8,
+      });
+    }
+  }
+  return out;
+}
+
+function buildDemoCheckins(): { date: string; sleep_duration: number; sleep_quality: number }[] {
+  return Array.from({ length: 7 }, (_, i) => ({
+    date: isoFromOffset(6 - i),
+    sleep_duration: 6.2,
+    sleep_quality: 3,
+  }));
+}
+
+const DEMO_MAXES: ExerciseMax[] = [
+  { exercise_id: 'snatch', weight_kg: 52, reps: 1, estimated_1rm: 52, date: isoFromOffset(40), is_pr: false },
+  { exercise_id: 'clean_and_jerk', weight_kg: 65, reps: 1, estimated_1rm: 65, date: isoFromOffset(3), is_pr: true },
+];
+
+const DEMO_RUNNING_PROFILE: RunningProfile = {
+  vdot: 47,
+  easy_pace_sec_per_km: 330,
+  goal: 'performance',
+  reference_distance: '10km',
+  reference_time_seconds: 49 * 60 + 20,
+  sessions_per_week: 3,
+  target_race_date: null,
+  long_run_pref: 'dimanche',
+  updated_at: null,
+};
+
+const DEMO_SESSIONS: TrainingSession[] = [];
+
+function frenchRiskLabel(level: string): string {
+  switch (level) {
+    case 'optimal':
+      return 'parfait';
+    case 'caution':
+      return 'à surveiller';
+    case 'danger':
+      return 'trop élevé';
+    default:
+      return 'sous-charge';
+  }
+}
 
 export function LockedAnalytics(): React.ReactElement {
   const router = useRouter();
+  const [tab, setTab] = useState<'demo' | 'mine'>('demo');
 
-  const openPaywall = (): void => {
-    router.push('/(app)/paywall');
-  };
+  const openPaywall = (): void => router.push('/(app)/paywall');
+
+  const demo = useMemo(() => {
+    const workload = buildDemoWorkload();
+    const today = isoFromOffset(0);
+    const metrics = calculatePerformanceModel(workload, 120);
+    const acwr = calculateACWR(workload, today);
+    const budget = getWeeklyLoadBudget(acwr);
+    const sleepDebt = analyzeSleepDebt(buildDemoCheckins());
+    const tsb = metrics[metrics.length - 1]?.tsb ?? 0;
+    const readiness = calculateProReadiness({
+      zoneScore: 71,
+      acwr,
+      sleepDebt,
+      tsb,
+      activeSports: DEMO_SPORTS,
+    });
+    return { workload, metrics, acwr, budget, sleepDebt, tsb, readiness };
+  }, []);
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.scroll}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.hero}>
-        <Sparkles size={48} color={colors.accent.gold} />
-        <ZoneText
-          variant="heading"
-          size={48}
-          color={colors.accent.gold}
-          style={styles.title}
-        >
-          ZONE PRO
-        </ZoneText>
-        <ZoneText variant="label" size={16} color={colors.text.primary}>
-          L'analyse que les coachs utilisent.
-        </ZoneText>
-        <ZoneText
-          variant="caption"
-          size={14}
-          color={colors.text.muted}
-          style={styles.subline}
-        >
-          Basé sur la recherche scientifique.
-        </ZoneText>
-      </View>
+    <View style={styles.root}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <View style={styles.hero}>
+          <Sparkles size={44} color={colors.accent.gold} />
+          <ZoneText variant="heading" size={44} color={colors.accent.gold} style={styles.title}>
+            ZONE PRO
+          </ZoneText>
+          <ZoneText variant="label" size={16} color={colors.text.primary} style={styles.pitch}>
+            Avec Zone Pro, tu sais exactement quand entrer dans la Zone.
+          </ZoneText>
+        </View>
 
-      <View style={styles.features}>
-        {FEATURES.map((label) => (
-          <View key={label} style={styles.feature}>
-            <Lock size={16} color={colors.accent.gold} />
+        <View style={styles.benefits}>
+          {BENEFITS.map((b) => (
+            <View key={b} style={styles.benefit}>
+              <ZoneText variant="body" size={14} color={colors.accent.gold}>
+                ✦
+              </ZoneText>
+              <ZoneText variant="body" size={14} color={colors.text.primary} style={styles.benefitText}>
+                {b}
+              </ZoneText>
+            </View>
+          ))}
+        </View>
+
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.peek}>
+          Regarde à quoi ça ressemble ↓
+        </ZoneText>
+
+        <View style={styles.tabs}>
+          <TouchableOpacity
+            onPress={() => setTab('demo')}
+            activeOpacity={0.8}
+            style={[styles.tab, tab === 'demo' ? styles.tabActive : styles.tabIdle]}
+          >
             <ZoneText
-              variant="body"
-              size={14}
-              color={colors.text.primary}
-              style={styles.featureText}
+              variant="caption"
+              color={tab === 'demo' ? colors.bg.primary : colors.text.secondary}
+              style={styles.tabText}
             >
-              {label}
+              Démo Antoine ✦
+            </ZoneText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setTab('mine')}
+            activeOpacity={0.8}
+            style={[styles.tab, tab === 'mine' ? styles.tabActive : styles.tabIdle]}
+          >
+            <Lock size={12} color={tab === 'mine' ? colors.bg.primary : colors.accent.gold} />
+            <ZoneText
+              variant="caption"
+              color={tab === 'mine' ? colors.bg.primary : colors.text.secondary}
+              style={styles.tabText}
+            >
+              Mes données
+            </ZoneText>
+          </TouchableOpacity>
+        </View>
+
+        {tab === 'demo' ? (
+          <>
+            <View style={styles.previewBanner}>
+              <ZoneText variant="caption" color={colors.accent.gold} style={styles.previewText}>
+                ✦ APERÇU · Données d’Antoine, athlète Zone Pro
+              </ZoneText>
+            </View>
+
+            <View style={styles.demoCard}>
+              <ProReadinessCard
+                readiness={demo.readiness}
+                zoneScore={71}
+                acwr={demo.acwr.acwr}
+                acwrRiskLabel={frenchRiskLabel(demo.acwr.riskLevel)}
+                avgSleepHours={demo.sleepDebt.avgHoursLast7Days}
+                tsb={demo.tsb}
+                tsbLabel={getFormStatus(demo.tsb).label}
+              />
+            </View>
+            <View style={styles.demoCard}>
+              <FormFatigueCard metrics={demo.metrics} formStatus={getFormStatus(demo.tsb)} />
+            </View>
+            <View style={styles.demoCard}>
+              <ACWRCard acwrResult={demo.acwr} budget={demo.budget} workloadHistory={demo.workload} />
+            </View>
+            <View style={styles.demoCard}>
+              <SportProgressionCard
+                activeSports={DEMO_SPORTS}
+                workloadHistory={demo.workload}
+                exerciseMaxes={DEMO_MAXES}
+                completedSessions={DEMO_SESSIONS}
+                runningProfile={DEMO_RUNNING_PROFILE}
+                muscleVolumeStatus={[]}
+              />
+            </View>
+            <View style={styles.demoCard}>
+              <PredictionsCard
+                activeSports={DEMO_SPORTS}
+                metrics={demo.metrics}
+                runningProfile={DEMO_RUNNING_PROFILE}
+                exerciseMaxes={DEMO_MAXES}
+              />
+            </View>
+            <View style={styles.demoCard}>
+              <CoachZoneCard
+                acwr={demo.acwr}
+                sleepDebt={demo.sleepDebt}
+                metrics={demo.metrics}
+                budget={demo.budget}
+              />
+            </View>
+          </>
+        ) : (
+          <View style={styles.mineLocked}>
+            <Lock size={28} color={colors.accent.gold} />
+            <ZoneText variant="label" color={colors.text.primary} style={styles.mineTitle}>
+              Tes analyses t’attendent
+            </ZoneText>
+            <ZoneText variant="body" size={13} color={colors.text.muted} style={styles.mineBody}>
+              Débloque Zone Pro pour voir tes propres données à la place de celles d’Antoine.
             </ZoneText>
           </View>
-        ))}
-      </View>
+        )}
+      </ScrollView>
 
-      <View style={styles.cta}>
-        <Button title="DÉCOUVRIR ZONE PRO" variant="primary" onPress={openPaywall} />
-        <View style={styles.spacer} />
-        <Button title="En savoir plus" variant="ghost" onPress={openPaywall} />
+      <View style={styles.floating}>
+        <ZoneText variant="label" color={colors.text.primary} style={styles.floatTitle}>
+          Ces analyses sont disponibles avec Zone Pro.
+        </ZoneText>
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.floatSub}>
+          Essai gratuit 7 jours · Annulable à tout moment
+        </ZoneText>
+        <Button title="COMMENCER MON ESSAI GRATUIT" variant="primary" onPress={openPaywall} />
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 56,
-    paddingBottom: 48,
-  },
-  hero: {
-    alignItems: 'center',
-    marginBottom: 36,
-  },
-  title: {
-    marginTop: 16,
-    letterSpacing: 3,
-  },
-  subline: {
-    marginTop: 6,
-  },
-  features: {
+  root: { flex: 1 },
+  scroll: { paddingHorizontal: 16, paddingTop: 40, paddingBottom: 180 },
+  hero: { alignItems: 'center', marginBottom: 24 },
+  title: { marginTop: 12, letterSpacing: 3 },
+  pitch: { marginTop: 10, textAlign: 'center', lineHeight: 22 },
+  benefits: {
     backgroundColor: colors.bg.card,
     borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 16,
-    marginBottom: 32,
   },
-  feature: {
+  benefit: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8 },
+  benefitText: { flex: 1, lineHeight: 19 },
+  peek: { textAlign: 'center', marginTop: 20, marginBottom: 12 },
+  tabs: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  tab: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     paddingVertical: 10,
-    gap: 12,
+    borderRadius: 999,
+    borderWidth: 1,
   },
-  featureText: {
-    flex: 1,
+  tabActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
+  tabIdle: { backgroundColor: 'transparent', borderColor: colors.border },
+  tabText: { fontFamily: 'Inter-Bold', fontSize: 12 },
+  previewBanner: {
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    backgroundColor: 'rgba(201,168,76,0.10)',
   },
-  cta: {
-    marginTop: 8,
+  previewText: { textAlign: 'center', fontFamily: 'Inter-Bold', letterSpacing: 0.3 },
+  demoCard: {
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.35)',
+    borderRadius: 18,
   },
-  spacer: {
-    height: 12,
+  mineLocked: {
+    alignItems: 'center',
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    padding: 28,
   },
+  mineTitle: { marginTop: 12 },
+  mineBody: { marginTop: 8, textAlign: 'center', lineHeight: 19 },
+  floating: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 16,
+    backgroundColor: colors.bg.elevated,
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+    borderRadius: 16,
+    padding: 16,
+  },
+  floatTitle: { textAlign: 'center' },
+  floatSub: { textAlign: 'center', marginTop: 4, marginBottom: 12 },
 });

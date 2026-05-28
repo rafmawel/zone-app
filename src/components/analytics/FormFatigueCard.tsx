@@ -62,10 +62,10 @@ export function FormFatigueCard({ metrics, formStatus }: FormFatigueCardProps): 
   return (
     <Card style={styles.card}>
       <ZoneText variant="heading" size={22} color={colors.text.primary} style={styles.title}>
-        FORME · FATIGUE · FRAÎCHEUR
+        TON ÉNERGIE SUR 8 SEMAINES
       </ZoneText>
       <ZoneText variant="caption" color={colors.text.muted} style={styles.subtitle}>
-        Modèle Banister · 42 jours de fitness · 7 jours de fatigue
+        Comment ton corps a évolué ces 2 derniers mois
       </ZoneText>
 
       <View style={styles.chartWrap} onLayout={onLayout}>
@@ -93,15 +93,22 @@ export function FormFatigueCard({ metrics, formStatus }: FormFatigueCardProps): 
           ) : (
             <View style={styles.empty}>
               <ZoneText variant="caption" color={colors.text.muted}>
-                Pas encore assez de données. Termine quelques séances pour voir ton modèle Banister.
+                Pas encore assez de données. Termine quelques séances pour voir ton énergie évoluer.
               </ZoneText>
             </View>
           )
         ) : null}
       </View>
 
+      <View style={styles.legend}>
+        <LegendItem color={colors.accent.gold} label="Énergie accumulée" />
+        <LegendItem color={colors.danger} label="Fatigue récente" />
+        <LegendItem color={colors.orbe.blue} label="Forme du moment" />
+        <LegendItem color={colors.success} label="Zone idéale" />
+      </View>
+
       <View style={styles.metrics}>
-        <Metric label="FITNESS" value={current?.ctl ?? 0} delta={weeklyDelta.ctl} color={colors.accent.gold} />
+        <Metric label="ÉNERGIE" value={current?.ctl ?? 0} delta={weeklyDelta.ctl} color={colors.accent.gold} />
         <Metric label="FATIGUE" value={current?.atl ?? 0} delta={weeklyDelta.atl} color={colors.danger} />
         <Metric label="FORME" value={current?.tsb ?? 0} delta={weeklyDelta.tsb} color={colors.orbe.blue} signed />
       </View>
@@ -111,17 +118,32 @@ export function FormFatigueCard({ metrics, formStatus }: FormFatigueCardProps): 
           {formStatus.label}
         </ZoneText>
         <ZoneText variant="body" size={13} color={colors.text.primary} style={styles.interpretMsg}>
-          {formStatus.message}
-        </ZoneText>
-        <ZoneText variant="caption" color={colors.text.muted} style={styles.interpretAdvice}>
-          {formStatus.trainingAdvice}
+          {interpretForm(current?.tsb ?? 0)}
         </ZoneText>
       </View>
 
       <ZoneText variant="caption" size={10} color={colors.text.muted} style={styles.science}>
-        Modèle Banister et al. (1975) · Utilisé par les athlètes olympiques
+        Méthode utilisée par les athlètes olympiques depuis 1975
       </ZoneText>
     </Card>
+  );
+}
+
+function interpretForm(tsb: number): string {
+  if (tsb > 25) return 'Tu es frais. Idéal pour te dépasser.';
+  if (tsb >= 5) return 'Tu es bien équilibré. Ni trop fatigué, ni sous-entraîné.';
+  if (tsb >= -10) return 'Légère fatigue. Séance modérée conseillée.';
+  return 'Fatigue accumulée. Récupère en priorité.';
+}
+
+function LegendItem({ color, label }: { color: string; label: string }): React.ReactElement {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+      <ZoneText variant="caption" size={10} color={colors.text.muted}>
+        {label}
+      </ZoneText>
+    </View>
   );
 }
 
@@ -178,6 +200,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
+  legend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 4,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
   metrics: {
     flexDirection: 'row',
     gap: 8,
