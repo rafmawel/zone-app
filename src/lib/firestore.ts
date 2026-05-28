@@ -15,6 +15,12 @@ import {
   type Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import {
+  ALL_PRO_SPORTS,
+  EMPTY_SUBSCRIPTION,
+  type ProSport,
+  type ZoneSubscription,
+} from '@/types/subscription';
 
 export type SportKey =
   | 'halterophilie'
@@ -51,7 +57,13 @@ export interface UserProfile {
   health_data_source: HealthDataSource;
   sessions_organization: SessionsOrganization;
   optimize_global_progression?: boolean;
+  /** Daily check-in reminder, "HH:MM" 24h. */
+  notification_time?: string;
+  /** Whether the daily check-in reminder is enabled. */
+  notifications_enabled?: boolean;
   zone_score: number;
+  /** Modular Zone Pro subscription. Replaces the legacy `isPro` boolean. */
+  subscription?: ZoneSubscription;
 }
 
 export interface UserSport {
@@ -888,12 +900,13 @@ export interface PerformanceModelSnapshot {
   calculatedAt: Timestamp | null;
 }
 
-export interface SubscriptionStatus {
-  isPro: boolean;
-  trialUsed: boolean;
-  expiresAt: string | null;
-  platform: 'android' | 'ios' | null;
-  updatedAt: Timestamp | null;
+/**
+ * Legacy single-tier subscription document shape. Retained only so the
+ * modular model can migrate old `isPro: true` docs on read.
+ */
+interface LegacySubscriptionDoc {
+  isPro?: boolean;
+  expiresAt?: string | null;
 }
 
 export async function saveDailyTSS(
@@ -951,26 +964,99 @@ export async function getPerformanceModel(
   return data.snapshots ?? [];
 }
 
-export async function getSubscriptionStatus(
-  uid: string,
-): Promise<SubscriptionStatus | null> {
-  const snap = await getDoc(doc(db, 'users', uid, 'state', 'subscription'));
-  if (!snap.exists()) return null;
-  return snap.data() as SubscriptionStatus;
+function isProSportValue(value: unknown): value is ProSport {
+  return (
+    value === 'running' ||
+    value === 'hyrox' ||
+    value === 'musculation' ||
+    value === 'weightlifting'
+  );
 }
 
-export async function updateSubscriptionStatus(
+/**
+ * Read the modular Zone Pro subscription for a user.
+ *
+ * Backward compatibility: a legacy document carrying `isPro: true`
+ * (granted before the modular model existed) is migrated on read to a
+ * full bundle so existing Pro users keep their access.
+ *
+ * @param uid Firebase auth UID
+ * @returns the stored {@link ZoneSubscription} or {@link EMPTY_SUBSCRIPTION}
+ */
+export async function getSubscription(uid: string): Promise<ZoneSubscription> {
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'subscription'));
+  if (!snap.exists()) return EMPTY_SUBSCRIPTION;
+  const data = snap.data() as Partial<ZoneSubscription> & LegacySubscriptionDoc;
+
+  // Modern document — already in the new shape.
+  if (typeof data.hasProBase === 'boolean' || Array.isArray(data.proSports)) {
+    const proSports = (data.proSports ?? []).filter(isProSportValue);
+    const hasProBase = data.hasProBase === true || proSports.length > 0;
+    return {
+      hasProBase,
+      proSports,
+      plan: data.plan ?? (hasProBase ? 'sport' : 'free'),
+      expiresAt: data.expiresAt ?? null,
+      source: data.source ?? (hasProBase ? 'revenuecat' : 'none'),
+    };
+  }
+
+  // Legacy migration: a prior all-access flag becomes the full bundle.
+  if (data.isPro === true) {
+    return {
+      hasProBase: true,
+      proSports: [...ALL_PRO_SPORTS],
+      plan: 'bundle',
+      expiresAt: data.expiresAt ?? null,
+      source: 'promo',
+    };
+  }
+
+  return EMPTY_SUBSCRIPTION;
+}
+
+/**
+ * Persist a modular Zone Pro subscription.
+ *
+ * @param uid Firebase auth UID
+ * @param sub the subscription state to store
+ */
+export async function saveSubscription(
   uid: string,
-  status: Partial<SubscriptionStatus>,
+  sub: ZoneSubscription,
 ): Promise<void> {
-  await setDoc(
-    doc(db, 'users', uid, 'state', 'subscription'),
-    {
-      ...status,
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
+  await setDoc(doc(db, 'users', uid, 'state', 'subscription'), {
+    hasProBase: sub.hasProBase,
+    proSports: sub.proSports,
+    plan: sub.plan,
+    expiresAt: sub.expiresAt,
+    source: sub.source,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Whether the user has the always-included Zone Pro Base tier.
+ *
+ * @param uid Firebase auth UID
+ */
+export async function hasProBase(uid: string): Promise<boolean> {
+  const sub = await getSubscription(uid);
+  return sub.hasProBase;
+}
+
+/**
+ * Whether the user is subscribed to a specific sport module.
+ *
+ * @param uid Firebase auth UID
+ * @param sport sport module to check
+ */
+export async function isProSport(
+  uid: string,
+  sport: ProSport,
+): Promise<boolean> {
+  const sub = await getSubscription(uid);
+  return sub.proSports.includes(sport);
 }
 
 const RESET_COLLECTIONS = [

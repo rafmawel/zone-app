@@ -34,7 +34,7 @@ function buildObservations({
   if (acwr.riskLevel === 'optimal') {
     observations.push({
       type: 'positive',
-      text: `ACWR maintenu en zone optimale (${acwr.acwr.toFixed(2)}). Charge et récupération équilibrées.`,
+      text: 'Charge et récupération bien équilibrées cette semaine.',
     });
   } else if (sleepDebt.cumulativeDebtHours < 4 && sleepDebt.avgHoursLast7Days >= 7) {
     observations.push({
@@ -47,7 +47,7 @@ function buildObservations({
     if (last && prev && last.ctl - prev.ctl > 1) {
       observations.push({
         type: 'positive',
-        text: `Fitness en hausse : CTL +${(last.ctl - prev.ctl).toFixed(1)} sur la semaine.`,
+        text: 'Ton énergie est en hausse cette semaine. Continue comme ça.',
       });
     } else {
       observations.push({
@@ -60,22 +60,22 @@ function buildObservations({
   if (sleepDebt.debtLevel === 'severe' || sleepDebt.debtLevel === 'critical') {
     observations.push({
       type: 'watch',
-      text: `Sommeil moyen : ${sleepDebt.avgHoursLast7Days.toFixed(1)}h cette semaine. Impact estimé : -${Math.round(sleepDebt.strengthImpactPercent)}% sur la force.`,
+      text: `Sommeil moyen : ${sleepDebt.avgHoursLast7Days.toFixed(1)}h cette semaine. En dessous de 7h, les performances baissent de 15 à 20%.`,
     });
   } else if (acwr.riskLevel === 'danger') {
     observations.push({
       type: 'watch',
-      text: `ACWR en zone de danger (${acwr.acwr.toFixed(2)}). Risque de blessure multiplié par 2 à 4.`,
+      text: 'Tu accélères trop vite. Risque de blessure élevé, lève le pied.',
     });
   } else if (acwr.acuteLoad > acwr.chronicLoad * 1.2) {
     observations.push({
       type: 'watch',
-      text: "ATL en hausse rapide. Surveille les signes de fatigue.",
+      text: 'Ta fatigue monte vite. Surveille les signes de surmenage.',
     });
   } else {
     observations.push({
       type: 'watch',
-      text: "Pas de signal d'alerte majeur. Continue la rigueur sur le suivi.",
+      text: 'Aucun signal d’alerte majeur. Continue sur cette lancée.',
     });
   }
 
@@ -83,17 +83,17 @@ function buildObservations({
   if (budget.remainingBudget > 0 && acwr.riskLevel !== 'danger') {
     observations.push({
       type: 'recommendation',
-      text: `Budget restant cette semaine : ${budget.remainingBudget} TSS. Vise ${Math.max(0, budget.recommendedDailyTSS)} TSS/jour pour rester dans la zone.`,
+      text: `Il te reste ${Math.max(0, budget.remainingBudget)} points d’énergie cette semaine. Vise ${Math.max(0, budget.recommendedDailyTSS)} par jour pour rester dans la zone.`,
     });
   } else if (last && last.tsb >= 5) {
     observations.push({
       type: 'recommendation',
-      text: `TSB actuel +${Math.round(last.tsb)}. Fenêtre de qualité ouverte. Place une séance forte cette semaine.`,
+      text: 'Ta forme est au sommet. Place une séance forte cette semaine.',
     });
   } else {
     observations.push({
       type: 'recommendation',
-      text: "Priorité récupération. Coupe le volume de 30% sur les 3 prochains jours.",
+      text: 'Priorité récupération. Réduis le volume de 30% sur les 3 prochains jours.',
     });
   }
 
@@ -108,10 +108,10 @@ export function CoachZoneCard(props: CoachZoneCardProps): React.ReactElement {
       <View style={styles.header}>
         <View>
           <ZoneText variant="heading" size={22} color={colors.text.primary} style={styles.title}>
-            COACH ZONE
+            CE QUE ZONE A OBSERVÉ CETTE SEMAINE
           </ZoneText>
           <ZoneText variant="caption" color={colors.text.muted}>
-            Analyse de ta semaine · Mise à jour chaque lundi
+            Ton bilan personnel · Mis à jour chaque lundi
           </ZoneText>
         </View>
         <Sparkles size={20} color={colors.accent.gold} />

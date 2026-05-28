@@ -59,10 +59,10 @@ export function ACWRCard({
   return (
     <Card style={styles.card}>
       <ZoneText variant="heading" size={22} color={colors.text.primary} style={styles.title}>
-        RATIO CHARGE/RÉCUPÉRATION
+        EST-CE QUE TU EN FAIS TROP ?
       </ZoneText>
       <ZoneText variant="caption" color={colors.text.muted} style={styles.subtitle}>
-        Gabbett (2016) · Zone optimale : 0,8 à 1,3
+        L’équilibre entre ton effort et ta récupération
       </ZoneText>
 
       <View style={styles.chartWrap} onLayout={onLayout}>
@@ -76,13 +76,13 @@ export function ACWRCard({
               yMax={2.0}
               guides={[
                 { y: 0.8, color: colors.text.muted, dashed: true },
-                { y: 1.3, color: colors.text.muted, dashed: true, label: 'ZONE OPTIMALE' },
+                { y: 1.3, color: colors.text.muted, dashed: true, label: 'ZONE IDÉALE' },
               ]}
             />
           ) : (
             <View style={styles.empty}>
               <ZoneText variant="caption" color={colors.text.muted}>
-                Pas encore de charge enregistrée. Termine des séances pour activer l'analyse ACWR.
+                Pas encore de données. Termine des séances pour voir si tu en fais trop.
               </ZoneText>
             </View>
           )
@@ -90,15 +90,10 @@ export function ACWRCard({
       </View>
 
       <View style={styles.headlineRow}>
-        <ZoneText variant="heading" size={48} color={acwrColor}>
-          {acwrResult.acwr.toFixed(2)}
-        </ZoneText>
+        <View style={[styles.riskDot, { backgroundColor: acwrColor }]} />
         <View style={styles.headlineBody}>
           <ZoneText variant="label" color={acwrColor}>
-            {acwrResult.riskLevel.toUpperCase()}
-          </ZoneText>
-          <ZoneText variant="caption" color={colors.text.muted}>
-            {acwrResult.message}
+            {riskLabelFor(acwrResult.acwr)}
           </ZoneText>
         </View>
       </View>
@@ -106,14 +101,14 @@ export function ACWRCard({
       <View style={styles.budget}>
         <View style={styles.budgetRow}>
           <ZoneText variant="label" color={colors.text.primary}>
-            Budget restant cette semaine
+            Il te reste cette semaine
           </ZoneText>
           <ZoneText variant="label" color={colors.accent.gold}>
-            {budget.remainingBudget} TSS
+            {Math.max(0, budget.remainingBudget)} points d’énergie
           </ZoneText>
         </View>
         <ZoneText variant="caption" color={colors.text.muted}>
-          Maximum recommandé : {Math.max(0, budget.recommendedDailyTSS)} TSS/jour
+          Maximum recommandé aujourd’hui : {Math.max(0, budget.recommendedDailyTSS)}
         </ZoneText>
         <View style={styles.progressBar}>
           <View
@@ -129,10 +124,18 @@ export function ACWRCard({
       </View>
 
       <ZoneText variant="caption" size={10} color={colors.text.muted} style={styles.science}>
-        Gabbett TJ (2016) · British Journal of Sports Medicine
+        Basé sur la recherche en science du sport
       </ZoneText>
     </Card>
   );
+}
+
+function riskLabelFor(value: number): string {
+  if (value < 0.6) return 'Pas assez actif cette semaine';
+  if (value < 0.8) return 'En dessous de ton niveau habituel';
+  if (value <= 1.3) return 'Intensité parfaite — continue comme ça';
+  if (value <= 1.5) return 'Tu accélères un peu trop vite — surveille';
+  return 'Stop — risque de blessure élevé';
 }
 
 const styles = StyleSheet.create({
@@ -159,9 +162,10 @@ const styles = StyleSheet.create({
   headlineRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 12,
     marginTop: 12,
   },
+  riskDot: { width: 14, height: 14, borderRadius: 7 },
   headlineBody: {
     flex: 1,
   },

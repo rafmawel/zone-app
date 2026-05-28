@@ -12,17 +12,22 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { Check, ChevronRight, Sparkles } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
-import { showManageSubscriptions, getProExpiryDate } from '@/lib/subscriptions';
+import { showManageSubscriptions } from '@/lib/subscriptions';
 import {
   connectHealthConnect,
   openHealthConnect,
   type HealthConnectStatus,
 } from '@/lib/healthConnect';
-import { usePro } from '@/hooks/usePro';
+import { useProSports } from '@/hooks/useProSports';
+import {
+  ALL_PRO_SPORTS,
+  SPORT_LABELS,
+  type ProSport,
+} from '@/types/subscription';
 import {
   deleteAllUserData,
   updateUserProfile,
-  updateSubscriptionStatus,
+  saveSubscription,
   getAllTimeStats,
   getExerciseMaxes,
   getHyroxProfile,
@@ -52,6 +57,14 @@ import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
+import { ZoneExplainerModal } from '@/components/ZoneExplainerModal';
+import {
+  cancelCheckinReminder,
+  formatTime,
+  parseTime,
+  requestNotificationPermissions,
+  scheduleDailyCheckinReminder,
+} from '@/lib/notifications';
 import { frenchMonthYear, frenchShortDate } from '@/lib/frenchDate';
 
 const LEVEL_LABEL: Record<string, string> = {
@@ -94,12 +107,11 @@ function avatarInitials(email: string | null | undefined): string {
 
 export default function ProfileScreen(): React.ReactElement {
   const router = useRouter();
-  const { isPro, refresh } = usePro();
+  const { subscription, hasProBase, proSports, refresh } = useProSports();
   const [promoVisible, setPromoVisible] = useState<boolean>(false);
   const [promoCode, setPromoCode] = useState<string>('');
   const [promoError, setPromoError] = useState<string | null>(null);
   const [promoSaving, setPromoSaving] = useState<boolean>(false);
-  const [proExpiry, setProExpiry] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [program, setProgram] = useState<UserProgram | null>(null);
   const [sports, setSports] = useState<UserSport[]>([]);
@@ -110,6 +122,10 @@ export default function ProfileScreen(): React.ReactElement {
   const [hyroxProfile, setHyroxProfile] = useState<HyroxProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [resettingSport, setResettingSport] = useState<ResettableSport | null>(null);
+  const [zoneInfoVisible, setZoneInfoVisible] = useState<boolean>(false);
+  const [notifEnabled, setNotifEnabled] = useState<boolean>(true);
+  const [notifHour, setNotifHour] = useState<number>(7);
+  const [notifMinute, setNotifMinute] = useState<number>(0);
 
   const loadAll = useCallback(async (): Promise<void> => {
     const user = auth.currentUser;
@@ -170,21 +186,6 @@ export default function ProfileScreen(): React.ReactElement {
     }, [loadAll]),
   );
 
-  useEffect(() => {
-    if (!isPro) {
-      setProExpiry(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      const exp = await getProExpiryDate();
-      if (!cancelled) setProExpiry(exp);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isPro]);
-
   const onSignOut = async (): Promise<void> => {
     try {
       await signOut(auth);
@@ -192,6 +193,52 @@ export default function ProfileScreen(): React.ReactElement {
     } catch {
       // surfaced silently
     }
+  };
+
+  // Sync the reminder controls from the loaded profile.
+  useEffect(() => {
+    if (!profile) return;
+    setNotifEnabled(profile.notifications_enabled !== false);
+    const { hour, minute } = parseTime(profile.notification_time ?? '07:00');
+    setNotifHour(hour);
+    setNotifMinute(minute);
+  }, [profile]);
+
+  const persistReminder = async (
+    enabled: boolean,
+    hour: number,
+    minute: number,
+  ): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+    await updateUserProfile(user.uid, {
+      notifications_enabled: enabled,
+      notification_time: formatTime(hour, minute),
+    }).catch(() => undefined);
+    if (enabled) {
+      await scheduleDailyCheckinReminder(hour, minute).catch(() => undefined);
+    } else {
+      await cancelCheckinReminder().catch(() => undefined);
+    }
+  };
+
+  const onToggleReminder = (): void => {
+    const next = !notifEnabled;
+    setNotifEnabled(next);
+    if (next) void requestNotificationPermissions();
+    void persistReminder(next, notifHour, notifMinute);
+  };
+
+  const onShiftHour = (delta: number): void => {
+    const hour = (notifHour + delta + 24) % 24;
+    setNotifHour(hour);
+    if (notifEnabled) void persistReminder(true, hour, notifMinute);
+  };
+
+  const onShiftMinute = (delta: number): void => {
+    const minute = (notifMinute + delta + 60) % 60;
+    setNotifMinute(minute);
+    if (notifEnabled) void persistReminder(true, notifHour, minute);
   };
 
   const [resetting, setResetting] = useState<boolean>(false);
@@ -230,9 +277,12 @@ export default function ProfileScreen(): React.ReactElement {
     setPromoSaving(true);
     setPromoError(null);
     try {
-      await updateSubscriptionStatus(user.uid, {
-        isPro: true,
+      await saveSubscription(user.uid, {
+        hasProBase: true,
+        proSports: [...ALL_PRO_SPORTS],
+        plan: 'bundle',
         expiresAt: '2099-12-31',
+        source: 'promo',
       });
       await refresh();
       setPromoVisible(false);
@@ -283,6 +333,14 @@ export default function ProfileScreen(): React.ReactElement {
     : '-';
   const primarySport = sports[0];
 
+  // Sports the user has actually configured in the app.
+  const configuredSports: ProSport[] = [
+    program ? ('weightlifting' as const) : null,
+    runningProfile ? ('running' as const) : null,
+    muscleProfile ? ('musculation' as const) : null,
+    hyroxProfile ? ('hyrox' as const) : null,
+  ].filter((s): s is ProSport => s !== null);
+
   return (
     <SafeScreen>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -309,33 +367,61 @@ export default function ProfileScreen(): React.ReactElement {
           <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
             MON ABONNEMENT
           </ZoneText>
-          {isPro ? (
+          {hasProBase ? (
             <View style={styles.subscriptionCardPro}>
               <View style={styles.subscriptionHeader}>
                 <View style={styles.subscriptionTitleRow}>
                   <Sparkles size={18} color={colors.accent.gold} />
                   <ZoneText variant="heading" style={styles.subscriptionTitleGold}>
-                    ZONE PRO · Actif
+                    ZONE PRO · ACTIF
                   </ZoneText>
                 </View>
                 <Check size={18} color={colors.accent.gold} />
               </View>
-              <ZoneText variant="caption" color={colors.text.muted} style={styles.subscriptionMeta}>
-                {proExpiry
-                  ? `Renouvellement le ${frenchShortDate(proExpiry)}`
-                  : 'Abonnement actif'}
+
+              <View style={styles.sportPills}>
+                {proSports.map((sport) => (
+                  <View key={sport} style={styles.sportPill}>
+                    <Check size={12} color={colors.success} />
+                    <ZoneText variant="caption" color={colors.success} style={styles.sportPillText}>
+                      {SPORT_LABELS[sport]}
+                    </ZoneText>
+                  </View>
+                ))}
+              </View>
+
+              <ZoneText variant="caption" color={colors.text.muted} style={styles.baseIncluded}>
+                Base incluse : ✦ Risque blessure · Readiness · Coach Zone
               </ZoneText>
-              <TouchableOpacity
-                onPress={() => {
-                  void showManageSubscriptions();
-                }}
-                hitSlop={8}
-                style={styles.manageLink}
-              >
-                <ZoneText variant="caption" color={colors.accent.gold}>
-                  Gérer l'abonnement
+
+              {subscription.expiresAt && subscription.expiresAt !== '2099-12-31' ? (
+                <ZoneText variant="caption" color={colors.text.muted} style={styles.subscriptionMeta}>
+                  Renouvellement le {frenchShortDate(subscription.expiresAt)}
                 </ZoneText>
-              </TouchableOpacity>
+              ) : null}
+
+              <View style={styles.proLinksRow}>
+                {proSports.length < ALL_PRO_SPORTS.length ? (
+                  <TouchableOpacity
+                    onPress={() => router.push('/(app)/paywall')}
+                    hitSlop={8}
+                  >
+                    <ZoneText variant="caption" color={colors.accent.gold}>
+                      Ajouter un sport
+                    </ZoneText>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity
+                  onPress={() => {
+                    void showManageSubscriptions();
+                  }}
+                  hitSlop={8}
+                >
+                  <ZoneText variant="caption" color={colors.text.secondary}>
+                    Gérer l'abonnement
+                  </ZoneText>
+                </TouchableOpacity>
+              </View>
             </View>
           ) : (
             <View style={styles.subscriptionCard}>
@@ -345,6 +431,17 @@ export default function ProfileScreen(): React.ReactElement {
               <ZoneText variant="caption" color={colors.text.muted} style={styles.subscriptionMeta}>
                 Débloque l'analyse complète et le coach hebdomadaire.
               </ZoneText>
+              {configuredSports.length > 0 ? (
+                <View style={styles.sportPills}>
+                  {configuredSports.map((sport) => (
+                    <View key={sport} style={styles.sportChip}>
+                      <ZoneText variant="caption" color={colors.text.secondary}>
+                        {SPORT_LABELS[sport]}
+                      </ZoneText>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
               <Button
                 title="PASSER À PRO"
                 variant="primary"
@@ -355,7 +452,7 @@ export default function ProfileScreen(): React.ReactElement {
             </View>
           )}
 
-          {!isPro ? (
+          {!hasProBase ? (
             <TouchableOpacity
               onPress={() => {
                 setPromoError(null);
@@ -580,6 +677,74 @@ export default function ProfileScreen(): React.ReactElement {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.section}>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
+            RAPPEL QUOTIDIEN
+          </ZoneText>
+          <View style={styles.notifCard}>
+            <TouchableOpacity
+              style={styles.notifToggleRow}
+              activeOpacity={0.8}
+              onPress={onToggleReminder}
+            >
+              <View style={styles.notifToggleMain}>
+                <ZoneText variant="label" color={colors.text.primary}>
+                  Rappel de check-in
+                </ZoneText>
+                <ZoneText variant="caption" color={colors.text.muted}>
+                  Une notification chaque jour pour calibrer ta séance.
+                </ZoneText>
+              </View>
+              <View
+                style={[
+                  styles.switchTrack,
+                  { backgroundColor: notifEnabled ? colors.accent.gold : colors.border },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.switchThumb,
+                    notifEnabled ? styles.switchThumbOn : styles.switchThumbOff,
+                  ]}
+                />
+              </View>
+            </TouchableOpacity>
+
+            {notifEnabled ? (
+              <View style={styles.timeRow}>
+                <ZoneText variant="caption" color={colors.text.muted}>
+                  Heure du rappel
+                </ZoneText>
+                <View style={styles.timeSteppers}>
+                  <TimeStepper
+                    value={notifHour}
+                    onUp={() => onShiftHour(1)}
+                    onDown={() => onShiftHour(-1)}
+                  />
+                  <ZoneText variant="heading" style={styles.timeColon}>
+                    :
+                  </ZoneText>
+                  <TimeStepper
+                    value={notifMinute}
+                    onUp={() => onShiftMinute(5)}
+                    onDown={() => onShiftMinute(-5)}
+                  />
+                </View>
+              </View>
+            ) : null}
+          </View>
+        </View>
+
+        <TouchableOpacity
+          onPress={() => setZoneInfoVisible(true)}
+          activeOpacity={0.7}
+          style={styles.zoneInfoLink}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Sparkles size={14} color={colors.accent.gold} />
+          <ZoneText style={styles.zoneInfoText}>Qu’est-ce que la Zone ?</ZoneText>
+        </TouchableOpacity>
+
         <TouchableOpacity
           onPress={onSignOut}
           activeOpacity={0.7}
@@ -589,6 +754,7 @@ export default function ProfileScreen(): React.ReactElement {
           <ZoneText style={styles.logoutText}>Se déconnecter</ZoneText>
         </TouchableOpacity>
       </ScrollView>
+      <ZoneExplainerModal visible={zoneInfoVisible} onClose={() => setZoneInfoVisible(false)} />
 
       <Modal
         visible={promoVisible}
@@ -714,6 +880,30 @@ function SportRow({
   );
 }
 
+function TimeStepper({
+  value,
+  onUp,
+  onDown,
+}: {
+  value: number;
+  onUp: () => void;
+  onDown: () => void;
+}): React.ReactElement {
+  return (
+    <View style={styles.stepper}>
+      <TouchableOpacity onPress={onDown} hitSlop={10} style={styles.stepperBtn} activeOpacity={0.7}>
+        <ZoneText style={styles.stepperSign}>−</ZoneText>
+      </TouchableOpacity>
+      <ZoneText variant="heading" style={styles.stepperValue}>
+        {String(value).padStart(2, '0')}
+      </ZoneText>
+      <TouchableOpacity onPress={onUp} hitSlop={10} style={styles.stepperBtn} activeOpacity={0.7}>
+        <ZoneText style={styles.stepperSign}>+</ZoneText>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 function InfoRow({ label, value }: { label: string; value: string }): React.ReactElement {
   return (
     <View style={styles.infoRow}>
@@ -782,6 +972,38 @@ const styles = StyleSheet.create({
   manageLink: {
     marginTop: 10,
     alignSelf: 'flex-start',
+  },
+  sportPills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  sportPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.success,
+    backgroundColor: 'rgba(76,175,80,0.10)',
+  },
+  sportPillText: { fontFamily: 'Inter-Medium' },
+  sportChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg.elevated,
+  },
+  baseIncluded: { marginTop: 12, lineHeight: 16 },
+  proLinksRow: {
+    flexDirection: 'row',
+    gap: 20,
+    marginTop: 14,
   },
   upgradeBtn: {
     marginTop: 12,
@@ -937,7 +1159,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: { textAlign: 'center' },
-  logoutBtn: { marginTop: 32, alignItems: 'center', paddingVertical: 14 },
+  zoneInfoLink: {
+    marginTop: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+  },
+  zoneInfoText: { color: colors.accent.gold, fontFamily: 'Inter-Medium', fontSize: 14 },
+  notifCard: {
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 16,
+  },
+  notifToggleRow: { flexDirection: 'row', alignItems: 'center' },
+  notifToggleMain: { flex: 1, paddingRight: 12 },
+  switchTrack: { width: 48, height: 28, borderRadius: 14, padding: 3, justifyContent: 'center' },
+  switchThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: colors.bg.primary },
+  switchThumbOn: { alignSelf: 'flex-end' },
+  switchThumbOff: { alignSelf: 'flex-start' },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  timeSteppers: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  timeColon: { fontSize: 22, color: colors.text.primary },
+  stepper: { alignItems: 'center', flexDirection: 'row', gap: 8 },
+  stepperBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperSign: { color: colors.accent.gold, fontFamily: 'Inter-Bold', fontSize: 16 },
+  stepperValue: { fontSize: 22, color: colors.text.primary, minWidth: 32, textAlign: 'center' },
+  logoutBtn: { marginTop: 12, alignItems: 'center', paddingVertical: 14 },
   resetBtn: {
     marginTop: 24,
     alignItems: 'center',

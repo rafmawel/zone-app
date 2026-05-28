@@ -131,30 +131,30 @@ export interface ZoneLevel {
 }
 
 export function getZoneLevel(score: number): ZoneLevel {
-  if (score <= 30) {
+  if (score < 40) {
     return {
-      label: 'RÉCUPÉRATION',
+      label: 'ÉCOUTE TON CORPS',
       color: colors.orbe.red,
-      message: 'Ton corps a besoin de repos.',
+      message: 'Les plus grands athlètes savent aussi s’arrêter.',
     };
   }
-  if (score <= 50) {
+  if (score < 60) {
     return {
-      label: 'CORRECT',
+      label: 'RÉCUPÉRATION EN COURS',
       color: colors.orbe.amber,
-      message: 'Entraînement léger recommandé.',
+      message: 'La Zone se mérite. Récupère pour mieux revenir.',
     };
   }
   if (score <= 75) {
     return {
-      label: 'PRÊT',
+      label: 'PRÊT À PERFORMER',
       color: colors.orbe.blue,
-      message: 'Tu es prêt à performer.',
+      message: 'Les conditions sont réunies. Donne-toi les moyens.',
     };
   }
   return {
-    label: 'DANS LA ZONE',
+    label: 'LA ZONE EST À PORTÉE',
     color: colors.orbe.green,
-    message: 'Conditions optimales. Donne tout.',
+    message: 'Ton corps et ton esprit sont alignés. C’est maintenant.',
   };
 }
