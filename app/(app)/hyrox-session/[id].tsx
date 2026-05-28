@@ -7,13 +7,16 @@ import {
   getHyroxProfile,
   getHyroxStationAverages,
   getTodayCheckin,
+  getUserProfile,
   saveHyroxSession,
   todayDateString,
   updateWeakStations,
+  type Gender,
   type HyroxProfile,
   type HyroxSessionTypeKey,
   type HyroxStationResult,
 } from '@/lib/firestore';
+import { hyroxStationTimeFactor, wallBallWeightKg } from '@/lib/genderProfiles';
 import { usePro } from '@/hooks/usePro';
 import { getZoneLevel } from '@/lib/zoneScore';
 import {
@@ -72,6 +75,7 @@ export default function HyroxSessionScreen(): React.ReactElement {
 
   const [phase, setPhase] = useState<Phase>('loading');
   const [profile, setProfile] = useState<HyroxProfile | null>(null);
+  const [gender, setGender] = useState<Gender | null>(null);
   const [zoneScore, setZoneScore] = useState<number | null>(null);
   const [rounds, setRounds] = useState<PlannedRound[]>([]);
   const [results, setResults] = useState<RoundResult[]>([]);
@@ -107,16 +111,19 @@ export default function HyroxSessionScreen(): React.ReactElement {
         return;
       }
       try {
-        const [p, checkin, averages] = await Promise.all([
+        const [p, checkin, averages, userProfile] = await Promise.all([
           getHyroxProfile(user.uid),
           getTodayCheckin(user.uid),
           getHyroxStationAverages(user.uid),
+          getUserProfile(user.uid),
         ]);
         if (cancelled) return;
         setProfile(p);
+        const g = userProfile?.gender ?? null;
+        setGender(g);
         const z = checkin?.zone_score ?? null;
         setZoneScore(z);
-        setRounds(buildRounds(sessionType, p, averages, hyroxZoneRaceAdaptation(z)));
+        setRounds(buildRounds(sessionType, p, averages, g));
         setPhase(z !== null && z < 40 ? 'gate' : 'pre');
       } catch {
         if (!cancelled) setPhase('pre');
@@ -346,6 +353,7 @@ export default function HyroxSessionScreen(): React.ReactElement {
             <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
               CIBLE {mmss(zoneAdjustedTarget(currentRound?.targetSec ?? 0, adaptation))}
               {currentRound?.targetReps ? ` · ${currentRound.targetReps} reps` : ''}
+              {station?.id === 'wall_balls' ? ` · ballon ${wallBallWeightKg(gender)} kg` : ''}
             </ZoneText>
             <ZoneText
               variant="heading"
@@ -403,7 +411,7 @@ function buildRounds(
   type: HyroxSessionTypeKey,
   profile: HyroxProfile | null,
   averages: Record<string, number>,
-  _adaptation: HyroxZoneRaceAdaptation,
+  gender: Gender | null,
 ): PlannedRound[] {
   if (type === 'race_simulation') {
     return HYROX_STATION_ORDER.map((id, i) => {
@@ -412,7 +420,7 @@ function buildRounds(
         stationId: id,
         roundNumber: i + 1,
         totalRounds: 8,
-        targetSec: s.raceTimeTarget,
+        targetSec: Math.round(s.raceTimeTarget * hyroxStationTimeFactor(id, gender)),
         targetReps: s.reps ?? null,
       };
     });
@@ -432,12 +440,13 @@ function buildRounds(
     const out: PlannedRound[] = [];
     for (const id of selected) {
       const s = getHyroxStation(id);
+      const factor = hyroxStationTimeFactor(id, gender);
       for (let r = 1; r <= STATION_ROUNDS; r += 1) {
         out.push({
           stationId: id,
           roundNumber: r,
           totalRounds: STATION_ROUNDS,
-          targetSec: Math.round(s.raceTimeTarget * STATION_WORK_FRACTION),
+          targetSec: Math.round(s.raceTimeTarget * STATION_WORK_FRACTION * factor),
           targetReps: s.reps ? Math.round(s.reps * STATION_WORK_FRACTION) : null,
         });
       }

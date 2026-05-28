@@ -21,7 +21,23 @@ import {
   type DeloadProtocol,
   type VolumeLandmark,
 } from '@/lib/pro/hypertrophyProEngine';
+import { genderVolumeBonus } from '@/lib/genderProfiles';
+import type { Gender } from '@/lib/firestore';
 import { colors } from '@/theme/colors';
+
+/** Volume landmarks for a muscle, shifted up by the gender volume bonus. */
+function landmarkForGender(muscle: string, gender: Gender | null | undefined): VolumeLandmark | null {
+  const base = VOLUME_LANDMARKS[muscle];
+  if (!base) return null;
+  const bonus = genderVolumeBonus(muscle, gender);
+  if (bonus === 0) return base;
+  return {
+    MEV: base.MEV + bonus,
+    MAV: base.MAV + bonus,
+    MRV: base.MRV + bonus,
+    SRAhours: base.SRAhours,
+  };
+}
 
 export const MUSCLE_LABELS_FR: Record<string, string> = {
   quadriceps: 'Quadriceps',
@@ -153,8 +169,9 @@ export function liveMuscleVolume(
   muscle: string,
   baselineWeeklySets: number,
   sessionSets: number,
+  gender?: Gender | null,
 ): MuscleVolumeLive | null {
-  const landmark = VOLUME_LANDMARKS[muscle];
+  const landmark = landmarkForGender(muscle, gender);
   if (!landmark) return null;
   const sets = Math.max(0, baselineWeeklySets) + Math.max(0, sessionSets);
   const zone = sraZoneForSets(sets, landmark);
@@ -362,8 +379,9 @@ export function computeHypertrophyScore(params: {
   sets: ScoredSet[];
   baselineWeeklySetsByMuscle: Record<string, number>;
   zoneScore: number | null;
+  gender?: Gender | null;
 }): HypertrophyScore {
-  const { sets, baselineWeeklySetsByMuscle, zoneScore } = params;
+  const { sets, baselineWeeklySetsByMuscle, zoneScore, gender } = params;
 
   // Volume adequacy (40): share of trained muscles landing in MEV..MAV.
   const sessionSetsByMuscle: Record<string, number> = {};
@@ -380,7 +398,7 @@ export function computeHypertrophyScore(params: {
   const trainedMuscles = Object.keys(sessionSetsByMuscle);
   let inBand = 0;
   for (const m of trainedMuscles) {
-    const landmark = VOLUME_LANDMARKS[m];
+    const landmark = landmarkForGender(m, gender);
     if (!landmark) continue;
     const total = (baselineWeeklySetsByMuscle[m] ?? 0) + sessionSetsByMuscle[m];
     if (total >= landmark.MEV && total <= landmark.MAV) inBand += 1;

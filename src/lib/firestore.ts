@@ -37,10 +37,13 @@ export type SessionsOrganization =
   | 'mixte'
   | null;
 
+export type Gender = 'homme' | 'femme' | 'non_precise';
+
 export interface UserProfile {
   uid: string;
   name?: string;
   first_name?: string;
+  gender?: Gender;
   created_at: Timestamp | null;
   onboarding_completed: boolean;
   level: Level | null;
@@ -147,7 +150,15 @@ export interface ExerciseMax {
 export type RunningRaceDistance = '5km' | '10km' | 'semi' | 'marathon';
 export type RunningSessionType = 'EF' | 'SL' | 'TC' | 'TB' | 'IV' | 'RV' | 'RA';
 export type RunningSessionStatus = 'planned' | 'completed' | 'skipped';
-export type LongRunPreference = 'samedi' | 'dimanche' | 'flexible';
+export type Weekday =
+  | 'lundi'
+  | 'mardi'
+  | 'mercredi'
+  | 'jeudi'
+  | 'vendredi'
+  | 'samedi'
+  | 'dimanche';
+export type LongRunPreference = Weekday | 'flexible';
 
 export interface RunningProfile {
   vdot: number;

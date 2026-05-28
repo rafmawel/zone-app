@@ -16,11 +16,13 @@ import {
   getCompletedSessions,
   getExerciseMaxes,
   getSession,
+  getUserProfile,
   saveCompletedSet,
   saveExerciseMax,
   todayDateString,
   type CompletedSet,
   type ExerciseMax,
+  type Gender,
   type PlannedSet,
   type SessionExercise,
   type TrainingSession,
@@ -83,6 +85,7 @@ export default function MuscleSessionScreen(): React.ReactElement {
 
   const [state, setState] = useState<LoadState>({ loading: true, session: null, error: null });
   const [maxes, setMaxes] = useState<ExerciseMax[]>([]);
+  const [gender, setGender] = useState<Gender | null>(null);
   const [history, setHistory] = useState<TrainingSession[]>([]);
   const [completedSets, setCompletedSets] = useState<CompletedSet[]>([]);
   const [actualReps, setActualReps] = useState<number>(8);
@@ -108,12 +111,14 @@ export default function MuscleSessionScreen(): React.ReactElement {
         return;
       }
       try {
-        const [session, m, completed] = await Promise.all([
+        const [session, m, completed, profile] = await Promise.all([
           getSession(user.uid, sessionId),
           getExerciseMaxes(user.uid),
           getCompletedSessions(user.uid),
+          getUserProfile(user.uid),
         ]);
         if (cancelled) return;
+        setGender(profile?.gender ?? null);
         if (!session) {
           setState({ loading: false, session: null, error: 'Séance introuvable.' });
           return;
@@ -232,9 +237,9 @@ export default function MuscleSessionScreen(): React.ReactElement {
   const liveVolumes: MuscleVolumeLive[] = useMemo(() => {
     if (!currentExercise) return [];
     return primaryMusclesFor(currentExercise.exercise_id)
-      .map((m) => liveMuscleVolume(m, baselineByMuscle[m] ?? 0, sessionSetsByMuscle[m] ?? 0))
+      .map((m) => liveMuscleVolume(m, baselineByMuscle[m] ?? 0, sessionSetsByMuscle[m] ?? 0, gender))
       .filter((v): v is MuscleVolumeLive => v !== null);
-  }, [currentExercise, baselineByMuscle, sessionSetsByMuscle]);
+  }, [currentExercise, baselineByMuscle, sessionSetsByMuscle, gender]);
 
   const mrvHit = liveVolumes.find((v) => v.reachedMrv) ?? null;
 
@@ -331,6 +336,7 @@ export default function MuscleSessionScreen(): React.ReactElement {
       })),
       baselineWeeklySetsByMuscle: baselineByMuscle,
       zoneScore,
+      gender,
     });
     setSummary(score);
 

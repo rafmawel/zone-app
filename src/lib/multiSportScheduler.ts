@@ -38,8 +38,8 @@ export interface WeeklySchedule {
 }
 
 export interface SchedulePreferences {
-  long_run_day?: 'samedi' | 'dimanche' | 'flexible';
-  rest_day?: 'lundi' | 'mardi' | 'mercredi' | 'jeudi' | 'vendredi' | 'samedi' | 'dimanche';
+  long_run_day?: DayName | 'flexible';
+  rest_day?: DayName;
 }
 
 const SPORT_COLORS: Record<SchedulerSport, string> = {
@@ -159,7 +159,10 @@ export function generateOptimalWeek(
 ): WeeklySchedule {
   const start = mondayOf(weekStart ?? new Date());
   const restIdx = dayIndexFromName(preferences.rest_day);
-  const longRunDay = preferences.long_run_day === 'samedi' ? 5 : 6;
+  const longRunDay =
+    preferences.long_run_day && preferences.long_run_day !== 'flexible'
+      ? (dayIndexFromName(preferences.long_run_day) ?? 6)
+      : 6;
 
   const allSlots: PlannedSlot[] = [];
   for (const sport of activeSports) {
