@@ -4,13 +4,15 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { frenchAuthError } from '@/lib/authErrors';
+import type { Gender } from '@/lib/firestore';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { Button } from '@/components/ui/Button';
@@ -18,8 +20,16 @@ import { Input } from '@/components/ui/Input';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { AuthLogo } from '@/components/AuthLogo';
 
+const GENDER_OPTIONS: { key: Gender; label: string }[] = [
+  { key: 'homme', label: 'Homme' },
+  { key: 'femme', label: 'Femme' },
+  { key: 'non_precise', label: 'Non précisé' },
+];
+
 export default function RegisterScreen(): React.ReactElement {
   const router = useRouter();
+  const [firstName, setFirstName] = useState<string>('');
+  const [gender, setGender] = useState<Gender>('non_precise');
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [confirm, setConfirm] = useState<string>('');
@@ -28,7 +38,7 @@ export default function RegisterScreen(): React.ReactElement {
 
   const handleSubmit = async (): Promise<void> => {
     setError(null);
-    if (!email.trim() || !password || !confirm) {
+    if (!firstName.trim() || !email.trim() || !password || !confirm) {
       setError('Tous les champs sont requis.');
       return;
     }
@@ -43,7 +53,11 @@ export default function RegisterScreen(): React.ReactElement {
     setLoading(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const name = firstName.trim();
+      await updateProfile(cred.user, { displayName: name });
       await setDoc(doc(db, 'users', cred.user.uid), {
+        name,
+        gender,
         onboarding_completed: false,
         created_at: serverTimestamp(),
         zone_score: 50,
@@ -73,6 +87,48 @@ export default function RegisterScreen(): React.ReactElement {
             CRÉER UN COMPTE
           </ZoneText>
 
+          <View style={styles.field}>
+            <Input
+              placeholder="Prénom"
+              autoCapitalize="words"
+              autoComplete="name"
+              value={firstName}
+              onChangeText={setFirstName}
+            />
+          </View>
+          <View style={styles.field}>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.genderLabel}>
+              JE SUIS
+            </ZoneText>
+            <View style={styles.genderRow}>
+              {GENDER_OPTIONS.map((opt) => {
+                const active = gender === opt.key;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    onPress={() => setGender(opt.key)}
+                    activeOpacity={0.8}
+                    style={[
+                      styles.genderChip,
+                      active
+                        ? { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold }
+                        : { backgroundColor: 'transparent', borderColor: colors.border },
+                    ]}
+                  >
+                    <ZoneText
+                      style={{
+                        color: active ? colors.bg.primary : colors.text.secondary,
+                        fontFamily: 'Inter-Bold',
+                        fontSize: 12,
+                      }}
+                    >
+                      {opt.label}
+                    </ZoneText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
           <View style={styles.field}>
             <Input
               placeholder="Email"
@@ -144,6 +200,15 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
   },
   field: { marginBottom: 12 },
+  genderLabel: { letterSpacing: 1, marginBottom: 8, marginLeft: 2 },
+  genderRow: { flexDirection: 'row', gap: 8 },
+  genderChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
   error: { marginTop: 4, marginBottom: 8, textAlign: 'center' },
   submit: { marginTop: 8 },
   footer: {

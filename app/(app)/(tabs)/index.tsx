@@ -2,13 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ChevronRight, Dumbbell } from 'lucide-react-native';
-import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import {
   getUserProfile,
   todayDateString,
   type DailyCheckin,
   type TrainingSession,
+  type UserProfile,
 } from '@/lib/firestore';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { colors } from '@/theme/colors';
@@ -31,15 +32,14 @@ function frenchDate(): string {
   }
 }
 
-function greetingName(): string {
-  const user = auth.currentUser;
-  if (user?.displayName && user.displayName.trim()) return user.displayName.trim();
-  return 'Athlète';
-}
-
 function sessionTitle(session: TrainingSession): string {
   const exCount = session.planned_exercises?.length ?? 0;
-  const sport = session.sport_key === 'running' ? 'Course' : 'Haltérophilie';
+  const sport =
+    session.discipline === 'musculation'
+      ? 'Musculation'
+      : session.sport_key === 'running'
+        ? 'Course'
+        : 'Haltérophilie';
   return `${sport} · ${exCount} exercice${exCount > 1 ? 's' : ''}`;
 }
 
@@ -57,6 +57,7 @@ export default function DashboardScreen(): React.ReactElement {
   const [checkin, setCheckin] = useState<DailyCheckin | null>(null);
   const [loaded, setLoaded] = useState<boolean>(false);
   const [nextSession, setNextSession] = useState<TrainingSession | null>(null);
+  const [profileName, setProfileName] = useState<string | null>(null);
   const [healthConnected, setHealthConnected] = useState<boolean>(false);
 
   useEffect(() => {
@@ -117,10 +118,32 @@ export default function DashboardScreen(): React.ReactElement {
     return unsubscribe;
   }, []);
 
+  // Resolve the greeting name from Firestore once; Auth displayName wins
+  // when present (set at registration), then Firestore name / first_name.
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        if (cancelled || !snap.exists()) return;
+        const data = snap.data() as Partial<UserProfile>;
+        setProfileName(data.name ?? data.first_name ?? null);
+      } catch {
+        // keep fallback
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const score = checkin?.zone_score ?? 50;
   const level = checkin ? getZoneLevel(score) : null;
   const date = frenchDate();
-  const name = greetingName();
+  const authName = auth.currentUser?.displayName?.trim();
+  const name = authName || profileName || 'Athlète';
 
   return (
     <SafeScreen>

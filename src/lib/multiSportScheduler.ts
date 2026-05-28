@@ -1,4 +1,10 @@
 import type { MuscleGroup } from '@/data/exercises';
+import type {
+  ScheduleAssignment,
+  ScheduleSlot,
+  ScheduleSport,
+  Weekday,
+} from '@/lib/firestore';
 
 export type SchedulerSport = 'weightlifting' | 'running' | 'musculation' | 'hyrox';
 export type SessionIntensity = 'low' | 'medium' | 'high';
@@ -38,8 +44,8 @@ export interface WeeklySchedule {
 }
 
 export interface SchedulePreferences {
-  long_run_day?: 'samedi' | 'dimanche' | 'flexible';
-  rest_day?: 'lundi' | 'mardi' | 'mercredi' | 'jeudi' | 'vendredi' | 'samedi' | 'dimanche';
+  long_run_day?: DayName | 'flexible';
+  rest_day?: DayName;
 }
 
 const SPORT_COLORS: Record<SchedulerSport, string> = {
@@ -159,7 +165,10 @@ export function generateOptimalWeek(
 ): WeeklySchedule {
   const start = mondayOf(weekStart ?? new Date());
   const restIdx = dayIndexFromName(preferences.rest_day);
-  const longRunDay = preferences.long_run_day === 'samedi' ? 5 : 6;
+  const longRunDay =
+    preferences.long_run_day && preferences.long_run_day !== 'flexible'
+      ? (dayIndexFromName(preferences.long_run_day) ?? 6)
+      : 6;
 
   const allSlots: PlannedSlot[] = [];
   for (const sport of activeSports) {
@@ -266,6 +275,69 @@ function toScheduled(slot: PlannedSlot): ScheduledSession {
     muscle_groups_affected: slot.muscles,
     energy_systems: slot.energy,
   };
+}
+
+/**
+ * Assign every sport's sessions to the athlete's chosen training days.
+ *
+ * Heuristics: hardest sessions placed first, spread to avoid two
+ * high-intensity days back to back, double-session days take a second
+ * (lighter) slot in the afternoon, and load is spread evenly.
+ */
+export function autoAssignSchedule(
+  active: ActiveSport[],
+  weekDays: Weekday[],
+  doubleDays: Weekday[],
+): ScheduleAssignment[] {
+  const slots: PlannedSlot[] = [];
+  for (const s of active) slots.push(...buildSportSlots(s));
+  slots.sort((a, b) => intensityScore(b.intensity) - intensityScore(a.intensity));
+
+  const orderedDays = DAY_NAMES.filter((d) => weekDays.includes(d));
+  if (orderedDays.length === 0) return [];
+
+  const cap: Record<string, number> = {};
+  const used: Record<string, number> = {};
+  const hasHigh: Record<string, boolean> = {};
+  for (const d of orderedDays) {
+    cap[d] = doubleDays.includes(d) ? 2 : 1;
+    used[d] = 0;
+    hasHigh[d] = false;
+  }
+  const idxOf = (d: DayName): number => DAY_NAMES.indexOf(d);
+
+  const assignments: ScheduleAssignment[] = [];
+  for (const slot of slots) {
+    let candidates = orderedDays.filter((d) => used[d] < cap[d]);
+    if (candidates.length === 0) candidates = [...orderedDays];
+
+    if (slot.intensity === 'high') {
+      const spaced = candidates.filter((d) => {
+        if (hasHigh[d]) return false;
+        const i = idxOf(d);
+        return !orderedDays.some((o) => hasHigh[o] && Math.abs(idxOf(o) - i) === 1);
+      });
+      if (spaced.length > 0) candidates = spaced;
+      else {
+        const notHigh = candidates.filter((d) => !hasHigh[d]);
+        if (notHigh.length > 0) candidates = notHigh;
+      }
+    }
+
+    candidates.sort((a, b) => used[a] - used[b] || idxOf(a) - idxOf(b));
+    const day = candidates[0];
+    const slotName: ScheduleSlot = used[day] === 0 ? 'matin' : 'apresmidi';
+    used[day] += 1;
+    if (slot.intensity === 'high') hasHigh[day] = true;
+    assignments.push({
+      day,
+      slot: slotName,
+      sport: slot.sport as ScheduleSport,
+      session_type: slot.session_type,
+      intensity: slot.intensity,
+    });
+  }
+  return assignments;
 }
 
 export function checkDayConflicts(day: DayPlan): ScheduleWarning[] {

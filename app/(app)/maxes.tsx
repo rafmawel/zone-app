@@ -17,10 +17,12 @@ import {
   saveExerciseMax,
   todayDateString,
   type ExerciseMax,
+  type Gender,
   type UserProfile,
 } from '@/lib/firestore';
 import { ensureFirstPlannedSession, initializeUserProgram } from '@/lib/programInit';
 import { estimateOneRepMax } from '@/lib/programEngine';
+import { olympicLiftGenderFactor } from '@/lib/genderProfiles';
 import { getExerciseById } from '@/data/exercises';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
@@ -52,11 +54,13 @@ interface DraftMax {
   reps: number;
 }
 
-function defaultDrafts(levelKey: LevelKey): Record<KeyLift, DraftMax> {
+function defaultDrafts(levelKey: LevelKey, gender: Gender | null): Record<KeyLift, DraftMax> {
   const base = LEVEL_BASELINES[levelKey];
+  const snatch = roundTo2_5(base.snatch * olympicLiftGenderFactor('snatch', gender));
+  const cleanJerk = roundTo2_5(base.clean_and_jerk * olympicLiftGenderFactor('clean_and_jerk', gender));
   return {
-    snatch: { knows: true, weight: base.snatch, reps: 1 },
-    clean_and_jerk: { knows: true, weight: base.clean_and_jerk, reps: 1 },
+    snatch: { knows: true, weight: snatch, reps: 1 },
+    clean_and_jerk: { knows: true, weight: cleanJerk, reps: 1 },
     front_squat: { knows: true, weight: base.front_squat, reps: 1 },
     strict_press: { knows: true, weight: base.strict_press, reps: 1 },
   };
@@ -70,9 +74,10 @@ function roundTo2_5(n: number): number {
 export default function MaxesScreen(): React.ReactElement {
   const router = useRouter();
   const [levelKey, setLevelKey] = useState<LevelKey>('intermediate');
+  const [gender, setGender] = useState<Gender | null>(null);
   const [stepIdx, setStepIdx] = useState<number>(0);
   const [drafts, setDrafts] = useState<Record<KeyLift, DraftMax>>(() =>
-    defaultDrafts('intermediate'),
+    defaultDrafts('intermediate', null),
   );
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,10 +91,14 @@ export default function MaxesScreen(): React.ReactElement {
         const snap = await getDoc(doc(db, 'users', user.uid));
         if (cancelled || !snap.exists()) return;
         const profile = snap.data() as Partial<UserProfile>;
+        const g = profile.gender ?? null;
+        setGender(g);
         const mapped = profile.level ? ONBOARDING_TO_LEVEL_KEY[profile.level] : undefined;
         if (mapped) {
           setLevelKey(mapped);
-          setDrafts(defaultDrafts(mapped));
+          setDrafts(defaultDrafts(mapped, g));
+        } else {
+          setDrafts(defaultDrafts('intermediate', g));
         }
       } catch {
         // keep defaults
@@ -130,15 +139,12 @@ export default function MaxesScreen(): React.ReactElement {
   };
 
   const skipAll = async (): Promise<void> => {
+    const seeded = defaultDrafts(levelKey, gender);
     const filled: Record<KeyLift, DraftMax> = {
-      snatch: { knows: false, weight: LEVEL_BASELINES[levelKey].snatch, reps: 1 },
-      clean_and_jerk: {
-        knows: false,
-        weight: LEVEL_BASELINES[levelKey].clean_and_jerk,
-        reps: 1,
-      },
-      front_squat: { knows: false, weight: LEVEL_BASELINES[levelKey].front_squat, reps: 1 },
-      strict_press: { knows: false, weight: LEVEL_BASELINES[levelKey].strict_press, reps: 1 },
+      snatch: { ...seeded.snatch, knows: false },
+      clean_and_jerk: { ...seeded.clean_and_jerk, knows: false },
+      front_squat: { ...seeded.front_squat, knows: false },
+      strict_press: { ...seeded.strict_press, knows: false },
     };
     setDrafts(filled);
     await persist(filled);

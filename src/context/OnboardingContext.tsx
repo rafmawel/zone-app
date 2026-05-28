@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
-import type { Level, SportKey, HealthDataSource, SessionsOrganization } from '@/lib/firestore';
+import type { Gender, Level, SportKey, HealthDataSource, SessionsOrganization } from '@/lib/firestore';
 
 export interface SportConfig {
   sport_key: SportKey;
@@ -11,6 +11,7 @@ export interface SportConfig {
 
 export interface OnboardingState {
   level: Level | null;
+  gender: Gender | null;
   selectedSports: SportKey[];
   sportConfigs: Record<string, SportConfig>;
   sessions_organization: SessionsOrganization;
@@ -20,6 +21,7 @@ export interface OnboardingState {
 
 export interface OnboardingContextValue extends OnboardingState {
   setLevel: (level: Level) => void;
+  setGender: (gender: Gender) => void;
   toggleSport: (sport: SportKey) => void;
   setSportConfig: (sport: SportKey, patch: Partial<SportConfig>) => void;
   setSessionsOrganization: (v: SessionsOrganization) => void;
@@ -39,6 +41,7 @@ const defaultSportConfig = (sport: SportKey): SportConfig => ({
 
 export function OnboardingProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [level, setLevelState] = useState<Level | null>(null);
+  const [gender, setGenderState] = useState<Gender | null>(null);
   const [selectedSports, setSelectedSports] = useState<SportKey[]>([]);
   const [sportConfigs, setSportConfigs] = useState<Record<string, SportConfig>>({});
   const [sessions_organization, setSessionsOrganizationState] =
@@ -49,12 +52,14 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }):
   const value: OnboardingContextValue = useMemo(
     () => ({
       level,
+      gender,
       selectedSports,
       sportConfigs,
       sessions_organization,
       optimize_global_progression,
       health_data_source,
       setLevel: (l) => setLevelState(l),
+      setGender: (g) => setGenderState(g),
       toggleSport: (sport) => {
         setSelectedSports((prev) => {
           const has = prev.includes(sport);
@@ -83,6 +88,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }):
     }),
     [
       level,
+      gender,
       selectedSports,
       sportConfigs,
       sessions_organization,
