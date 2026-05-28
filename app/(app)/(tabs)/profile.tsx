@@ -1,12 +1,28 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { Check, ChevronRight, Sparkles } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
 import { showManageSubscriptions, getProExpiryDate } from '@/lib/subscriptions';
+import {
+  connectHealthConnect,
+  openHealthConnect,
+  type HealthConnectStatus,
+} from '@/lib/healthConnect';
 import { usePro } from '@/hooks/usePro';
 import {
+  deleteAllUserData,
+  updateUserProfile,
+  updateSubscriptionStatus,
   getAllTimeStats,
   getExerciseMaxes,
   getHyroxProfile,
@@ -45,15 +61,26 @@ const LEVEL_LABEL: Record<string, string> = {
   confirme: 'Confirmé',
 };
 
-const HEALTH_SOURCE_LABEL: Record<string, string> = {
-  health_connect: 'Health Connect',
-  manual: 'Manuel',
-  both: 'Health Connect + Manuel',
-};
+
+const VALID_PROMO_CODES: string[] = ['ZONE-DEV', 'ZONE-BETA', 'ZONE-PRO-2026', 'RAPHAEL'];
 
 function formatVolume(kg: number): string {
   if (!Number.isFinite(kg)) return '0 kg';
   return `${Math.round(kg).toLocaleString('fr-FR')} kg`;
+}
+
+function healthConnectErrorMessage(status: HealthConnectStatus): string {
+  switch (status) {
+    case 'not_installed':
+      return "Health Connect doit être installé ou mis à jour. Ouvre le Play Store puis réessaie.";
+    case 'unsupported':
+      return "Health Connect n'est pas disponible sur cet appareil.";
+    case 'denied':
+      return "Permissions refusées. Autorise l'accès à tes données pour activer la synchronisation.";
+    case 'error':
+    default:
+      return "Health Connect n'est pas disponible sur cet appareil.";
+  }
 }
 
 function avatarInitials(email: string | null | undefined): string {
@@ -67,7 +94,11 @@ function avatarInitials(email: string | null | undefined): string {
 
 export default function ProfileScreen(): React.ReactElement {
   const router = useRouter();
-  const { isPro } = usePro();
+  const { isPro, refresh } = usePro();
+  const [promoVisible, setPromoVisible] = useState<boolean>(false);
+  const [promoCode, setPromoCode] = useState<string>('');
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [promoSaving, setPromoSaving] = useState<boolean>(false);
   const [proExpiry, setProExpiry] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [program, setProgram] = useState<UserProgram | null>(null);
@@ -163,6 +194,87 @@ export default function ProfileScreen(): React.ReactElement {
     }
   };
 
+  const [resetting, setResetting] = useState<boolean>(false);
+  const [connectingHealth, setConnectingHealth] = useState<boolean>(false);
+
+  const onConnectHealth = async (): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+    setConnectingHealth(true);
+    try {
+      const status = await connectHealthConnect();
+      if (status === 'connected') {
+        await updateUserProfile(user.uid, { health_data_source: 'health_connect' });
+        await loadAll();
+      } else {
+        Alert.alert('Health Connect', healthConnectErrorMessage(status));
+      }
+    } catch {
+      Alert.alert(
+        'Health Connect',
+        "Health Connect n'est pas disponible sur cet appareil.",
+      );
+    } finally {
+      setConnectingHealth(false);
+    }
+  };
+
+  const onSubmitPromo = async (): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const normalized = promoCode.trim().toUpperCase();
+    if (!VALID_PROMO_CODES.includes(normalized)) {
+      setPromoError('Code invalide.');
+      return;
+    }
+    setPromoSaving(true);
+    setPromoError(null);
+    try {
+      await updateSubscriptionStatus(user.uid, {
+        isPro: true,
+        expiresAt: '2099-12-31',
+      });
+      await refresh();
+      setPromoVisible(false);
+      setPromoCode('');
+      Alert.alert('Zone Pro', 'Accès Pro activé. Bienvenue dans la zone.');
+    } catch {
+      setPromoError("Activation impossible. Réessaie.");
+    } finally {
+      setPromoSaving(false);
+    }
+  };
+
+  const onResetAll = (): void => {
+    Alert.alert(
+      'Réinitialiser mes données',
+      "Es-tu sûr ? Cette action supprimera toutes tes séances, ton programme, tes maxes et tes données de santé. Ton compte restera actif.",
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Réinitialiser',
+          style: 'destructive',
+          onPress: async () => {
+            const user = auth.currentUser;
+            if (!user) return;
+            setResetting(true);
+            try {
+              await deleteAllUserData(user.uid);
+              await signOut(auth);
+              router.replace('/onboarding/step-1');
+            } catch {
+              setResetting(false);
+              Alert.alert(
+                'Erreur',
+                "La réinitialisation a échoué. Vérifie ta connexion et réessaie.",
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const user = auth.currentUser;
   const email = user?.email ?? '';
   const displayName = user?.displayName?.trim() || profile?.name || profile?.first_name || null;
@@ -242,6 +354,22 @@ export default function ProfileScreen(): React.ReactElement {
               />
             </View>
           )}
+
+          {!isPro ? (
+            <TouchableOpacity
+              onPress={() => {
+                setPromoError(null);
+                setPromoCode('');
+                setPromoVisible(true);
+              }}
+              hitSlop={8}
+              style={styles.promoLink}
+            >
+              <ZoneText variant="caption" color={colors.accent.gold}>
+                J'ai un code promo
+              </ZoneText>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         <View style={styles.section}>
@@ -353,14 +481,44 @@ export default function ProfileScreen(): React.ReactElement {
             label="Séances par semaine"
             value={primarySport ? `${primarySport.sessions_per_week}` : '-'}
           />
-          <InfoRow
-            label="Source de données santé"
-            value={
-              profile?.health_data_source
-                ? (HEALTH_SOURCE_LABEL[profile.health_data_source] ?? profile.health_data_source)
-                : '-'
-            }
-          />
+          {profile?.health_data_source === 'health_connect' ||
+          profile?.health_data_source === 'both' ? (
+            <View style={styles.healthRow}>
+              <View style={styles.healthRowMain}>
+                <View style={styles.healthRowTitle}>
+                  <View style={styles.healthDot} />
+                  <ZoneText variant="label" color={colors.text.primary}>
+                    Health Connect · Connecté
+                  </ZoneText>
+                </View>
+                <ZoneText variant="caption" color={colors.text.muted}>
+                  Données synchronisées
+                </ZoneText>
+              </View>
+              <TouchableOpacity onPress={() => openHealthConnect()} hitSlop={8}>
+                <ZoneText variant="caption" color={colors.accent.gold}>
+                  Gérer
+                </ZoneText>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              onPress={() => {
+                void onConnectHealth();
+              }}
+              activeOpacity={0.85}
+              disabled={connectingHealth}
+              style={styles.healthConnectBtn}
+            >
+              <ZoneText
+                variant="label"
+                color={colors.bg.primary}
+                style={styles.healthConnectText}
+              >
+                {connectingHealth ? 'Connexion en cours' : 'Connecter Health Connect'}
+              </ZoneText>
+            </TouchableOpacity>
+          )}
 
           <ZoneText
             variant="caption"
@@ -408,6 +566,18 @@ export default function ProfileScreen(): React.ReactElement {
           {!program && !runningProfile && !muscleProfile && !hyroxProfile ? (
             <EmptyHint text="Aucun sport activé. Démarre depuis l’onglet Programme." />
           ) : null}
+
+          <TouchableOpacity
+            onPress={onResetAll}
+            activeOpacity={0.7}
+            disabled={resetting}
+            style={styles.resetBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ZoneText style={styles.resetText}>
+              {resetting ? 'Réinitialisation en cours' : 'Réinitialiser toutes mes données'}
+            </ZoneText>
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity
@@ -419,6 +589,61 @@ export default function ProfileScreen(): React.ReactElement {
           <ZoneText style={styles.logoutText}>Se déconnecter</ZoneText>
         </TouchableOpacity>
       </ScrollView>
+
+      <Modal
+        visible={promoVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPromoVisible(false)}
+      >
+        <View style={styles.promoBackdrop}>
+          <View style={styles.promoCard}>
+            <ZoneText variant="heading" style={styles.promoTitle}>
+              Entre ton code d'accès
+            </ZoneText>
+            <TextInput
+              value={promoCode}
+              onChangeText={(t) => {
+                setPromoCode(t);
+                if (promoError) setPromoError(null);
+              }}
+              placeholder="ZONE-..."
+              placeholderTextColor={colors.text.muted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              style={styles.promoInput}
+            />
+            {promoError ? (
+              <ZoneText variant="caption" color={colors.danger} style={styles.promoErrorText}>
+                {promoError}
+              </ZoneText>
+            ) : null}
+            <View style={styles.promoActions}>
+              <TouchableOpacity
+                onPress={() => setPromoVisible(false)}
+                style={styles.promoCancel}
+                hitSlop={8}
+              >
+                <ZoneText variant="label" color={colors.text.muted}>
+                  Annuler
+                </ZoneText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  void onSubmitPromo();
+                }}
+                disabled={promoSaving}
+                style={styles.promoSubmit}
+                hitSlop={8}
+              >
+                <ZoneText variant="label" color={colors.bg.primary} style={styles.promoSubmitText}>
+                  {promoSaving ? '...' : 'Valider'}
+                </ZoneText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeScreen>
   );
 }
@@ -563,6 +788,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     alignSelf: 'flex-start',
   },
+  promoLink: { marginTop: 12, alignSelf: 'flex-start', paddingVertical: 4 },
+  promoBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  promoCard: {
+    width: '100%',
+    backgroundColor: colors.bg.elevated,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 20,
+  },
+  promoTitle: { fontSize: 20, letterSpacing: 0.5, marginBottom: 14, color: colors.text.primary },
+  promoInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: colors.text.primary,
+    fontFamily: 'Inter-Regular',
+    fontSize: 16,
+    letterSpacing: 1,
+  },
+  promoErrorText: { marginTop: 8 },
+  promoActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 16,
+    marginTop: 18,
+  },
+  promoCancel: { paddingVertical: 10, paddingHorizontal: 8 },
+  promoSubmit: {
+    backgroundColor: colors.accent.gold,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  promoSubmitText: { fontSize: 14 },
   headerWrap: { alignItems: 'center', marginBottom: 8 },
   avatar: {
     width: 56,
@@ -669,5 +938,38 @@ const styles = StyleSheet.create({
   },
   emptyText: { textAlign: 'center' },
   logoutBtn: { marginTop: 32, alignItems: 'center', paddingVertical: 14 },
+  resetBtn: {
+    marginTop: 24,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    borderRadius: 12,
+  },
+  resetText: {
+    color: colors.danger,
+    fontFamily: 'Inter-Medium',
+    fontSize: 13,
+    letterSpacing: 0.5,
+  },
   logoutText: { color: colors.danger, fontFamily: 'Inter-Medium', fontSize: 14 },
+  healthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: colors.border,
+  },
+  healthRowMain: { flex: 1 },
+  healthRowTitle: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
+  healthDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.success },
+  healthConnectBtn: {
+    marginTop: 12,
+    backgroundColor: colors.accent.gold,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  healthConnectText: { fontSize: 14 },
 });

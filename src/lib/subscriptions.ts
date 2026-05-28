@@ -7,6 +7,7 @@
  */
 
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import Purchases, {
   LOG_LEVEL,
   type CustomerInfo,
@@ -16,6 +17,9 @@ import Purchases, {
 
 const RC_API_KEY = 'rc_android_REPLACE_ME';
 const PRO_ENTITLEMENT_ID = 'pro';
+
+const isExpoGo = Constants.appOwnership === 'expo';
+const shouldSkipRC = isExpoGo;
 
 let initialized = false;
 let initializing: Promise<void> | null = null;
@@ -75,6 +79,7 @@ export interface PurchaseResult {
  * @param userId Firebase auth UID
  */
 export async function initializePurchases(userId: string): Promise<void> {
+  if (shouldSkipRC) return;
   if (initialized) return;
   if (initializing) {
     return initializing;
@@ -102,6 +107,7 @@ export async function initializePurchases(userId: string): Promise<void> {
  * @returns `true` if RevenueCat reports `pro` entitlement active.
  */
 export async function checkProStatus(): Promise<boolean> {
+  if (shouldSkipRC) return false;
   try {
     const info: CustomerInfo = await Purchases.getCustomerInfo();
     return typeof info.entitlements.active[PRO_ENTITLEMENT_ID] !== 'undefined';
@@ -116,6 +122,7 @@ export async function checkProStatus(): Promise<boolean> {
  * @returns the current `PurchasesOffering`, or `null` if unavailable.
  */
 export async function getCurrentOffering(): Promise<PurchasesOffering | null> {
+  if (shouldSkipRC) return null;
   try {
     const offerings = await Purchases.getOfferings();
     return offerings.current ?? null;
@@ -133,6 +140,14 @@ export async function getCurrentOffering(): Promise<PurchasesOffering | null> {
 export async function purchasePackage(
   pkg: PurchasesPackage,
 ): Promise<PurchaseResult> {
+  if (shouldSkipRC) {
+    return {
+      success: false,
+      isPro: false,
+      error:
+        "Les achats ne sont pas disponibles ici. Lance l'app depuis un build natif.",
+    };
+  }
   try {
     const { customerInfo } = await Purchases.purchasePackage(pkg);
     const isPro =
@@ -157,6 +172,9 @@ export async function purchasePackage(
  * @returns same shape as {@link purchasePackage}
  */
 export async function restorePurchases(): Promise<PurchaseResult> {
+  if (shouldSkipRC) {
+    return { success: true, isPro: false };
+  }
   try {
     const info = await Purchases.restorePurchases();
     const isPro =
@@ -173,6 +191,7 @@ export async function restorePurchases(): Promise<PurchaseResult> {
  * @returns void
  */
 export async function showManageSubscriptions(): Promise<void> {
+  if (shouldSkipRC) return;
   try {
     if (Platform.OS === 'web') return;
     await Purchases.showManageSubscriptions();
@@ -187,6 +206,7 @@ export async function showManageSubscriptions(): Promise<void> {
  * @returns ISO date string or null
  */
 export async function getProExpiryDate(): Promise<string | null> {
+  if (shouldSkipRC) return null;
   try {
     const info = await Purchases.getCustomerInfo();
     const ent = info.entitlements.active[PRO_ENTITLEMENT_ID];

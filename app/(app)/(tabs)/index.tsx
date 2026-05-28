@@ -5,6 +5,7 @@ import { ChevronRight, Dumbbell } from 'lucide-react-native';
 import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import {
+  getUserProfile,
   todayDateString,
   type DailyCheckin,
   type TrainingSession,
@@ -15,6 +16,8 @@ import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { CheckinBanner } from '@/components/CheckinBanner';
+import { ZoneOrbe } from '@/components/ZoneOrbe';
 
 function frenchDate(): string {
   try {
@@ -55,6 +58,26 @@ export default function DashboardScreen(): React.ReactElement {
   const [loaded, setLoaded] = useState<boolean>(false);
   const [nextSession, setNextSession] = useState<TrainingSession | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
+  const [healthConnected, setHealthConnected] = useState<boolean>(false);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const profile = await getUserProfile(user.uid);
+        if (!cancelled) {
+          setHealthConnected(profile?.health_data_source === 'health_connect');
+        }
+      } catch {
+        // optional
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -128,6 +151,8 @@ export default function DashboardScreen(): React.ReactElement {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
+        {loaded && !checkin ? <CheckinBanner /> : null}
+
         <View style={styles.headerZone}>
           <ZoneText variant="label" color={colors.text.secondary}>
             Bonjour, {name}
@@ -142,27 +167,18 @@ export default function DashboardScreen(): React.ReactElement {
         <View style={styles.orbeZone}>
           {!loaded ? (
             <>
-              <Skeleton width={140} height={140} borderRadius={70} />
+              <Skeleton width={160} height={160} borderRadius={80} />
               <Skeleton width={120} height={56} style={styles.scoreSkeleton} />
               <Skeleton width={140} height={14} style={styles.labelSkeleton} />
             </>
           ) : (
             <>
-              <View
-                style={[
-                  styles.orb,
-                  {
-                    backgroundColor: level ? level.color : colors.accent.gold,
-                    shadowColor: level ? level.color : colors.accent.gold,
-                  },
-                ]}
-              >
-                {!checkin ? (
-                  <ZoneText variant="heading" style={styles.orbQuestion}>
-                    ?
-                  </ZoneText>
-                ) : null}
-              </View>
+              <ZoneOrbe
+                score={checkin ? score : 50}
+                size={160}
+                animated
+                overlayText={!checkin ? '?' : undefined}
+              />
               <ZoneText
                 variant="heading"
                 style={[
@@ -190,22 +206,18 @@ export default function DashboardScreen(): React.ReactElement {
                   </ZoneText>
                 </TouchableOpacity>
               )}
+              {healthConnected ? (
+                <View style={styles.hcBadge}>
+                  <View style={styles.hcDot} />
+                  <ZoneText variant="caption" color={colors.text.muted} style={styles.hcText}>
+                    ❤️ Health Connect
+                  </ZoneText>
+                </View>
+              ) : null}
             </>
           )}
         </View>
 
-        {loaded && !checkin ? (
-          <TouchableOpacity
-            onPress={() => router.push('/(app)/checkin')}
-            activeOpacity={0.85}
-            style={styles.ctaCard}
-          >
-            <ZoneText variant="label" style={styles.ctaText}>
-              📋 Évalue ton état du jour
-            </ZoneText>
-            <ChevronRight size={20} color={colors.accent.gold} />
-          </TouchableOpacity>
-        ) : null}
         {loaded && checkin ? (
           <View style={styles.doneCard}>
             <ZoneText variant="label" color={colors.success} style={styles.doneText}>
@@ -314,18 +326,19 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   evalLink: { marginTop: 8, fontFamily: 'Inter-Medium' },
-  ctaCard: {
-    marginTop: 24,
-    borderWidth: 1,
-    borderColor: colors.accent.gold,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+  hcBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 6,
+    marginTop: 10,
   },
-  ctaText: { color: colors.accent.gold, fontSize: 16 },
+  hcDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.success,
+  },
+  hcText: { fontSize: 11 },
   doneCard: {
     marginTop: 24,
     backgroundColor: colors.bg.card,

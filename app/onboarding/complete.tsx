@@ -6,7 +6,7 @@ import { setUserSport, updateUserProfile, type UserSport } from '@/lib/firestore
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Button } from '@/components/ui/Button';
-import { PulsingOrb } from '@/components/PulsingOrb';
+import { ZoneOrbe } from '@/components/ZoneOrbe';
 import { useOnboarding } from '@/context/OnboardingContext';
 import { colors } from '@/theme/colors';
 
@@ -72,7 +72,7 @@ export default function CompleteScreen(): React.ReactElement {
   return (
     <SafeScreen>
       <View style={styles.center}>
-        <PulsingOrb size={120} />
+        <ZoneOrbe score={50} size={120} animated />
         <ZoneText variant="heading" style={styles.title}>
           TON PROFIL EST PRÊT
         </ZoneText>

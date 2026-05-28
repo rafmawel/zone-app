@@ -16,6 +16,20 @@ export function estimateOneRepMax(weight: number, reps: number): number {
   return Math.round(weight * (1 + reps / 30));
 }
 
+/**
+ * Round a target weight to a loadable barbell value.
+ *
+ * Plates come in 2.5 kg pairs, so round to the nearest 2.5 kg and never
+ * go below the 20 kg empty barbell.
+ *
+ * @param weightKg raw computed weight
+ * @returns nearest loadable weight, minimum 20 kg
+ */
+export function roundToBar(weightKg: number): number {
+  if (!Number.isFinite(weightKg)) return 20;
+  return Math.max(20, Math.round(weightKg / 2.5) * 2.5);
+}
+
 const BLOCK_PERCENTAGES: Record<ProgramBlock, Record<WeekIndex, number>> = {
   1: { 1: 65, 2: 70, 3: 75, 4: 55 },
   2: { 1: 75, 2: 80, 3: 85, 4: 60 },
@@ -249,7 +263,7 @@ function pickTemplate(level: string, dayOfWeek: number, sessionsPerWeek: number)
 
 function roundToBarbellPlate(kg: number): number {
   if (kg <= 0) return 0;
-  return Math.round(kg / 2.5) * 2.5;
+  return roundToBar(kg);
 }
 
 function rpeForBlock(block: ProgramBlock, week: WeekIndex): number {

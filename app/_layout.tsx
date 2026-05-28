@@ -12,8 +12,10 @@ import '../global.css';
 import { useAuth } from '@/hooks/useAuth';
 import { db } from '@/lib/firebase';
 import { initializePurchases } from '@/lib/subscriptions';
+import { getTodayHealthData } from '@/lib/healthConnect';
+import { getUserProfile, saveHealthSync, todayDateString } from '@/lib/firestore';
 import { colors } from '@/theme/colors';
-import { PulsingOrb } from '@/components/PulsingOrb';
+import { ZoneOrbeSplash } from '@/components/ZoneOrbeSplash';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { OnboardingProvider } from '@/context/OnboardingContext';
 import { SessionProvider } from '@/context/SessionContext';
@@ -23,7 +25,7 @@ SplashScreen.preventAutoHideAsync().catch(() => undefined);
 function SplashView(): React.ReactElement {
   return (
     <View style={styles.splash}>
-      <PulsingOrb size={120} />
+      <ZoneOrbeSplash />
       <ZoneText
         variant="heading"
         style={{ marginTop: 28, fontSize: 32, color: colors.accent.gold, letterSpacing: 4 }}
@@ -32,6 +34,39 @@ function SplashView(): React.ReactElement {
       </ZoneText>
     </View>
   );
+}
+
+async function syncHealthData(uid: string): Promise<void> {
+  try {
+    const profile = await getUserProfile(uid);
+    if (
+      profile?.health_data_source !== 'health_connect' &&
+      profile?.health_data_source !== 'both'
+    ) {
+      return;
+    }
+    const data = await getTodayHealthData();
+    const hasAny =
+      data.sleepDurationHours !== null ||
+      data.avgHeartRate !== null ||
+      data.steps !== null ||
+      data.weight !== null;
+    if (!hasAny) return;
+    await saveHealthSync(uid, {
+      date: todayDateString(),
+      source: 'health_connect',
+      sleep_duration_hours: data.sleepDurationHours,
+      sleep_quality: data.sleepQuality,
+      avg_heart_rate: data.avgHeartRate,
+      resting_heart_rate: data.restingHeartRate,
+      hrv_ms: data.hrv,
+      steps: data.steps,
+      active_calories: data.activeCalories,
+      weight_kg: data.weight,
+    });
+  } catch {
+    // background sync is best-effort
+  }
 }
 
 function RootNavigator(): React.ReactElement {
@@ -48,6 +83,7 @@ function RootNavigator(): React.ReactElement {
       return;
     }
     void initializePurchases(user.uid);
+    void syncHealthData(user.uid);
     setOnboardingChecked(false);
     const unsubscribe = onSnapshot(
       doc(db, 'users', user.uid),

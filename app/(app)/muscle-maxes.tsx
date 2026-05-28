@@ -283,6 +283,25 @@ export default function MuscleMaxesScreen(): React.ReactElement {
               </ZoneText>
             </View>
 
+            <TouchableOpacity
+              onPress={() =>
+                router.push({
+                  pathname: '/(app)/strength-test',
+                  params: {
+                    exerciseId: KEY_LIFTS[stepIdx],
+                    estimatedMax: String(oneRm),
+                  },
+                })
+              }
+              activeOpacity={0.7}
+              style={styles.testLinkRow}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ZoneText variant="caption" color={colors.accent.gold} style={styles.testLinkText}>
+                Je veux faire un test
+              </ZoneText>
+            </TouchableOpacity>
+
             {error ? (
               <ZoneText variant="caption" color={colors.danger} style={styles.error}>
                 {error}
@@ -290,16 +309,48 @@ export default function MuscleMaxesScreen(): React.ReactElement {
             ) : null}
 
             {stepIdx === 0 ? (
-              <TouchableOpacity
-                onPress={skipAll}
-                activeOpacity={0.7}
-                style={styles.skipRow}
-                disabled={saving}
-              >
-                <ZoneText variant="caption" color={colors.text.muted} style={styles.skipText}>
-                  Commencer sans mes charges
-                </ZoneText>
-              </TouchableOpacity>
+              <>
+                <View style={styles.guidedRow}>
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push({
+                        pathname: '/(app)/strength-test',
+                        params: { mode: 'guided', sport: 'musculation', session: '1' },
+                      })
+                    }
+                    activeOpacity={0.7}
+                    style={styles.guidedChip}
+                  >
+                    <ZoneText variant="caption" color={colors.accent.gold}>
+                      Test guidé · Séance 1
+                    </ZoneText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push({
+                        pathname: '/(app)/strength-test',
+                        params: { mode: 'guided', sport: 'musculation', session: '2' },
+                      })
+                    }
+                    activeOpacity={0.7}
+                    style={styles.guidedChip}
+                  >
+                    <ZoneText variant="caption" color={colors.accent.gold}>
+                      Séance 2 · 48h après
+                    </ZoneText>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity
+                  onPress={skipAll}
+                  activeOpacity={0.7}
+                  style={styles.skipRow}
+                  disabled={saving}
+                >
+                  <ZoneText variant="caption" color={colors.text.muted} style={styles.skipText}>
+                    Commencer sans mes charges
+                  </ZoneText>
+                </TouchableOpacity>
+              </>
             ) : null}
           </View>
         </TouchableWithoutFeedback>
@@ -478,8 +529,18 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   estimateValue: { fontSize: 28, color: colors.text.primary, lineHeight: 32 },
+  testLinkRow: { alignItems: 'center', marginTop: 6, paddingVertical: 6 },
+  testLinkText: { textDecorationLine: 'underline' },
   error: { marginTop: 12, textAlign: 'center' },
-  skipRow: { alignItems: 'center', marginTop: 16, paddingVertical: 10 },
+  guidedRow: { flexDirection: 'row', gap: 10, marginTop: 16, justifyContent: 'center' },
+  guidedChip: {
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  skipRow: { alignItems: 'center', marginTop: 12, paddingVertical: 10 },
   skipText: { textDecorationLine: 'underline', fontSize: 12 },
   footer: { padding: 24, paddingTop: 8 },
 });
