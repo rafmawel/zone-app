@@ -1,9 +1,13 @@
 /**
- * RevenueCat subscription integration for Zone Pro.
+ * RevenueCat subscription integration for the modular Zone Pro model.
  *
  * The native module is wrapped so it can be safely imported on every
  * platform (including web during type checks). All calls are no-ops
  * if the SDK fails to load.
+ *
+ * Zone Pro is split into a free-with-any-sport "Base" tier plus one
+ * paid module per sport, and an all-inclusive bundle. Each maps to a
+ * RevenueCat product and entitlement.
  */
 
 import { Platform } from 'react-native';
@@ -14,9 +18,41 @@ import Purchases, {
   type PurchasesOffering,
   type PurchasesPackage,
 } from 'react-native-purchases';
+import {
+  ALL_PRO_SPORTS,
+  EMPTY_SUBSCRIPTION,
+  type ProSport,
+  type ZoneSubscription,
+} from '@/types/subscription';
 
 const RC_API_KEY = 'rc_android_REPLACE_ME';
-const PRO_ENTITLEMENT_ID = 'pro';
+
+/** RevenueCat product identifiers for each Zone Pro module. */
+export const RC_PRODUCTS = {
+  base: 'zone_pro_base', // included with all sports
+  running: 'zone_pro_running',
+  hyrox: 'zone_pro_hyrox',
+  musculation: 'zone_pro_musculation',
+  weightlifting: 'zone_pro_weightlifting',
+  bundle: 'zone_pro_bundle',
+} as const;
+
+/** RevenueCat entitlement identifiers, mirroring the product IDs. */
+export const RC_ENTITLEMENTS = {
+  base: 'zone_pro_base',
+  running: 'zone_pro_running',
+  hyrox: 'zone_pro_hyrox',
+  musculation: 'zone_pro_musculation',
+  weightlifting: 'zone_pro_weightlifting',
+  bundle: 'zone_pro_bundle',
+} as const;
+
+const SPORT_ENTITLEMENTS: Record<ProSport, string> = {
+  running: RC_ENTITLEMENTS.running,
+  hyrox: RC_ENTITLEMENTS.hyrox,
+  musculation: RC_ENTITLEMENTS.musculation,
+  weightlifting: RC_ENTITLEMENTS.weightlifting,
+};
 
 const isExpoGo = Constants.appOwnership === 'expo';
 const shouldSkipRC = isExpoGo;
@@ -24,49 +60,9 @@ const shouldSkipRC = isExpoGo;
 let initialized = false;
 let initializing: Promise<void> | null = null;
 
-export interface ProFeature {
-  label: string;
-  detail: string;
-}
-
-export const PRO_FEATURES: ProFeature[] = [
-  {
-    label: 'Forme · Fatigue · Fraîcheur',
-    detail: 'Modèle Banister (1975) · Utilisé par les athlètes olympiques',
-  },
-  {
-    label: 'Ratio charge/récupération (ACWR)',
-    detail: 'Gabbett (2016) · Réduction prouvée de 50% des blessures',
-  },
-  {
-    label: 'Autoregulation RIR intelligente',
-    detail: 'Zourdos et al. (2016) · Progression +23% vs programme fixe',
-  },
-  {
-    label: 'Tableau de Prilepin (haltérophilie)',
-    detail: 'Recherche soviétique 1975 · Validée par 50 ans de résultats',
-  },
-  {
-    label: 'MEV/MAV/MRV en temps réel',
-    detail: 'Israetel et al. (2019) · Optimisation du volume musculaire',
-  },
-  {
-    label: 'Prédictions de performance',
-    detail: 'Modèle CTL/ATL/TSB · Projection sur 8-16 semaines',
-  },
-  {
-    label: 'Risque blessure en temps réel',
-    detail: 'ACWR + sommeil + fatigue · Alerte avant le problème',
-  },
-  {
-    label: 'Coach Zone · Analyse hebdomadaire',
-    detail: 'Synthèse de tous les indicateurs chaque lundi',
-  },
-];
-
 export interface PurchaseResult {
   success: boolean;
-  isPro: boolean;
+  subscription: ZoneSubscription;
   error?: string;
 }
 
@@ -102,17 +98,61 @@ export async function initializePurchases(userId: string): Promise<void> {
 }
 
 /**
- * Check whether the current user has an active Pro entitlement.
+ * Translate active RevenueCat entitlements into a {@link ZoneSubscription}.
  *
- * @returns `true` if RevenueCat reports `pro` entitlement active.
+ * The bundle entitlement unlocks every sport. Any sport entitlement (or
+ * the bundle) unlocks Base automatically.
+ *
+ * @param info customer info from RevenueCat
  */
-export async function checkProStatus(): Promise<boolean> {
-  if (shouldSkipRC) return false;
+export function buildSubscriptionFromCustomerInfo(
+  info: CustomerInfo,
+): ZoneSubscription {
+  const active = info.entitlements.active;
+  const has = (id: string): boolean => typeof active[id] !== 'undefined';
+
+  const hasBundle = has(RC_ENTITLEMENTS.bundle);
+  const proSports: ProSport[] = hasBundle
+    ? [...ALL_PRO_SPORTS]
+    : ALL_PRO_SPORTS.filter((sport) => has(SPORT_ENTITLEMENTS[sport]));
+
+  if (proSports.length === 0) {
+    return EMPTY_SUBSCRIPTION;
+  }
+
+  // Earliest expiry across the active sport/bundle entitlements.
+  let expiresAt: string | null = null;
+  const relevant = hasBundle
+    ? [RC_ENTITLEMENTS.bundle]
+    : proSports.map((s) => SPORT_ENTITLEMENTS[s]);
+  for (const id of relevant) {
+    const exp = active[id]?.expirationDate ?? null;
+    if (exp && (expiresAt === null || exp < expiresAt)) {
+      expiresAt = exp;
+    }
+  }
+
+  return {
+    hasProBase: true,
+    proSports,
+    plan: hasBundle ? 'bundle' : 'sport',
+    expiresAt,
+    source: 'revenuecat',
+  };
+}
+
+/**
+ * Resolve the current user's modular Zone Pro subscription from RevenueCat.
+ *
+ * @returns a {@link ZoneSubscription}; empty if nothing is active.
+ */
+export async function checkProStatus(): Promise<ZoneSubscription> {
+  if (shouldSkipRC) return EMPTY_SUBSCRIPTION;
   try {
     const info: CustomerInfo = await Purchases.getCustomerInfo();
-    return typeof info.entitlements.active[PRO_ENTITLEMENT_ID] !== 'undefined';
+    return buildSubscriptionFromCustomerInfo(info);
   } catch {
-    return false;
+    return EMPTY_SUBSCRIPTION;
   }
 }
 
@@ -132,10 +172,28 @@ export async function getCurrentOffering(): Promise<PurchasesOffering | null> {
 }
 
 /**
- * Purchase the supplied package and return whether the user is Pro.
+ * Find the package in an offering matching a Zone Pro product id.
+ *
+ * @param offering offering returned by {@link getCurrentOffering}
+ * @param productId one of {@link RC_PRODUCTS}
+ */
+export function findPackage(
+  offering: PurchasesOffering | null,
+  productId: string,
+): PurchasesPackage | null {
+  if (!offering) return null;
+  return (
+    offering.availablePackages.find(
+      (p) => p.product.identifier === productId,
+    ) ?? null
+  );
+}
+
+/**
+ * Purchase the supplied package and return the resulting subscription.
  *
  * @param pkg package the user selected on the paywall
- * @returns result object: `success`, `isPro`, optional `error` message
+ * @returns result object: `success`, resolved `subscription`, optional `error`
  */
 export async function purchasePackage(
   pkg: PurchasesPackage,
@@ -143,24 +201,25 @@ export async function purchasePackage(
   if (shouldSkipRC) {
     return {
       success: false,
-      isPro: false,
+      subscription: EMPTY_SUBSCRIPTION,
       error:
         "Les achats ne sont pas disponibles ici. Lance l'app depuis un build natif.",
     };
   }
   try {
     const { customerInfo } = await Purchases.purchasePackage(pkg);
-    const isPro =
-      typeof customerInfo.entitlements.active[PRO_ENTITLEMENT_ID] !== 'undefined';
-    return { success: true, isPro };
+    return {
+      success: true,
+      subscription: buildSubscriptionFromCustomerInfo(customerInfo),
+    };
   } catch (err: unknown) {
     const cancelled = isUserCancellationError(err);
     if (cancelled) {
-      return { success: false, isPro: false };
+      return { success: false, subscription: EMPTY_SUBSCRIPTION };
     }
     return {
       success: false,
-      isPro: false,
+      subscription: EMPTY_SUBSCRIPTION,
       error: extractMessage(err),
     };
   }
@@ -173,15 +232,20 @@ export async function purchasePackage(
  */
 export async function restorePurchases(): Promise<PurchaseResult> {
   if (shouldSkipRC) {
-    return { success: true, isPro: false };
+    return { success: true, subscription: EMPTY_SUBSCRIPTION };
   }
   try {
     const info = await Purchases.restorePurchases();
-    const isPro =
-      typeof info.entitlements.active[PRO_ENTITLEMENT_ID] !== 'undefined';
-    return { success: true, isPro };
+    return {
+      success: true,
+      subscription: buildSubscriptionFromCustomerInfo(info),
+    };
   } catch (err: unknown) {
-    return { success: false, isPro: false, error: extractMessage(err) };
+    return {
+      success: false,
+      subscription: EMPTY_SUBSCRIPTION,
+      error: extractMessage(err),
+    };
   }
 }
 
@@ -197,22 +261,6 @@ export async function showManageSubscriptions(): Promise<void> {
     await Purchases.showManageSubscriptions();
   } catch {
     // best-effort, fail silently
-  }
-}
-
-/**
- * Fetch the expiry date of the current Pro entitlement, if any.
- *
- * @returns ISO date string or null
- */
-export async function getProExpiryDate(): Promise<string | null> {
-  if (shouldSkipRC) return null;
-  try {
-    const info = await Purchases.getCustomerInfo();
-    const ent = info.entitlements.active[PRO_ENTITLEMENT_ID];
-    return ent?.expirationDate ?? null;
-  } catch {
-    return null;
   }
 }
 

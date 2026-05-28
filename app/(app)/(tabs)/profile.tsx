@@ -12,17 +12,22 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { Check, ChevronRight, Sparkles } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
-import { showManageSubscriptions, getProExpiryDate } from '@/lib/subscriptions';
+import { showManageSubscriptions } from '@/lib/subscriptions';
 import {
   connectHealthConnect,
   openHealthConnect,
   type HealthConnectStatus,
 } from '@/lib/healthConnect';
-import { usePro } from '@/hooks/usePro';
+import { useProSports } from '@/hooks/useProSports';
+import {
+  ALL_PRO_SPORTS,
+  SPORT_LABELS,
+  type ProSport,
+} from '@/types/subscription';
 import {
   deleteAllUserData,
   updateUserProfile,
-  updateSubscriptionStatus,
+  saveSubscription,
   getAllTimeStats,
   getExerciseMaxes,
   getHyroxProfile,
@@ -102,12 +107,11 @@ function avatarInitials(email: string | null | undefined): string {
 
 export default function ProfileScreen(): React.ReactElement {
   const router = useRouter();
-  const { isPro, refresh } = usePro();
+  const { subscription, hasProBase, proSports, refresh } = useProSports();
   const [promoVisible, setPromoVisible] = useState<boolean>(false);
   const [promoCode, setPromoCode] = useState<string>('');
   const [promoError, setPromoError] = useState<string | null>(null);
   const [promoSaving, setPromoSaving] = useState<boolean>(false);
-  const [proExpiry, setProExpiry] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [program, setProgram] = useState<UserProgram | null>(null);
   const [sports, setSports] = useState<UserSport[]>([]);
@@ -181,21 +185,6 @@ export default function ProfileScreen(): React.ReactElement {
       void loadAll();
     }, [loadAll]),
   );
-
-  useEffect(() => {
-    if (!isPro) {
-      setProExpiry(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      const exp = await getProExpiryDate();
-      if (!cancelled) setProExpiry(exp);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isPro]);
 
   const onSignOut = async (): Promise<void> => {
     try {
@@ -288,9 +277,12 @@ export default function ProfileScreen(): React.ReactElement {
     setPromoSaving(true);
     setPromoError(null);
     try {
-      await updateSubscriptionStatus(user.uid, {
-        isPro: true,
+      await saveSubscription(user.uid, {
+        hasProBase: true,
+        proSports: [...ALL_PRO_SPORTS],
+        plan: 'bundle',
         expiresAt: '2099-12-31',
+        source: 'promo',
       });
       await refresh();
       setPromoVisible(false);
@@ -341,6 +333,14 @@ export default function ProfileScreen(): React.ReactElement {
     : '-';
   const primarySport = sports[0];
 
+  // Sports the user has actually configured in the app.
+  const configuredSports: ProSport[] = [
+    program ? ('weightlifting' as const) : null,
+    runningProfile ? ('running' as const) : null,
+    muscleProfile ? ('musculation' as const) : null,
+    hyroxProfile ? ('hyrox' as const) : null,
+  ].filter((s): s is ProSport => s !== null);
+
   return (
     <SafeScreen>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -367,33 +367,61 @@ export default function ProfileScreen(): React.ReactElement {
           <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
             MON ABONNEMENT
           </ZoneText>
-          {isPro ? (
+          {hasProBase ? (
             <View style={styles.subscriptionCardPro}>
               <View style={styles.subscriptionHeader}>
                 <View style={styles.subscriptionTitleRow}>
                   <Sparkles size={18} color={colors.accent.gold} />
                   <ZoneText variant="heading" style={styles.subscriptionTitleGold}>
-                    ZONE PRO · Actif
+                    ZONE PRO · ACTIF
                   </ZoneText>
                 </View>
                 <Check size={18} color={colors.accent.gold} />
               </View>
-              <ZoneText variant="caption" color={colors.text.muted} style={styles.subscriptionMeta}>
-                {proExpiry
-                  ? `Renouvellement le ${frenchShortDate(proExpiry)}`
-                  : 'Abonnement actif'}
+
+              <View style={styles.sportPills}>
+                {proSports.map((sport) => (
+                  <View key={sport} style={styles.sportPill}>
+                    <Check size={12} color={colors.success} />
+                    <ZoneText variant="caption" color={colors.success} style={styles.sportPillText}>
+                      {SPORT_LABELS[sport]}
+                    </ZoneText>
+                  </View>
+                ))}
+              </View>
+
+              <ZoneText variant="caption" color={colors.text.muted} style={styles.baseIncluded}>
+                Base incluse : ✦ Risque blessure · Readiness · Coach Zone
               </ZoneText>
-              <TouchableOpacity
-                onPress={() => {
-                  void showManageSubscriptions();
-                }}
-                hitSlop={8}
-                style={styles.manageLink}
-              >
-                <ZoneText variant="caption" color={colors.accent.gold}>
-                  Gérer l'abonnement
+
+              {subscription.expiresAt && subscription.expiresAt !== '2099-12-31' ? (
+                <ZoneText variant="caption" color={colors.text.muted} style={styles.subscriptionMeta}>
+                  Renouvellement le {frenchShortDate(subscription.expiresAt)}
                 </ZoneText>
-              </TouchableOpacity>
+              ) : null}
+
+              <View style={styles.proLinksRow}>
+                {proSports.length < ALL_PRO_SPORTS.length ? (
+                  <TouchableOpacity
+                    onPress={() => router.push('/(app)/paywall')}
+                    hitSlop={8}
+                  >
+                    <ZoneText variant="caption" color={colors.accent.gold}>
+                      Ajouter un sport
+                    </ZoneText>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity
+                  onPress={() => {
+                    void showManageSubscriptions();
+                  }}
+                  hitSlop={8}
+                >
+                  <ZoneText variant="caption" color={colors.text.secondary}>
+                    Gérer l'abonnement
+                  </ZoneText>
+                </TouchableOpacity>
+              </View>
             </View>
           ) : (
             <View style={styles.subscriptionCard}>
@@ -403,6 +431,17 @@ export default function ProfileScreen(): React.ReactElement {
               <ZoneText variant="caption" color={colors.text.muted} style={styles.subscriptionMeta}>
                 Débloque l'analyse complète et le coach hebdomadaire.
               </ZoneText>
+              {configuredSports.length > 0 ? (
+                <View style={styles.sportPills}>
+                  {configuredSports.map((sport) => (
+                    <View key={sport} style={styles.sportChip}>
+                      <ZoneText variant="caption" color={colors.text.secondary}>
+                        {SPORT_LABELS[sport]}
+                      </ZoneText>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
               <Button
                 title="PASSER À PRO"
                 variant="primary"
@@ -413,7 +452,7 @@ export default function ProfileScreen(): React.ReactElement {
             </View>
           )}
 
-          {!isPro ? (
+          {!hasProBase ? (
             <TouchableOpacity
               onPress={() => {
                 setPromoError(null);
@@ -933,6 +972,38 @@ const styles = StyleSheet.create({
   manageLink: {
     marginTop: 10,
     alignSelf: 'flex-start',
+  },
+  sportPills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  sportPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.success,
+    backgroundColor: 'rgba(76,175,80,0.10)',
+  },
+  sportPillText: { fontFamily: 'Inter-Medium' },
+  sportChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg.elevated,
+  },
+  baseIncluded: { marginTop: 12, lineHeight: 16 },
+  proLinksRow: {
+    flexDirection: 'row',
+    gap: 20,
+    marginTop: 14,
   },
   upgradeBtn: {
     marginTop: 12,

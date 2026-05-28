@@ -3,6 +3,12 @@ import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Lock, Sparkles } from 'lucide-react-native';
 import { colors } from '@/theme/colors';
+import {
+  ALL_PRO_SPORTS,
+  SPORT_LABELS,
+  SPORT_PRICES,
+  type ProSport,
+} from '@/types/subscription';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Button } from '@/components/ui/Button';
 import {
@@ -32,6 +38,20 @@ const BENEFITS: string[] = [
 ];
 
 const DEMO_SPORTS: WorkloadSport[] = ['weightlifting', 'running'];
+
+const SPORT_ICONS: Record<ProSport, string> = {
+  running: '🏃',
+  hyrox: '🔥',
+  musculation: '💪',
+  weightlifting: '🏋️',
+};
+
+const SPORT_UNLOCK_LABELS: Record<ProSport, string> = {
+  running: 'DÉBLOQUER LA COURSE',
+  hyrox: 'DÉBLOQUER HYROX',
+  musculation: 'DÉBLOQUER LA MUSCULATION',
+  weightlifting: "DÉBLOQUER L'HALTÉROPHILIE",
+};
 
 function isoFromOffset(offsetDays: number): string {
   const d = new Date();
@@ -171,6 +191,28 @@ export function LockedAnalytics(): React.ReactElement {
           ))}
         </View>
 
+        <ZoneText variant="label" size={14} color={colors.text.primary} style={styles.sportsHeading}>
+          Choisissez vos sports
+        </ZoneText>
+        <View style={styles.sportGrid}>
+          {ALL_PRO_SPORTS.map((sport) => (
+            <View key={sport} style={styles.sportUnlockCard}>
+              <ZoneText style={styles.sportUnlockIcon}>{SPORT_ICONS[sport]}</ZoneText>
+              <ZoneText variant="label" size={13} color={colors.text.primary} style={styles.sportUnlockName}>
+                Zone Pro {SPORT_LABELS[sport]}
+              </ZoneText>
+              <ZoneText variant="caption" color={colors.accent.gold} style={styles.sportUnlockPrice}>
+                {SPORT_PRICES[sport]}/mois
+              </ZoneText>
+              <TouchableOpacity onPress={openPaywall} activeOpacity={0.85} style={styles.sportUnlockBtn}>
+                <ZoneText variant="caption" size={11} color={colors.accent.gold} style={styles.sportUnlockBtnText}>
+                  {SPORT_UNLOCK_LABELS[sport]}
+                </ZoneText>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+
         <ZoneText variant="caption" color={colors.text.muted} style={styles.peek}>
           Regarde à quoi ça ressemble ↓
         </ZoneText>
@@ -299,6 +341,36 @@ const styles = StyleSheet.create({
   },
   benefit: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8 },
   benefitText: { flex: 1, lineHeight: 19 },
+  sportsHeading: { marginTop: 24, marginBottom: 12 },
+  sportGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  sportUnlockCard: {
+    width: '48.5%',
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  sportUnlockIcon: { fontSize: 26 },
+  sportUnlockName: { marginTop: 6, textAlign: 'center' },
+  sportUnlockPrice: { marginTop: 2, fontFamily: 'Inter-Medium' },
+  sportUnlockBtn: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+  },
+  sportUnlockBtnText: { fontFamily: 'Inter-Bold', letterSpacing: 0.3, textAlign: 'center' },
   peek: { textAlign: 'center', marginTop: 20, marginBottom: 12 },
   tabs: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   tab: {

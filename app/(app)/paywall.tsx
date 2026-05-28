@@ -8,103 +8,87 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Check, Lock, X } from 'lucide-react-native';
-import type { PurchasesPackage } from 'react-native-purchases';
+import type { PurchasesOffering } from 'react-native-purchases';
 import { auth } from '@/lib/firebase';
-import { updateSubscriptionStatus } from '@/lib/firestore';
+import { getSubscription, saveSubscription } from '@/lib/firestore';
 import {
-  PRO_FEATURES,
+  RC_PRODUCTS,
+  findPackage,
   getCurrentOffering,
-  getProExpiryDate,
   purchasePackage,
   restorePurchases,
 } from '@/lib/subscriptions';
-import { usePro } from '@/hooks/usePro';
+import { useProSports } from '@/hooks/useProSports';
+import {
+  ALL_PRO_SPORTS,
+  BUNDLE_PRICE,
+  BUNDLE_PRICE_EUR,
+  EMPTY_SUBSCRIPTION,
+  SPORT_LABELS,
+  SPORT_PRICE_EUR,
+  type ProSport,
+  type ZoneSubscription,
+} from '@/types/subscription';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Button } from '@/components/ui/Button';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { ZoneOrbe } from '@/components/ZoneOrbe';
 
-type PlanKey = 'monthly' | 'annual';
+const BASE_FEATURES: string[] = [
+  'Risque de blessure en temps réel',
+  'Charge aiguë vs chronique (ACWR)',
+  'Dette de sommeil et impact performance',
+  'Fenêtre de forme optimale',
+  'Bilan hebdomadaire personnalisé',
+  'Score de préparation composite',
+];
 
-interface PlanCard {
-  key: PlanKey;
-  title: string;
-  price: string;
-  unit: string;
-  footnote: string;
-  badge?: string;
-  pkg: PurchasesPackage | null;
-}
-
-const FALLBACK_PLANS: Record<PlanKey, PlanCard> = {
-  monthly: {
-    key: 'monthly',
-    title: 'MENSUEL',
-    price: '9,99 €',
-    unit: '/ mois',
-    footnote: 'Annulable à tout moment',
-    pkg: null,
-  },
-  annual: {
-    key: 'annual',
-    title: 'ANNUEL',
-    price: '79,99 €',
-    unit: '/ an',
-    footnote: 'Soit 6,67 € / mois · Économise 33%',
-    badge: 'MEILLEUR CHOIX',
-    pkg: null,
-  },
+const SPORT_ICONS: Record<ProSport, string> = {
+  running: '🏃',
+  hyrox: '🔥',
+  musculation: '💪',
+  weightlifting: '🏋️',
 };
 
-function buildPlansFromOffering(
-  monthly: PurchasesPackage | null,
-  annual: PurchasesPackage | null,
-): Record<PlanKey, PlanCard> {
-  return {
-    monthly: {
-      ...FALLBACK_PLANS.monthly,
-      pkg: monthly,
-      price: monthly?.product.priceString ?? FALLBACK_PLANS.monthly.price,
-    },
-    annual: {
-      ...FALLBACK_PLANS.annual,
-      pkg: annual,
-      price: annual?.product.priceString ?? FALLBACK_PLANS.annual.price,
-      footnote: buildAnnualFootnote(monthly, annual),
-    },
-  };
-}
+const SPORT_FEATURES: Record<ProSport, string[]> = {
+  running: [
+    'VDOT et progression sur 8 semaines',
+    'Compliance 80/20 et analyse de pace',
+    'Prédictions de course personnalisées',
+  ],
+  hyrox: [
+    'Analyse de chaque station',
+    'Suivi lactate en course',
+    'Projection de temps de course',
+  ],
+  musculation: [
+    'MEV/MAV/MRV en temps réel',
+    "Score d'hypertrophie par séance",
+    'Planification de décharge intelligente',
+  ],
+  weightlifting: [
+    'Compliance tableau de Prilepin',
+    'Progression 1RM et vélocité',
+    'Analyse technique par mouvement',
+  ],
+};
 
-function buildAnnualFootnote(
-  monthly: PurchasesPackage | null,
-  annual: PurchasesPackage | null,
-): string {
-  if (!annual) return FALLBACK_PLANS.annual.footnote;
-  const annualPrice = annual.product.price;
-  if (!Number.isFinite(annualPrice) || annualPrice <= 0) {
-    return FALLBACK_PLANS.annual.footnote;
-  }
-  const perMonth = annualPrice / 12;
-  const currency = annual.product.currencyCode ?? '€';
-  const monthlyPrice = monthly?.product.price ?? 0;
-  if (monthlyPrice > 0) {
-    const savingsPct = Math.max(
-      0,
-      Math.round(((monthlyPrice * 12 - annualPrice) / (monthlyPrice * 12)) * 100),
-    );
-    return `Soit ${perMonth.toFixed(2)} ${currency} / mois · Économise ${savingsPct}%`;
-  }
-  return `Soit ${perMonth.toFixed(2)} ${currency} / mois`;
+const GRID_ORDER: ProSport[] = [
+  'running',
+  'hyrox',
+  'musculation',
+  'weightlifting',
+];
+
+function formatEur(value: number): string {
+  return `${value.toFixed(2).replace('.', ',')}€`;
 }
 
 export default function PaywallScreen(): React.ReactElement {
   const router = useRouter();
-  const { refresh } = usePro();
-  const [selected, setSelected] = useState<PlanKey>('annual');
-  const [loadingOffering, setLoadingOffering] = useState<boolean>(true);
-  const [plans, setPlans] = useState<Record<PlanKey, PlanCard>>(FALLBACK_PLANS);
+  const { proSports: ownedSports, refresh } = useProSports();
+  const [selected, setSelected] = useState<Set<ProSport>>(new Set());
+  const [offering, setOffering] = useState<PurchasesOffering | null>(null);
   const [busy, setBusy] = useState<'purchase' | 'restore' | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusTone, setStatusTone] = useState<'success' | 'error' | 'info'>(
@@ -114,57 +98,111 @@ export default function PaywallScreen(): React.ReactElement {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const offering = await getCurrentOffering();
-      if (cancelled) return;
-      if (!offering) {
-        setPlans(FALLBACK_PLANS);
-        setLoadingOffering(false);
-        return;
-      }
-      setPlans(
-        buildPlansFromOffering(offering.monthly ?? null, offering.annual ?? null),
-      );
-      setLoadingOffering(false);
+      const current = await getCurrentOffering();
+      if (!cancelled) setOffering(current);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
+  const toggleSport = (sport: ProSport): void => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(sport)) next.delete(sport);
+      else next.add(sport);
+      return next;
+    });
+  };
+
+  const selectAll = (): void => {
+    setSelected((prev) => {
+      const all = ALL_PRO_SPORTS.every((s) => prev.has(s));
+      return all ? new Set() : new Set(ALL_PRO_SPORTS);
+    });
+  };
+
+  const selectedCount = selected.size;
+  const isBundle = selectedCount === ALL_PRO_SPORTS.length;
+  const total = isBundle ? BUNDLE_PRICE_EUR : selectedCount * SPORT_PRICE_EUR;
+
+  const ctaTitle = useMemo(() => {
+    if (selectedCount === 0) return 'SÉLECTIONNEZ AU MOINS UN SPORT';
+    if (isBundle) return 'COMMENCER MON ESSAI — TOUT INCLURE';
+    return 'COMMENCER MON ESSAI GRATUIT';
+  }, [selectedCount, isBundle]);
+
   const onPurchase = async (): Promise<void> => {
-    const plan = plans[selected];
-    if (!plan.pkg) {
+    if (selectedCount === 0) return;
+    const user = auth.currentUser;
+    if (!user) {
       setStatusTone('error');
-      setStatusMessage("L'offre n'est pas encore disponible. Réessaie plus tard.");
+      setStatusMessage('Session expirée. Reconnecte-toi.');
       return;
     }
     setBusy('purchase');
     setStatusMessage(null);
-    const result = await purchasePackage(plan.pkg);
-    setBusy(null);
-    if (result.success && result.isPro) {
-      await syncProState();
+
+    const productIds = isBundle
+      ? [RC_PRODUCTS.bundle]
+      : Array.from(selected).map((s) => RC_PRODUCTS[s]);
+
+    let resolved: ZoneSubscription = EMPTY_SUBSCRIPTION;
+    let purchasedAny = false;
+    let lastError: string | null = null;
+
+    for (const productId of productIds) {
+      const pkg = findPackage(offering, productId);
+      if (!pkg) {
+        lastError =
+          "L'offre n'est pas encore disponible. Réessaie plus tard.";
+        continue;
+      }
+      const result = await purchasePackage(pkg);
+      if (result.success) {
+        purchasedAny = true;
+        resolved = result.subscription;
+      } else if (result.error) {
+        lastError = result.error;
+      } else {
+        // User cancelled — stop the flow silently.
+        setBusy(null);
+        return;
+      }
+    }
+
+    if (purchasedAny && resolved.proSports.length > 0) {
+      try {
+        await saveSubscription(user.uid, resolved);
+      } catch {
+        // best-effort
+      }
       await refresh();
+      setBusy(null);
       setStatusTone('success');
       setStatusMessage('Essai gratuit activé. Bienvenue dans Zone Pro.');
       setTimeout(() => router.replace('/(app)/'), 600);
       return;
     }
-    if (!result.success && !result.error) {
-      // user cancelled
-      return;
-    }
+
+    setBusy(null);
     setStatusTone('error');
-    setStatusMessage(result.error ?? "Échec du paiement. Réessaie.");
+    setStatusMessage(lastError ?? 'Échec du paiement. Réessaie.');
   };
 
   const onRestore = async (): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
     setBusy('restore');
     setStatusMessage(null);
     const result = await restorePurchases();
     setBusy(null);
-    if (result.success && result.isPro) {
-      await syncProState();
+    if (result.success && result.subscription.proSports.length > 0) {
+      try {
+        await saveSubscription(user.uid, result.subscription);
+      } catch {
+        // best-effort
+      }
       await refresh();
       setStatusTone('success');
       setStatusMessage('Abonnement restauré.');
@@ -206,78 +244,156 @@ export default function PaywallScreen(): React.ReactElement {
           >
             ZONE PRO
           </ZoneText>
-          <ZoneText
-            variant="label"
-            size={16}
-            color={colors.text.primary}
-            style={styles.tagline}
-          >
-            Le programme que les champions utilisent.
+          <ZoneText variant="label" size={15} color={colors.text.primary} style={styles.tagline}>
+            L'analyse que les champions utilisent.
           </ZoneText>
-          <View style={styles.divider} />
-          <View style={styles.orbWrap}>
-            <ZoneOrbe score={73} size={80} animated />
-          </View>
-          <ZoneText
-            variant="heading"
-            size={36}
-            color={colors.accent.gold}
-            style={styles.exampleScore}
-          >
-            73 · FORME OPTIMALE
-          </ZoneText>
-          <ZoneText variant="caption" color={colors.text.muted}>
-            Analyse en temps réel de ta condition
+          <ZoneText variant="label" size={15} color={colors.text.secondary} style={styles.taglineSub}>
+            Choisissez votre programme.
           </ZoneText>
         </View>
 
-        <View style={styles.featuresList}>
-          {PRO_FEATURES.map((feature, idx) => (
-            <View
-              key={feature.label}
-              style={[
-                styles.featureRow,
-                idx > 0 ? styles.featureSeparator : null,
-              ]}
-            >
-              <View style={styles.featureIcon}>
-                <Check size={16} color={colors.accent.gold} />
-              </View>
-              <View style={styles.featureBody}>
-                <ZoneText
-                  variant="label"
-                  size={14}
-                  color={colors.text.primary}
-                  style={styles.featureLabel}
-                >
-                  {feature.label}
-                </ZoneText>
-                <ZoneText
-                  variant="caption"
-                  size={12}
-                  color={colors.accent.goldDark}
-                  style={styles.featureDetail}
-                >
-                  {feature.detail}
-                </ZoneText>
-              </View>
+        {/* Zone Pro Base */}
+        <View style={styles.baseCard}>
+          <View style={styles.baseHeader}>
+            <View>
+              <ZoneText variant="heading" size={22} color={colors.accent.gold} style={styles.baseTitle}>
+                ZONE PRO BASE
+              </ZoneText>
+              <ZoneText variant="caption" color={colors.text.muted}>
+                Inclus avec tout abonnement
+              </ZoneText>
             </View>
-          ))}
+            <View style={styles.offertBadge}>
+              <Check size={12} color={colors.bg.primary} />
+              <ZoneText variant="caption" size={11} color={colors.bg.primary} style={styles.offertText}>
+                OFFERT
+              </ZoneText>
+            </View>
+          </View>
+          <View style={styles.baseFeatures}>
+            {BASE_FEATURES.map((feature) => (
+              <View key={feature} style={styles.baseFeatureRow}>
+                <ZoneText variant="body" size={13} color={colors.accent.gold}>
+                  ✦
+                </ZoneText>
+                <ZoneText variant="body" size={13} color={colors.text.primary} style={styles.baseFeatureText}>
+                  {feature}
+                </ZoneText>
+              </View>
+            ))}
+          </View>
         </View>
 
-        <View style={styles.pricing}>
-          <PlanCardView
-            plan={plans.monthly}
-            selected={selected === 'monthly'}
-            loading={loadingOffering}
-            onPress={() => setSelected('monthly')}
-          />
-          <PlanCardView
-            plan={plans.annual}
-            selected={selected === 'annual'}
-            loading={loadingOffering}
-            onPress={() => setSelected('annual')}
-          />
+        {/* Sport selector */}
+        <ZoneText variant="label" size={15} color={colors.text.primary} style={styles.selectorHeading}>
+          Choisissez votre ou vos sports :
+        </ZoneText>
+        <View style={styles.grid}>
+          {GRID_ORDER.map((sport) => {
+            const isSelected = selected.has(sport);
+            const owned = ownedSports.includes(sport);
+            return (
+              <TouchableOpacity
+                key={sport}
+                activeOpacity={0.85}
+                onPress={() => toggleSport(sport)}
+                style={[styles.sportCard, isSelected ? styles.sportCardSelected : null]}
+              >
+                <View style={styles.sportCardHeader}>
+                  <ZoneText style={styles.sportIcon}>{SPORT_ICONS[sport]}</ZoneText>
+                  {isSelected ? (
+                    <View style={styles.checkBadge}>
+                      <Check size={12} color={colors.bg.primary} />
+                    </View>
+                  ) : null}
+                </View>
+                <ZoneText variant="label" size={14} color={colors.text.primary} style={styles.sportName}>
+                  {SPORT_LABELS[sport]}
+                </ZoneText>
+                <ZoneText variant="caption" color={colors.accent.gold} style={styles.sportPrice}>
+                  {owned ? 'Déjà inclus' : '4,99€ / mois'}
+                </ZoneText>
+                <View style={styles.sportFeatureList}>
+                  {SPORT_FEATURES[sport].map((f) => (
+                    <ZoneText
+                      key={f}
+                      variant="caption"
+                      size={11}
+                      color={colors.text.secondary}
+                      style={styles.sportFeature}
+                    >
+                      • {f}
+                    </ZoneText>
+                  ))}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Bundle banner */}
+        {!isBundle ? (
+          <TouchableOpacity activeOpacity={0.85} onPress={selectAll} style={styles.bundleBanner}>
+            <ZoneText variant="heading" size={18} color={colors.bg.primary} style={styles.bundleTitle}>
+              TOUT INCLURE · {BUNDLE_PRICE}/mois
+            </ZoneText>
+            <ZoneText variant="caption" size={12} color={colors.bg.primary} style={styles.bundleSub}>
+              Économisez {formatEur(ALL_PRO_SPORTS.length * SPORT_PRICE_EUR - BUNDLE_PRICE_EUR)} vs les sports séparés
+            </ZoneText>
+          </TouchableOpacity>
+        ) : null}
+
+        {/* Price summary */}
+        <View style={styles.summary}>
+          <View style={styles.summaryRow}>
+            <ZoneText variant="caption" size={13} color={colors.text.primary}>
+              Zone Pro Base
+            </ZoneText>
+            <ZoneText variant="caption" size={13} color={colors.accent.gold}>
+              OFFERT
+            </ZoneText>
+          </View>
+          {isBundle ? (
+            <View style={styles.summaryRow}>
+              <ZoneText variant="caption" size={13} color={colors.text.primary}>
+                Tout inclure
+              </ZoneText>
+              <ZoneText variant="caption" size={13} color={colors.text.primary}>
+                {BUNDLE_PRICE}/mois
+              </ZoneText>
+            </View>
+          ) : (
+            Array.from(selected).map((sport) => (
+              <View key={sport} style={styles.summaryRow}>
+                <ZoneText variant="caption" size={13} color={colors.text.primary}>
+                  {SPORT_LABELS[sport]}
+                </ZoneText>
+                <ZoneText variant="caption" size={13} color={colors.text.primary}>
+                  4,99€/mois
+                </ZoneText>
+              </View>
+            ))
+          )}
+          <View style={styles.summaryDivider} />
+          {isBundle ? (
+            <View style={styles.summaryRow}>
+              <ZoneText variant="label" size={15} color={colors.text.primary}>
+                TOTAL
+              </ZoneText>
+              <ZoneText variant="label" size={15} color={colors.accent.gold}>
+                {BUNDLE_PRICE}/mois (au lieu de {formatEur(ALL_PRO_SPORTS.length * SPORT_PRICE_EUR)})
+              </ZoneText>
+            </View>
+          ) : (
+            <View style={styles.summaryRow}>
+              <ZoneText variant="label" size={15} color={colors.text.primary}>
+                TOTAL
+              </ZoneText>
+              <ZoneText variant="label" size={15} color={colors.accent.gold}>
+                {formatEur(total)}/mois
+              </ZoneText>
+            </View>
+          )}
         </View>
 
         <ZoneText variant="label" color={colors.text.primary} style={styles.trialNote}>
@@ -291,25 +407,17 @@ export default function PaywallScreen(): React.ReactElement {
         </View>
 
         {statusMessage ? (
-          <ZoneText
-            variant="caption"
-            color={statusColor}
-            style={styles.statusMessage}
-          >
+          <ZoneText variant="caption" color={statusColor} style={styles.statusMessage}>
             {statusMessage}
           </ZoneText>
         ) : null}
 
         <View style={styles.cta}>
           <Button
-            title={
-              busy === 'purchase'
-                ? '...'
-                : 'COMMENCER MON ESSAI GRATUIT'
-            }
+            title={busy === 'purchase' ? '...' : ctaTitle}
             variant="primary"
             loading={busy === 'purchase'}
-            disabled={busy !== null}
+            disabled={busy !== null || selectedCount === 0}
             onPress={onPurchase}
           />
           <TouchableOpacity
@@ -343,74 +451,6 @@ export default function PaywallScreen(): React.ReactElement {
   );
 }
 
-async function syncProState(): Promise<void> {
-  const user = auth.currentUser;
-  if (!user) return;
-  try {
-    const expiresAt = await getProExpiryDate();
-    await updateSubscriptionStatus(user.uid, {
-      isPro: true,
-      expiresAt,
-      platform: 'android',
-    });
-  } catch {
-    // best-effort
-  }
-}
-
-interface PlanCardViewProps {
-  plan: PlanCard;
-  selected: boolean;
-  loading: boolean;
-  onPress: () => void;
-}
-
-function PlanCardView({
-  plan,
-  selected,
-  loading,
-  onPress,
-}: PlanCardViewProps): React.ReactElement {
-  const borderColor = selected
-    ? colors.accent.gold
-    : plan.badge
-      ? colors.accent.goldDark
-      : colors.border;
-  return (
-    <TouchableOpacity
-      style={[styles.planCard, { borderColor }]}
-      activeOpacity={0.85}
-      onPress={onPress}
-    >
-      <View style={styles.planHeader}>
-        <ZoneText variant="caption" color={colors.text.muted} style={styles.planTitle}>
-          {plan.title}
-        </ZoneText>
-        {plan.badge ? (
-          <View style={styles.badge}>
-            <ZoneText variant="caption" size={9} color={colors.bg.primary}>
-              {plan.badge}
-            </ZoneText>
-          </View>
-        ) : null}
-      </View>
-      {loading ? (
-        <Skeleton width="80%" height={32} borderRadius={6} style={styles.priceSkeleton} />
-      ) : (
-        <ZoneText variant="heading" size={32} color={colors.text.primary}>
-          {plan.price}
-        </ZoneText>
-      )}
-      <ZoneText variant="caption" color={colors.text.muted}>
-        {plan.unit}
-      </ZoneText>
-      <ZoneText variant="caption" color={colors.text.muted} style={styles.planFootnote}>
-        {plan.footnote}
-      </ZoneText>
-    </TouchableOpacity>
-  );
-}
-
 const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
@@ -423,7 +463,7 @@ const styles = StyleSheet.create({
   },
   hero: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   title: {
     letterSpacing: 3,
@@ -433,86 +473,108 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
-  divider: {
-    width: 80,
-    height: 1,
-    backgroundColor: colors.accent.gold,
-    marginVertical: 16,
-    opacity: 0.6,
+  taglineSub: {
+    marginTop: 2,
+    textAlign: 'center',
   },
-  orbWrap: {
-    marginVertical: 8,
-  },
-  exampleScore: {
-    marginTop: 12,
-    letterSpacing: 1.5,
-  },
-  featuresList: {
+  baseCard: {
     backgroundColor: colors.bg.card,
-    borderColor: colors.border,
+    borderColor: colors.accent.gold,
     borderWidth: 1,
     borderRadius: 16,
-    paddingHorizontal: 16,
+    padding: 16,
     marginBottom: 24,
   },
-  featureRow: {
+  baseHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'flex-start',
-    paddingVertical: 12,
-    gap: 12,
   },
-  featureSeparator: {
-    borderTopWidth: 0.5,
-    borderTopColor: colors.border,
+  baseTitle: {
+    letterSpacing: 1,
   },
-  featureIcon: {
-    marginTop: 2,
-  },
-  featureBody: {
-    flex: 1,
-  },
-  featureLabel: {
-    marginBottom: 2,
-  },
-  featureDetail: {
-    lineHeight: 16,
-  },
-  pricing: {
+  offertBadge: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.accent.gold,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
-  planCard: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
+  offertText: { fontFamily: 'Inter-Bold', letterSpacing: 0.5 },
+  baseFeatures: { marginTop: 14, gap: 8 },
+  baseFeatureRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  baseFeatureText: { flex: 1, lineHeight: 18 },
+  selectorHeading: { marginBottom: 12 },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  sportCard: {
+    width: '48.5%',
     backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
   },
-  planHeader: {
+  sportCardSelected: {
+    borderColor: colors.accent.gold,
+  },
+  sportCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
   },
-  planTitle: {
-    letterSpacing: 1.2,
-  },
-  badge: {
+  sportIcon: { fontSize: 24 },
+  checkBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: colors.accent.gold,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  priceSkeleton: {
-    marginBottom: 4,
+  sportName: { marginTop: 8 },
+  sportPrice: { marginTop: 2, fontFamily: 'Inter-Medium' },
+  sportFeatureList: { marginTop: 8, gap: 4 },
+  sportFeature: { lineHeight: 15 },
+  bundleBanner: {
+    backgroundColor: colors.accent.gold,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 20,
   },
-  planFootnote: {
-    marginTop: 6,
+  bundleTitle: { letterSpacing: 1, textAlign: 'center' },
+  bundleSub: { marginTop: 2, textAlign: 'center', fontFamily: 'Inter-Medium' },
+  summary: {
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 8,
   },
   trialNote: {
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 4,
   },
   secureRow: {
     flexDirection: 'row',
@@ -528,7 +590,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   cta: {
-    marginTop: 16,
+    marginTop: 12,
   },
   restoreRow: {
     flexDirection: 'row',
