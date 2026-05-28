@@ -36,6 +36,7 @@ import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
+import { ZoneExplainerModal } from '@/components/ZoneExplainerModal';
 import { frenchMonthYear, frenchShortDate } from '@/lib/frenchDate';
 
 const LEVEL_LABEL: Record<string, string> = {
@@ -79,6 +80,7 @@ export default function ProfileScreen(): React.ReactElement {
   const [hyroxProfile, setHyroxProfile] = useState<HyroxProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [resettingSport, setResettingSport] = useState<ResettableSport | null>(null);
+  const [zoneInfoVisible, setZoneInfoVisible] = useState<boolean>(false);
 
   const loadAll = useCallback(async (): Promise<void> => {
     const user = auth.currentUser;
@@ -411,6 +413,16 @@ export default function ProfileScreen(): React.ReactElement {
         </View>
 
         <TouchableOpacity
+          onPress={() => setZoneInfoVisible(true)}
+          activeOpacity={0.7}
+          style={styles.zoneInfoLink}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Sparkles size={14} color={colors.accent.gold} />
+          <ZoneText style={styles.zoneInfoText}>Qu’est-ce que la Zone ?</ZoneText>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           onPress={onSignOut}
           activeOpacity={0.7}
           style={styles.logoutBtn}
@@ -419,6 +431,7 @@ export default function ProfileScreen(): React.ReactElement {
           <ZoneText style={styles.logoutText}>Se déconnecter</ZoneText>
         </TouchableOpacity>
       </ScrollView>
+      <ZoneExplainerModal visible={zoneInfoVisible} onClose={() => setZoneInfoVisible(false)} />
     </SafeScreen>
   );
 }
@@ -668,6 +681,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: { textAlign: 'center' },
-  logoutBtn: { marginTop: 32, alignItems: 'center', paddingVertical: 14 },
+  zoneInfoLink: {
+    marginTop: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+  },
+  zoneInfoText: { color: colors.accent.gold, fontFamily: 'Inter-Medium', fontSize: 14 },
+  logoutBtn: { marginTop: 12, alignItems: 'center', paddingVertical: 14 },
   logoutText: { color: colors.danger, fontFamily: 'Inter-Medium', fontSize: 14 },
 });

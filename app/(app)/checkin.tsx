@@ -16,6 +16,7 @@ import { SafeScreen } from '@/components/ui/SafeScreen';
 import { Button } from '@/components/ui/Button';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { PulsingOrb } from '@/components/PulsingOrb';
+import { ZoneOrbe } from '@/components/ZoneOrbe';
 
 const TOTAL_STEPS = 5;
 
@@ -155,6 +156,18 @@ export default function CheckinScreen(): React.ReactElement {
         </View>
         <View style={styles.headerSpacer} />
       </View>
+
+      {stepIdx === 0 ? (
+        <View style={styles.intro}>
+          <ZoneOrbe size={40} score={50} />
+          <ZoneText variant="label" style={styles.introTitle}>
+            La Zone ne se commande pas.{'\n'}Mais elle se prépare.
+          </ZoneText>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.introSubtitle}>
+            Dis-nous comment tu vas aujourd’hui.
+          </ZoneText>
+        </View>
+      ) : null}
 
       <Animated.View
         key={stepIdx}
@@ -408,6 +421,16 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginHorizontal: 4,
   },
+  intro: { alignItems: 'center', paddingHorizontal: 24, paddingTop: 8, paddingBottom: 12 },
+  introTitle: {
+    color: colors.text.primary,
+    fontFamily: 'Inter-Medium',
+    fontSize: 16,
+    textAlign: 'center',
+    marginTop: 12,
+    lineHeight: 22,
+  },
+  introSubtitle: { textAlign: 'center', marginTop: 8 },
   stepContainer: { flex: 1 },
   stepInner: { flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center' },
   stepTitle: { fontSize: 26, textAlign: 'center', marginBottom: 40, color: colors.text.primary },
