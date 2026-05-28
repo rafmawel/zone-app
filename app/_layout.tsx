@@ -13,7 +13,21 @@ import { useAuth } from '@/hooks/useAuth';
 import { db } from '@/lib/firebase';
 import { initializePurchases } from '@/lib/subscriptions';
 import { getTodayHealthData } from '@/lib/healthConnect';
-import { getUserProfile, saveHealthSync, todayDateString } from '@/lib/firestore';
+import * as Notifications from 'expo-notifications';
+import {
+  getTodayCheckin,
+  getUserProfile,
+  saveHealthSync,
+  todayDateString,
+  updateUserProfile,
+} from '@/lib/firestore';
+import {
+  cancelCheckinReminder,
+  parseTime,
+  requestNotificationPermissions,
+  scheduleDailyCheckinReminder,
+  skipTodayReminderIfCheckedIn,
+} from '@/lib/notifications';
 import { colors } from '@/theme/colors';
 import { ZoneOrbeSplash } from '@/components/ZoneOrbeSplash';
 import { ZoneText } from '@/components/ui/ZoneText';
@@ -34,6 +48,33 @@ function SplashView(): React.ReactElement {
       </ZoneText>
     </View>
   );
+}
+
+async function setupCheckinReminder(uid: string): Promise<void> {
+  try {
+    const granted = await requestNotificationPermissions();
+    if (!granted) return;
+    const profile = await getUserProfile(uid);
+    if (profile?.notifications_enabled === false) {
+      await cancelCheckinReminder();
+      return;
+    }
+    // No preference yet: schedule the default 08:00 reminder and persist it.
+    if (!profile?.notification_time) {
+      await scheduleDailyCheckinReminder(8, 0);
+      await updateUserProfile(uid, {
+        notifications_enabled: true,
+        notification_time: '08:00',
+      });
+      return;
+    }
+    const { hour, minute } = parseTime(profile.notification_time);
+    await scheduleDailyCheckinReminder(hour, minute);
+    const todayCheckin = await getTodayCheckin(uid);
+    if (todayCheckin) await skipTodayReminderIfCheckedIn(hour, minute, true);
+  } catch {
+    // notifications are best-effort
+  }
 }
 
 async function syncHealthData(uid: string): Promise<void> {
@@ -118,6 +159,21 @@ function RootNavigator(): React.ReactElement {
       router.replace('/(app)');
     }
   }, [loading, onboardingChecked, onboardingCompleted, segments, user, router]);
+
+  // Set up the daily check-in reminder once the user is onboarded.
+  useEffect(() => {
+    if (!user || onboardingCompleted !== true) return;
+    void setupCheckinReminder(user.uid);
+  }, [user, onboardingCompleted]);
+
+  // Tapping the reminder opens the check-in screen.
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const screen = response.notification.request.content.data?.screen;
+      if (screen === 'checkin') router.push('/(app)/checkin');
+    });
+    return () => sub.remove();
+  }, [router]);
 
   if (loading || !onboardingChecked) return <SplashView />;
 

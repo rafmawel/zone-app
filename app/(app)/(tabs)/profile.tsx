@@ -53,6 +53,13 @@ import { ZoneText } from '@/components/ui/ZoneText';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
 import { ZoneExplainerModal } from '@/components/ZoneExplainerModal';
+import {
+  cancelCheckinReminder,
+  formatTime,
+  parseTime,
+  requestNotificationPermissions,
+  scheduleDailyCheckinReminder,
+} from '@/lib/notifications';
 import { frenchMonthYear, frenchShortDate } from '@/lib/frenchDate';
 
 const LEVEL_LABEL: Record<string, string> = {
@@ -112,6 +119,9 @@ export default function ProfileScreen(): React.ReactElement {
   const [loading, setLoading] = useState<boolean>(true);
   const [resettingSport, setResettingSport] = useState<ResettableSport | null>(null);
   const [zoneInfoVisible, setZoneInfoVisible] = useState<boolean>(false);
+  const [notifEnabled, setNotifEnabled] = useState<boolean>(true);
+  const [notifHour, setNotifHour] = useState<number>(7);
+  const [notifMinute, setNotifMinute] = useState<number>(0);
 
   const loadAll = useCallback(async (): Promise<void> => {
     const user = auth.currentUser;
@@ -194,6 +204,52 @@ export default function ProfileScreen(): React.ReactElement {
     } catch {
       // surfaced silently
     }
+  };
+
+  // Sync the reminder controls from the loaded profile.
+  useEffect(() => {
+    if (!profile) return;
+    setNotifEnabled(profile.notifications_enabled !== false);
+    const { hour, minute } = parseTime(profile.notification_time ?? '07:00');
+    setNotifHour(hour);
+    setNotifMinute(minute);
+  }, [profile]);
+
+  const persistReminder = async (
+    enabled: boolean,
+    hour: number,
+    minute: number,
+  ): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+    await updateUserProfile(user.uid, {
+      notifications_enabled: enabled,
+      notification_time: formatTime(hour, minute),
+    }).catch(() => undefined);
+    if (enabled) {
+      await scheduleDailyCheckinReminder(hour, minute).catch(() => undefined);
+    } else {
+      await cancelCheckinReminder().catch(() => undefined);
+    }
+  };
+
+  const onToggleReminder = (): void => {
+    const next = !notifEnabled;
+    setNotifEnabled(next);
+    if (next) void requestNotificationPermissions();
+    void persistReminder(next, notifHour, notifMinute);
+  };
+
+  const onShiftHour = (delta: number): void => {
+    const hour = (notifHour + delta + 24) % 24;
+    setNotifHour(hour);
+    if (notifEnabled) void persistReminder(true, hour, notifMinute);
+  };
+
+  const onShiftMinute = (delta: number): void => {
+    const minute = (notifMinute + delta + 60) % 60;
+    setNotifMinute(minute);
+    if (notifEnabled) void persistReminder(true, notifHour, minute);
   };
 
   const [resetting, setResetting] = useState<boolean>(false);
@@ -582,6 +638,64 @@ export default function ProfileScreen(): React.ReactElement {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.section}>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
+            RAPPEL QUOTIDIEN
+          </ZoneText>
+          <View style={styles.notifCard}>
+            <TouchableOpacity
+              style={styles.notifToggleRow}
+              activeOpacity={0.8}
+              onPress={onToggleReminder}
+            >
+              <View style={styles.notifToggleMain}>
+                <ZoneText variant="label" color={colors.text.primary}>
+                  Rappel de check-in
+                </ZoneText>
+                <ZoneText variant="caption" color={colors.text.muted}>
+                  Une notification chaque jour pour calibrer ta séance.
+                </ZoneText>
+              </View>
+              <View
+                style={[
+                  styles.switchTrack,
+                  { backgroundColor: notifEnabled ? colors.accent.gold : colors.border },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.switchThumb,
+                    notifEnabled ? styles.switchThumbOn : styles.switchThumbOff,
+                  ]}
+                />
+              </View>
+            </TouchableOpacity>
+
+            {notifEnabled ? (
+              <View style={styles.timeRow}>
+                <ZoneText variant="caption" color={colors.text.muted}>
+                  Heure du rappel
+                </ZoneText>
+                <View style={styles.timeSteppers}>
+                  <TimeStepper
+                    value={notifHour}
+                    onUp={() => onShiftHour(1)}
+                    onDown={() => onShiftHour(-1)}
+                  />
+                  <ZoneText variant="heading" style={styles.timeColon}>
+                    :
+                  </ZoneText>
+                  <TimeStepper
+                    value={notifMinute}
+                    onUp={() => onShiftMinute(5)}
+                    onDown={() => onShiftMinute(-5)}
+                  />
+                </View>
+              </View>
+            ) : null}
+          </View>
+        </View>
+
         <TouchableOpacity
           onPress={() => setZoneInfoVisible(true)}
           activeOpacity={0.7}
@@ -722,6 +836,30 @@ function SportRow({
         >
           {loading ? 'En cours' : 'Reconfigurer'}
         </ZoneText>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function TimeStepper({
+  value,
+  onUp,
+  onDown,
+}: {
+  value: number;
+  onUp: () => void;
+  onDown: () => void;
+}): React.ReactElement {
+  return (
+    <View style={styles.stepper}>
+      <TouchableOpacity onPress={onDown} hitSlop={10} style={styles.stepperBtn} activeOpacity={0.7}>
+        <ZoneText style={styles.stepperSign}>−</ZoneText>
+      </TouchableOpacity>
+      <ZoneText variant="heading" style={styles.stepperValue}>
+        {String(value).padStart(2, '0')}
+      </ZoneText>
+      <TouchableOpacity onPress={onUp} hitSlop={10} style={styles.stepperBtn} activeOpacity={0.7}>
+        <ZoneText style={styles.stepperSign}>+</ZoneText>
       </TouchableOpacity>
     </View>
   );
@@ -959,6 +1097,42 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   zoneInfoText: { color: colors.accent.gold, fontFamily: 'Inter-Medium', fontSize: 14 },
+  notifCard: {
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 16,
+  },
+  notifToggleRow: { flexDirection: 'row', alignItems: 'center' },
+  notifToggleMain: { flex: 1, paddingRight: 12 },
+  switchTrack: { width: 48, height: 28, borderRadius: 14, padding: 3, justifyContent: 'center' },
+  switchThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: colors.bg.primary },
+  switchThumbOn: { alignSelf: 'flex-end' },
+  switchThumbOff: { alignSelf: 'flex-start' },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  timeSteppers: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  timeColon: { fontSize: 22, color: colors.text.primary },
+  stepper: { alignItems: 'center', flexDirection: 'row', gap: 8 },
+  stepperBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperSign: { color: colors.accent.gold, fontFamily: 'Inter-Bold', fontSize: 16 },
+  stepperValue: { fontSize: 22, color: colors.text.primary, minWidth: 32, textAlign: 'center' },
   logoutBtn: { marginTop: 12, alignItems: 'center', paddingVertical: 14 },
   resetBtn: {
     marginTop: 24,
