@@ -37,10 +37,13 @@ export type SessionsOrganization =
   | 'mixte'
   | null;
 
+export type Gender = 'homme' | 'femme' | 'non_precise';
+
 export interface UserProfile {
   uid: string;
   name?: string;
   first_name?: string;
+  gender?: Gender;
   created_at: Timestamp | null;
   onboarding_completed: boolean;
   level: Level | null;
@@ -147,7 +150,15 @@ export interface ExerciseMax {
 export type RunningRaceDistance = '5km' | '10km' | 'semi' | 'marathon';
 export type RunningSessionType = 'EF' | 'SL' | 'TC' | 'TB' | 'IV' | 'RV' | 'RA';
 export type RunningSessionStatus = 'planned' | 'completed' | 'skipped';
-export type LongRunPreference = 'samedi' | 'dimanche' | 'flexible';
+export type Weekday =
+  | 'lundi'
+  | 'mardi'
+  | 'mercredi'
+  | 'jeudi'
+  | 'vendredi'
+  | 'samedi'
+  | 'dimanche';
+export type LongRunPreference = Weekday | 'flexible';
 
 export interface RunningProfile {
   vdot: number;
@@ -704,6 +715,40 @@ export async function getActiveScheduleForWeek(
   const snap = await getDoc(doc(db, 'users', uid, 'schedules', weekStart));
   if (!snap.exists()) return null;
   return snap.data() as WeeklyScheduleDoc;
+}
+
+export type ScheduleSlot = 'matin' | 'apresmidi';
+export type ScheduleSport = 'weightlifting' | 'running' | 'musculation' | 'hyrox';
+
+export interface ScheduleAssignment {
+  day: Weekday;
+  slot: ScheduleSlot;
+  sport: ScheduleSport;
+  session_type: string;
+  intensity: 'low' | 'medium' | 'high';
+}
+
+export interface UserSchedule {
+  week_days: Weekday[];
+  double_days: Weekday[];
+  assignments: ScheduleAssignment[];
+  updated_at: Timestamp | null;
+}
+
+export async function saveUserSchedule(
+  uid: string,
+  schedule: Omit<UserSchedule, 'updated_at'>,
+): Promise<void> {
+  await setDoc(doc(db, 'users', uid, 'state', 'schedule'), {
+    ...schedule,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function getUserSchedule(uid: string): Promise<UserSchedule | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'schedule'));
+  if (!snap.exists()) return null;
+  return snap.data() as UserSchedule;
 }
 
 export interface HyroxBaselineInput {

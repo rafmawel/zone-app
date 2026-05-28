@@ -13,10 +13,13 @@ import Animated, { SlideInRight, SlideOutLeft } from 'react-native-reanimated';
 import { ArrowLeft, Minus, Plus } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
 import {
+  getUserProfile,
   saveRunningProfile,
+  type Gender,
   type LongRunPreference,
   type RunningRaceDistance,
 } from '@/lib/firestore';
+import { vdotGenderDelta } from '@/lib/genderProfiles';
 import {
   calculateVDOTPaces,
   estimateVDOT,
@@ -33,6 +36,17 @@ import { ZoneText } from '@/components/ui/ZoneText';
 import { SelectableCard } from '@/components/SelectableCard';
 
 const TOTAL_STEPS = 4;
+
+const LONG_RUN_OPTIONS: { key: LongRunPreference; label: string }[] = [
+  { key: 'lundi', label: 'Lun' },
+  { key: 'mardi', label: 'Mar' },
+  { key: 'mercredi', label: 'Mer' },
+  { key: 'jeudi', label: 'Jeu' },
+  { key: 'vendredi', label: 'Ven' },
+  { key: 'samedi', label: 'Sam' },
+  { key: 'dimanche', label: 'Dim' },
+  { key: 'flexible', label: 'Peu importe' },
+];
 
 interface Goal {
   key: string;
@@ -79,6 +93,24 @@ export default function RunningSetupScreen(): React.ReactElement {
   });
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [gender, setGender] = useState<Gender | null>(null);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const profile = await getUserProfile(user.uid);
+        if (!cancelled) setGender(profile?.gender ?? null);
+      } catch {
+        // keep null
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const baseVdot = useMemo(
     () => vdotFromEasyPace(state.easyPaceSec),
@@ -122,8 +154,9 @@ export default function RunningSetupScreen(): React.ReactElement {
     setError(null);
     setSaving(true);
     try {
+      const adjustedVdot = Math.max(20, calibratedVdot + vdotGenderDelta(gender));
       await saveRunningProfile(user.uid, {
-        vdot: calibratedVdot,
+        vdot: adjustedVdot,
         easy_pace_sec_per_km: state.easyPaceSec,
         goal: state.goal ?? 'forme',
         reference_distance: state.hasReference ? state.refDistance : null,
@@ -662,16 +695,16 @@ function OrganizeStep({
       <ZoneText variant="caption" color={colors.text.muted} style={styles.sectionLabel}>
         PRÉFÉRENCE DE SORTIE LONGUE
       </ZoneText>
-      <View style={styles.distRow}>
-        {(['samedi', 'dimanche', 'flexible'] as LongRunPreference[]).map((opt) => {
-          const active = longRunPref === opt;
+      <View style={styles.longRunRow}>
+        {LONG_RUN_OPTIONS.map((opt) => {
+          const active = longRunPref === opt.key;
           return (
             <TouchableOpacity
-              key={opt}
-              onPress={() => onLongRunPref(opt)}
+              key={opt.key}
+              onPress={() => onLongRunPref(opt.key)}
               activeOpacity={0.8}
               style={[
-                styles.distChip,
+                styles.longRunChip,
                 active
                   ? { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold }
                   : { backgroundColor: 'transparent', borderColor: colors.border },
@@ -684,7 +717,7 @@ function OrganizeStep({
                   fontSize: 12,
                 }}
               >
-                {opt === 'samedi' ? 'Samedi' : opt === 'dimanche' ? 'Dimanche' : 'Peu importe'}
+                {opt.label}
               </ZoneText>
             </TouchableOpacity>
           );
@@ -845,6 +878,15 @@ const styles = StyleSheet.create({
   },
   refLabel: { letterSpacing: 1, fontSize: 11, marginBottom: 8 },
   distRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 4 },
+  longRunRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 4 },
+  longRunChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginRight: 6,
+    marginBottom: 6,
+  },
   distChip: {
     borderWidth: 1,
     borderRadius: 999,

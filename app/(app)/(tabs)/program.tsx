@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Dumbbell, RotateCcw } from 'lucide-react-native';
+import { ChevronRight } from 'lucide-react-native';
 import {
   collection,
   doc,
@@ -17,17 +17,21 @@ import {
   getCompletedSessions,
   getExerciseMaxes,
   getHyroxStationAverages,
+  getUserSchedule,
   setMuscleDeloadActive,
   todayDateString,
   type DailyCheckin,
   type HyroxProfile,
   type MuscleProfile,
   type RunningProfile,
+  type ScheduleSport,
   type SessionExercise,
   type TrainingSession,
   type UserProgram,
+  type UserSchedule,
+  type Weekday,
 } from '@/lib/firestore';
-import { generateWeeklySession, getBlockName } from '@/lib/programEngine';
+import { generateWeeklySession } from '@/lib/programEngine';
 import { generateMuscleSession } from '@/lib/muscleEngine';
 import { evaluateDeloadNeed, type DeloadRecommendation } from '@/lib/muscleSessionScience';
 import {
@@ -45,9 +49,7 @@ import type { MuscleGroup } from '@/data/exercises';
 import {
   buildSessionPlan,
   calculateVDOTPaces,
-  formatPace,
   getWeeklyDistribution,
-  sessionName,
   type ProgramBlockRunning,
   type RunningSessionType,
   type WeekIndexRunning,
@@ -59,6 +61,7 @@ import {
   sportColor,
   type SchedulerSport,
 } from '@/lib/multiSportScheduler';
+import { getZoneLevel } from '@/lib/zoneScore';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
@@ -129,6 +132,7 @@ export default function ProgramScreen(): React.ReactElement {
   const [deload, setDeload] = useState<DeloadRecommendation | null>(null);
   const [hyroxProfile, setHyroxProfile] = useState<HyroxProfile | null>(null);
   const [hyroxPrediction, setHyroxPrediction] = useState<RacePrediction | null>(null);
+  const [schedule, setSchedule] = useState<UserSchedule | null>(null);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -156,6 +160,17 @@ export default function ProgramScreen(): React.ReactElement {
         setProgramLoaded(true);
       },
       () => setProgramLoaded(true),
+    );
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const unsubscribe = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'schedule'),
+      (snap) => setSchedule(snap.exists() ? (snap.data() as UserSchedule) : null),
+      () => setSchedule(null),
     );
     return unsubscribe;
   }, []);
@@ -404,6 +419,21 @@ export default function ProgramScreen(): React.ReactElement {
     router.push(`/(app)/hyrox-session/new?type=${type}&block=${hyroxBlock}`);
   };
 
+  const onStartSport = (sport: ScheduleSport): void => {
+    if (sport === 'weightlifting') void onGenerateToday();
+    else if (sport === 'running') void onStartRun();
+    else if (sport === 'musculation') void onStartMuscle();
+    else if (sport === 'hyrox') onStartHyrox();
+  };
+
+  const configuredSports: ScheduleSport[] = [
+    ...(program ? (['weightlifting'] as const) : []),
+    ...(runningProfile ? (['running'] as const) : []),
+    ...(muscleProfile ? (['musculation'] as const) : []),
+    ...(hyroxProfile ? (['hyrox'] as const) : []),
+  ];
+  const zoneLevel = score !== null ? getZoneLevel(score) : null;
+
   return (
     <SafeScreen>
       <ScrollView
@@ -412,12 +442,43 @@ export default function ProgramScreen(): React.ReactElement {
       >
         <View style={styles.header}>
           <ZoneText variant="heading" style={styles.title}>
-            PROGRAMME
+            MON PROGRAMME
           </ZoneText>
           <ZoneText variant="caption" color={colors.text.muted}>
             Périodisation en 12 semaines
           </ZoneText>
         </View>
+
+        <View style={styles.zoneStrip}>
+          <View
+            style={[
+              styles.zoneStripOrb,
+              { backgroundColor: zoneLevel ? zoneLevel.color : colors.border },
+            ]}
+          />
+          <ZoneText variant="label" style={styles.zoneStripScore}>
+            {score ?? '--'}
+          </ZoneText>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.zoneStripStatus}>
+            {zoneLevel ? zoneLevel.label : 'Pas de check-in aujourd’hui'}
+          </ZoneText>
+        </View>
+
+        {configuredSports.length > 0 ? (
+          <MaSemaineSection
+            schedule={schedule}
+            program={program}
+            runningProfile={runningProfile}
+            muscleProfile={muscleProfile}
+            hyroxProfile={hyroxProfile}
+            configuredSports={configuredSports}
+            generatingWeightlifting={generating}
+            generatingRun={generatingRun}
+            generatingMuscle={generatingMuscle}
+            onStartSport={onStartSport}
+            onModifyPlanning={() => router.push('/(app)/planner')}
+          />
+        ) : null}
 
         {banner ? (
           <View style={[styles.banner, { borderLeftColor: banner.border }]}>
@@ -427,58 +488,15 @@ export default function ProgramScreen(): React.ReactElement {
           </View>
         ) : null}
 
-        {!programLoaded ? null : program ? (
-          <View style={styles.programCard}>
-            <View style={styles.programHeader}>
-              <ZoneText variant="caption" color={colors.text.muted} style={styles.programEyebrow}>
-                MON PROGRAMME
-              </ZoneText>
-              <ZoneText variant="caption" color={colors.accent.gold}>
-                Semaine {Math.min(4, program.current_week)}/4
-              </ZoneText>
-            </View>
-            <ZoneText variant="heading" style={styles.programBlock}>
-              BLOC {program.current_block} · {getBlockName(program.current_block)}
+        {!program || !runningProfile || !muscleProfile || !hyroxProfile ? (
+          <View style={styles.addSportHeader}>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.upcomingEyebrow}>
+              AJOUTER UN SPORT
             </ZoneText>
-            <View style={styles.weekDots}>
-              {[1, 2, 3, 4].map((w) => (
-                <View
-                  key={w}
-                  style={[
-                    styles.weekDot,
-                    {
-                      backgroundColor:
-                        w <= program.current_week ? colors.accent.gold : colors.border,
-                    },
-                  ]}
-                />
-              ))}
-            </View>
-            <View style={styles.programMetaRow}>
-              <Dumbbell size={16} color={colors.text.muted} />
-              <ZoneText variant="caption" color={colors.text.muted} style={styles.programMetaText}>
-                {program.sessions_per_week}× / semaine · niveau {program.level}
-              </ZoneText>
-            </View>
-            <View style={styles.programCta}>
-              <Button
-                title={todayPlanned ? 'Reprendre ma séance' : 'Voir ma séance'}
-                loading={generating}
-                onPress={onGenerateToday}
-              />
-            </View>
-            <TouchableOpacity
-              onPress={() => router.push('/(app)/maxes')}
-              activeOpacity={0.7}
-              style={styles.recalcRow}
-            >
-              <RotateCcw size={14} color={colors.text.muted} />
-              <ZoneText variant="caption" color={colors.text.muted} style={styles.recalcText}>
-                Recalculer mes maxes
-              </ZoneText>
-            </TouchableOpacity>
           </View>
-        ) : (
+        ) : null}
+
+        {!programLoaded || program ? null : (
           <View style={styles.programCard}>
             <ZoneText variant="caption" color={colors.text.muted} style={styles.programEyebrow}>
               MON PROGRAMME
@@ -495,7 +513,7 @@ export default function ProgramScreen(): React.ReactElement {
           </View>
         )}
 
-        {runningLoaded ? (
+        {runningLoaded && !runningProfile ? (
           <View style={styles.runningCard}>
             <View style={styles.programHeader}>
               <ZoneText
@@ -505,49 +523,32 @@ export default function ProgramScreen(): React.ReactElement {
               >
                 PROGRAMME COURSE
               </ZoneText>
-              {runningProfile ? (
-                <ZoneText variant="caption" color={colors.accent.gold}>
-                  VDOT {runningProfile.vdot}
-                </ZoneText>
-              ) : null}
             </View>
-            {runningProfile ? (
-              <RunningProgramBody
-                profile={runningProfile}
-                loading={generatingRun}
-                onStart={onStartRun}
+            <ZoneText variant="heading" style={styles.programBlock}>
+              ACTIVER LE MODULE COURSE
+            </ZoneText>
+            <ZoneText variant="body" color={colors.text.secondary} style={styles.programIntro}>
+              Estime ton allure de référence pour générer un plan scientifiquement structuré
+              (VDOT + 80/20).
+            </ZoneText>
+            <View style={styles.programCta}>
+              <Button
+                title="Configurer la course"
+                variant="secondary"
+                onPress={() => router.push('/(app)/running-setup')}
               />
-            ) : (
-              <>
-                <ZoneText variant="heading" style={styles.programBlock}>
-                  ACTIVER LE MODULE COURSE
-                </ZoneText>
-                <ZoneText
-                  variant="body"
-                  color={colors.text.secondary}
-                  style={styles.programIntro}
-                >
-                  Estime ton allure de référence pour générer un plan
-                  scientifiquement structuré (VDOT + 80/20).
-                </ZoneText>
-                <View style={styles.programCta}>
-                  <Button
-                    title="Configurer la course"
-                    variant="secondary"
-                    onPress={() => router.push('/(app)/running-setup')}
-                  />
-                </View>
-              </>
-            )}
+            </View>
           </View>
         ) : null}
 
-        <MuscleCard
-          profile={muscleProfile}
-          generating={generatingMuscle}
-          onSetup={() => router.push('/(app)/muscle-setup')}
-          onStart={onStartMuscle}
-        />
+        {!muscleProfile ? (
+          <MuscleCard
+            profile={null}
+            generating={generatingMuscle}
+            onSetup={() => router.push('/(app)/muscle-setup')}
+            onStart={onStartMuscle}
+          />
+        ) : null}
         {muscleProfile ? (
           <DeloadCard
             deload={deload}
@@ -556,21 +557,16 @@ export default function ProgramScreen(): React.ReactElement {
             onExit={() => onToggleDeload(false)}
           />
         ) : null}
-        <HyroxCard
-          profile={hyroxProfile}
-          block={hyroxBlock}
-          weeksToRace={hyroxWeeksToRace}
-          prediction={hyroxPrediction}
-          onSetup={() => router.push('/(app)/hyrox-setup')}
-          onStart={onStartHyrox}
-        />
-
-        <WeeklyPlannerSection
-          program={program}
-          runningProfile={runningProfile}
-          muscleProfile={muscleProfile}
-          hyroxProfile={hyroxProfile}
-        />
+        {!hyroxProfile ? (
+          <HyroxCard
+            profile={null}
+            block={hyroxBlock}
+            weeksToRace={hyroxWeeksToRace}
+            prediction={hyroxPrediction}
+            onSetup={() => router.push('/(app)/hyrox-setup')}
+            onStart={onStartHyrox}
+          />
+        ) : null}
 
         <View style={styles.upcomingHeader}>
           <ZoneText variant="caption" color={colors.text.muted} style={styles.upcomingEyebrow}>
@@ -610,94 +606,6 @@ export default function ProgramScreen(): React.ReactElement {
   );
 }
 
-function RunningProgramBody({
-  profile,
-  loading,
-  onStart,
-}: {
-  profile: RunningProfile;
-  loading: boolean;
-  onStart: () => void;
-}): React.ReactElement {
-  const router = useRouter();
-  const paces = useMemo(() => calculateVDOTPaces(profile.vdot), [profile.vdot]);
-  const today = new Date();
-  const dayIdx = (today.getDay() + 6) % 7;
-  const weekly = getWeeklyDistribution(profile.sessions_per_week, 1, 1);
-  const todayItem = weekly.items.find((i) => i.dayIndex === dayIdx);
-  const todayType: RunningSessionType | 'REST' = todayItem ? todayItem.type : 'EF';
-
-  return (
-    <>
-      <ZoneText variant="heading" style={styles.programBlock}>
-        BLOC 1 · ACCUMULATION
-      </ZoneText>
-      <ZoneText variant="caption" color={colors.text.muted} style={styles.programIntro}>
-        {profile.sessions_per_week}× / semaine · objectif {profile.goal}
-      </ZoneText>
-
-      <View style={styles.weekDotsRow}>
-        {weekly.items.map((item) => {
-          const isToday = item.dayIndex === dayIdx;
-          const color =
-            item.type === 'REST'
-              ? colors.border
-              : item.type === 'EF' || item.type === 'SL' || item.type === 'RA'
-                ? colors.orbe.blue
-                : colors.accent.gold;
-          return (
-            <View
-              key={item.dayIndex}
-              style={[
-                styles.weekDay,
-                {
-                  backgroundColor: color,
-                  borderColor: isToday ? colors.accent.gold : 'transparent',
-                  borderWidth: isToday ? 2 : 0,
-                },
-              ]}
-            />
-          );
-        })}
-      </View>
-
-      <View style={styles.todayBox}>
-        <ZoneText
-          variant="caption"
-          color={colors.text.muted}
-          style={styles.programEyebrow}
-        >
-          AUJOURD’HUI
-        </ZoneText>
-        <ZoneText variant="label" style={styles.todayName}>
-          {todayType === 'REST' ? 'REPOS' : sessionName(todayType)}
-        </ZoneText>
-        {todayType !== 'REST' ? (
-          <ZoneText variant="caption" color={colors.text.secondary} style={styles.todayMeta}>
-            Cible E {formatPace(paces.E_fast)} · T {formatPace(paces.T)}
-          </ZoneText>
-        ) : null}
-      </View>
-
-      <View style={styles.programCta}>
-        <Button
-          title={todayType === 'REST' ? 'Sortie facultative' : 'Voir ma sortie'}
-          loading={loading}
-          onPress={onStart}
-        />
-      </View>
-      <TouchableOpacity
-        onPress={() => router.push('/(app)/running-setup')}
-        activeOpacity={0.7}
-        style={styles.recalcRow}
-      >
-        <ZoneText variant="caption" color={colors.text.muted} style={styles.recalcText}>
-          Recalibrer ma course
-        </ZoneText>
-      </TouchableOpacity>
-    </>
-  );
-}
 
 function DeloadCard({
   deload,
@@ -896,48 +804,138 @@ function HyroxCard({
 
 const FR_DAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
-function WeeklyPlannerSection({
+const DAY_KEYS: Weekday[] = [
+  'lundi',
+  'mardi',
+  'mercredi',
+  'jeudi',
+  'vendredi',
+  'samedi',
+  'dimanche',
+];
+
+const SPORT_LABEL: Record<ScheduleSport, string> = {
+  weightlifting: 'Haltérophilie',
+  running: 'Course',
+  musculation: 'Musculation',
+  hyrox: 'Hyrox',
+};
+
+const SLOT_LABEL: Record<'matin' | 'apresmidi', string> = {
+  matin: '🌅 Matin',
+  apresmidi: '🌇 Après-midi',
+};
+
+interface DayPill {
+  sport: ScheduleSport;
+  slot: 'matin' | 'apresmidi';
+}
+
+function compatibilityNotes(sports: ScheduleSport[]): string[] {
+  const set = new Set(sports);
+  if (sports.length < 2) return [];
+  if (set.has('weightlifting') && set.has('running')) {
+    return [
+      'Haltérophilie le matin + course en récup l’après-midi. Attends minimum 4h entre les deux.',
+      'Évite la course avant l’haltéro, la fatigue cardiovasculaire nuit aux performances techniques.',
+    ];
+  }
+  if (set.has('hyrox') && (set.has('weightlifting') || set.has('musculation'))) {
+    return ['Jambes sollicitées deux fois aujourd’hui. Espace les séances d’au moins 6h.'];
+  }
+  if (set.has('musculation') && set.has('running')) {
+    return ['Course en récupération après la muscu. Garde l’intensité basse.'];
+  }
+  return ['Deux séances aujourd’hui. Espace-les d’au moins 4h pour bien récupérer.'];
+}
+
+function MaSemaineSection({
+  schedule,
   program,
   runningProfile,
   muscleProfile,
   hyroxProfile,
+  configuredSports,
+  generatingWeightlifting,
+  generatingRun,
+  generatingMuscle,
+  onStartSport,
+  onModifyPlanning,
 }: {
+  schedule: UserSchedule | null;
   program: UserProgram | null;
   runningProfile: RunningProfile | null;
   muscleProfile: MuscleProfile | null;
   hyroxProfile: HyroxProfile | null;
-}): React.ReactElement | null {
-  const schedule = useMemo(() => {
+  configuredSports: ScheduleSport[];
+  generatingWeightlifting: boolean;
+  generatingRun: boolean;
+  generatingMuscle: boolean;
+  onStartSport: (sport: ScheduleSport) => void;
+  onModifyPlanning: () => void;
+}): React.ReactElement {
+  const todayIdx = (new Date().getDay() + 6) % 7;
+
+  // Build per-day pills from the saved schedule, else from the auto-planner.
+  const weekPills: DayPill[][] = useMemo(() => {
+    const out: DayPill[][] = DAY_KEYS.map(() => []);
+    if (schedule && schedule.assignments.length > 0) {
+      for (const a of schedule.assignments) {
+        const idx = DAY_KEYS.indexOf(a.day);
+        if (idx >= 0) out[idx].push({ sport: a.sport, slot: a.slot });
+      }
+      return out;
+    }
     const activeSports: { sport: SchedulerSport; sessionsPerWeek: number }[] = [];
     if (program) activeSports.push({ sport: 'weightlifting', sessionsPerWeek: program.sessions_per_week });
     if (runningProfile)
       activeSports.push({ sport: 'running', sessionsPerWeek: runningProfile.sessions_per_week });
     if (muscleProfile)
       activeSports.push({ sport: 'musculation', sessionsPerWeek: muscleProfile.sessions_per_week });
-    if (hyroxProfile) activeSports.push({ sport: 'hyrox', sessionsPerWeek: hyroxProfile.sessions_per_week });
-    if (activeSports.length === 0) return null;
-    return generateOptimalWeek(activeSports, {
+    if (hyroxProfile)
+      activeSports.push({ sport: 'hyrox', sessionsPerWeek: hyroxProfile.sessions_per_week });
+    if (activeSports.length === 0) return out;
+    const generated = generateOptimalWeek(activeSports, {
       long_run_day: runningProfile?.long_run_pref ?? 'dimanche',
     });
-  }, [program, runningProfile, muscleProfile, hyroxProfile]);
+    generated.days.forEach((d, i) => {
+      d.sessions.forEach((s, j) =>
+        out[i].push({ sport: s.sport as ScheduleSport, slot: j === 0 ? 'matin' : 'apresmidi' }),
+      );
+    });
+    return out;
+  }, [schedule, program, runningProfile, muscleProfile, hyroxProfile]);
 
-  if (!schedule) return null;
-
-  const totalSessions = schedule.days.reduce((acc, d) => acc + d.sessions.length, 0);
-  const sundayRecovery = schedule.days[6]?.recovery_score ?? 100;
-  const todayIdx = (new Date().getDay() + 6) % 7;
+  const todayPills = weekPills[todayIdx] ?? [];
+  const notes = compatibilityNotes(todayPills.map((p) => p.sport));
+  const busyGen: Record<ScheduleSport, boolean> = {
+    weightlifting: generatingWeightlifting,
+    running: generatingRun,
+    musculation: generatingMuscle,
+    hyrox: false,
+  };
 
   return (
     <View style={styles.plannerWrap}>
-      <ZoneText variant="caption" color={colors.text.muted} style={styles.programEyebrow}>
-        MA SEMAINE
-      </ZoneText>
-      <ZoneText variant="heading" style={styles.plannerTitle}>
-        PLANNING
-      </ZoneText>
+      <View style={styles.programHeader}>
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.programEyebrow}>
+          MA SEMAINE
+        </ZoneText>
+        {program ? (
+          <ZoneText variant="caption" color={colors.accent.gold}>
+            Bloc {program.current_block} · S{Math.min(4, program.current_week)}
+          </ZoneText>
+        ) : null}
+      </View>
+
       <View style={styles.weekRowOuter}>
-        {schedule.days.map((d, idx) => (
-          <View key={d.date} style={styles.dayColumn}>
+        {weekPills.map((pills, idx) => (
+          <TouchableOpacity
+            key={DAY_KEYS[idx]}
+            activeOpacity={0.7}
+            onPress={() => (pills.length > 0 ? onStartSport(pills[0].sport) : onModifyPlanning())}
+            style={styles.dayColumn}
+          >
             <ZoneText
               variant="caption"
               color={idx === todayIdx ? colors.accent.gold : colors.text.muted}
@@ -945,42 +943,62 @@ function WeeklyPlannerSection({
             >
               {FR_DAYS[idx]}
             </ZoneText>
-            <ZoneText
-              variant="caption"
-              color={idx === todayIdx ? colors.text.primary : colors.text.muted}
-              style={styles.dayNumber}
-            >
-              {parseInt(d.date.slice(-2), 10)}
-            </ZoneText>
-            <View style={styles.dotsStack}>
-              {d.sessions.length === 0 ? (
+            <View style={styles.pillStack}>
+              {pills.length === 0 ? (
                 <View style={[styles.sessionDot, { backgroundColor: colors.border }]} />
               ) : (
-                d.sessions.map((s, i) => (
+                pills.map((p, i) => (
                   <View
                     key={i}
-                    style={[
-                      styles.sessionDot,
-                      { backgroundColor: sportColor(s.sport as SchedulerSport) },
-                    ]}
+                    style={[styles.calPill, { backgroundColor: sportColor(p.sport as SchedulerSport) }]}
                   />
                 ))
               )}
             </View>
-            {d.warnings.some((w) => w.level === 'danger') ? (
-              <ZoneText style={styles.warningDot}>!</ZoneText>
-            ) : null}
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
-      <View style={styles.weekSummary}>
-        <ZoneText variant="caption" color={colors.text.secondary}>
-          Cette semaine : {totalSessions} séance{totalSessions > 1 ? 's' : ''}
+
+      <TouchableOpacity onPress={onModifyPlanning} activeOpacity={0.7} style={styles.modifyPlanning}>
+        <ZoneText variant="caption" color={colors.accent.gold}>
+          Modifier mon planning
         </ZoneText>
-        <ZoneText variant="caption" color={colors.text.muted}>
-          Récupération dimanche {sundayRecovery}%
-        </ZoneText>
-      </View>
+      </TouchableOpacity>
+
+      <ZoneText variant="caption" color={colors.text.muted} style={styles.todayEyebrow}>
+        AUJOURD’HUI
+      </ZoneText>
+      {todayPills.length === 0 ? (
+        <View style={styles.todayRest}>
+          <ZoneText variant="caption" color={colors.text.muted}>
+            Repos aujourd’hui. Récupération active possible.
+          </ZoneText>
+        </View>
+      ) : (
+        <>
+          {todayPills.map((p, i) => (
+            <View key={i} style={[styles.todayCard, { borderLeftColor: sportColor(p.sport as SchedulerSport) }]}>
+              <ZoneText variant="caption" color={colors.text.muted} style={styles.todaySlot}>
+                {SLOT_LABEL[p.slot]} · {SPORT_LABEL[p.sport]}
+              </ZoneText>
+              <View style={styles.todayCta}>
+                <Button
+                  title={busyGen[p.sport] ? 'Génération…' : 'Commencer'}
+                  disabled={busyGen[p.sport]}
+                  onPress={() => onStartSport(p.sport)}
+                />
+              </View>
+            </View>
+          ))}
+          {notes.map((n, i) => (
+            <View key={`note-${i}`} style={styles.compatNote}>
+              <ZoneText variant="caption" color={colors.text.secondary} style={styles.compatNoteText}>
+                {n}
+              </ZoneText>
+            </View>
+          ))}
+        </>
+      )}
     </View>
   );
 }
@@ -1087,12 +1105,52 @@ const styles = StyleSheet.create({
   },
   plannerTitle: { fontSize: 18, color: colors.text.primary, letterSpacing: 2, marginTop: 2 },
   weekRowOuter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
-  dayColumn: { alignItems: 'center', width: 36 },
+  dayColumn: { alignItems: 'center', flex: 1 },
   dayLetter: { fontFamily: 'Inter-Bold', fontSize: 11, letterSpacing: 1 },
   dayNumber: { fontSize: 12, marginTop: 2 },
   dotsStack: { marginTop: 6, alignItems: 'center' },
   sessionDot: { width: 8, height: 8, borderRadius: 4, marginBottom: 3 },
+  pillStack: { marginTop: 8, alignItems: 'center', gap: 3 },
+  calPill: { width: 18, height: 7, borderRadius: 4 },
   warningDot: { color: colors.danger, fontFamily: 'Inter-Bold', fontSize: 12, marginTop: 2 },
+  zoneStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 24,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  zoneStripOrb: { width: 24, height: 24, borderRadius: 12 },
+  addSportHeader: { paddingHorizontal: 24, marginTop: 20, marginBottom: 2 },
+  zoneStripScore: { color: colors.text.primary, fontSize: 16 },
+  zoneStripStatus: { flex: 1 },
+  modifyPlanning: { alignSelf: 'flex-start', marginTop: 12, paddingVertical: 6 },
+  todayEyebrow: { letterSpacing: 1.5, fontSize: 11, marginTop: 14, marginBottom: 8 },
+  todayRest: {
+    backgroundColor: colors.bg.elevated,
+    borderRadius: 10,
+    padding: 12,
+  },
+  todayCard: {
+    backgroundColor: colors.bg.elevated,
+    borderLeftWidth: 3,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+  },
+  todaySlot: { fontSize: 12, fontFamily: 'Inter-Bold', color: colors.text.primary },
+  todayCta: { marginTop: 10 },
+  compatNote: {
+    backgroundColor: colors.bg.elevated,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.orbe.amber,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 6,
+  },
+  compatNoteText: { lineHeight: 16 },
   weekSummary: {
     flexDirection: 'row',
     justifyContent: 'space-between',

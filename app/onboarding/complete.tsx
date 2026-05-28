@@ -14,6 +14,7 @@ export default function CompleteScreen(): React.ReactElement {
   const router = useRouter();
   const {
     level,
+    gender,
     selectedSports,
     sportConfigs,
     sessions_organization,
@@ -34,6 +35,7 @@ export default function CompleteScreen(): React.ReactElement {
     try {
       await updateUserProfile(user.uid, {
         level,
+        ...(gender ? { gender } : {}),
         onboarding_completed: true,
         health_data_source,
         sessions_organization,
