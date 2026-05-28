@@ -717,6 +717,40 @@ export async function getActiveScheduleForWeek(
   return snap.data() as WeeklyScheduleDoc;
 }
 
+export type ScheduleSlot = 'matin' | 'apresmidi';
+export type ScheduleSport = 'weightlifting' | 'running' | 'musculation' | 'hyrox';
+
+export interface ScheduleAssignment {
+  day: Weekday;
+  slot: ScheduleSlot;
+  sport: ScheduleSport;
+  session_type: string;
+  intensity: 'low' | 'medium' | 'high';
+}
+
+export interface UserSchedule {
+  week_days: Weekday[];
+  double_days: Weekday[];
+  assignments: ScheduleAssignment[];
+  updated_at: Timestamp | null;
+}
+
+export async function saveUserSchedule(
+  uid: string,
+  schedule: Omit<UserSchedule, 'updated_at'>,
+): Promise<void> {
+  await setDoc(doc(db, 'users', uid, 'state', 'schedule'), {
+    ...schedule,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function getUserSchedule(uid: string): Promise<UserSchedule | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'schedule'));
+  if (!snap.exists()) return null;
+  return snap.data() as UserSchedule;
+}
+
 export interface HyroxBaselineInput {
   baseline_skierg_500m_sec: number;
   baseline_rowing_500m_sec: number;
