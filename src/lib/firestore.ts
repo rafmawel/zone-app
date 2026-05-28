@@ -11,6 +11,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
   type Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -968,6 +969,122 @@ export async function updateSubscriptionStatus(
       ...status,
       updatedAt: serverTimestamp(),
     },
+    { merge: true },
+  );
+}
+
+const RESET_COLLECTIONS = [
+  'checkins',
+  'sessions',
+  'runs',
+  'maxes',
+  'workload',
+  'state',
+  'sports',
+  'schedules',
+  'health_sync',
+] as const;
+
+async function deleteCollection(uid: string, name: string): Promise<void> {
+  const snap = await getDocs(collection(db, 'users', uid, name));
+  if (snap.empty) return;
+  // Firestore batched writes cap at 500 ops; chunk just in case.
+  const docs = snap.docs;
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = writeBatch(db);
+    const slice = docs.slice(i, i + 400);
+    for (const d of slice) batch.delete(d.ref);
+    await batch.commit();
+  }
+}
+
+/**
+ * Delete every per-user document under `users/{uid}` and reset the
+ * top-level profile to the pre-onboarding state. The auth user itself
+ * is left intact so the caller can sign them out separately.
+ *
+ * @param uid Firebase auth UID
+ */
+export async function deleteAllUserData(uid: string): Promise<void> {
+  for (const name of RESET_COLLECTIONS) {
+    await deleteCollection(uid, name);
+  }
+  try {
+    await deleteDoc(doc(db, 'users', uid, 'state', 'performance_model'));
+  } catch {
+    // already deleted by the state-collection sweep
+  }
+  await setDoc(
+    doc(db, 'users', uid),
+    {
+      onboarding_completed: false,
+      zone_score: 50,
+    },
+    { merge: true },
+  );
+}
+
+export interface HealthSyncData {
+  date: string;
+  source: 'health_connect';
+  sleep_duration_hours: number | null;
+  sleep_quality: number | null;
+  avg_heart_rate: number | null;
+  resting_heart_rate: number | null;
+  hrv_ms: number | null;
+  steps: number | null;
+  active_calories: number | null;
+  weight_kg: number | null;
+  synced_at: Timestamp | null;
+}
+
+export async function saveHealthSync(
+  uid: string,
+  data: Omit<HealthSyncData, 'synced_at'>,
+): Promise<void> {
+  await setDoc(doc(db, 'users', uid, 'health_sync', data.date), {
+    ...data,
+    synced_at: serverTimestamp(),
+  });
+}
+
+export async function getHealthSync(
+  uid: string,
+  date: string,
+): Promise<HealthSyncData | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'health_sync', date));
+  if (!snap.exists()) return null;
+  return snap.data() as HealthSyncData;
+}
+
+export type StrengthTestSport = 'weightlifting' | 'musculation';
+
+export interface StrengthTestState {
+  weightlifting_session1_at: string | null;
+  musculation_session1_at: string | null;
+  updated_at: Timestamp | null;
+}
+
+export async function getStrengthTestState(
+  uid: string,
+): Promise<StrengthTestState | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'strength_test'));
+  if (!snap.exists()) return null;
+  return snap.data() as StrengthTestState;
+}
+
+export async function saveStrengthTestSession1(
+  uid: string,
+  sport: StrengthTestSport,
+  iso: string,
+): Promise<void> {
+  const field =
+    sport === 'weightlifting'
+      ? 'weightlifting_session1_at'
+      : 'musculation_session1_at';
+  await setDoc(
+    doc(db, 'users', uid, 'state', 'strength_test'),
+    { [field]: iso, updated_at: serverTimestamp() },
     { merge: true },
   );
 }

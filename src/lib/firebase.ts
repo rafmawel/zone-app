@@ -1,6 +1,22 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
-import { getAuth, type Auth } from 'firebase/auth';
+import {
+  getAuth,
+  initializeAuth,
+  type Auth,
+  type Persistence,
+} from 'firebase/auth';
+import * as firebaseAuth from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
+
+// getReactNativePersistence ships in the React Native bundle but is not
+// part of the web type definitions Metro resolves for TypeScript.
+const getReactNativePersistence = (
+  firebaseAuth as unknown as {
+    getReactNativePersistence: (storage: unknown) => Persistence;
+  }
+).getReactNativePersistence;
 
 const firebaseConfig = {
   apiKey: 'AIzaSyB3qb-HWBYcf-bYmt8vOyzHVCx5Nc7W0Wo',
@@ -12,5 +28,28 @@ const firebaseConfig = {
 };
 
 export const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-export const auth: Auth = getAuth(app);
+
+const isExpoGo = Constants.appOwnership === 'expo';
+
+interface MaybeCodedError {
+  code?: string;
+}
+
+function createAuth(): Auth {
+  // Expo Go bundles a Firebase JS SDK that already wires persistence;
+  // initializeAuth there throws, so fall back to getAuth.
+  if (isExpoGo) return getAuth(app);
+  try {
+    return initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage),
+    });
+  } catch (e: unknown) {
+    if ((e as MaybeCodedError).code === 'auth/already-initialized') {
+      return getAuth(app);
+    }
+    throw e;
+  }
+}
+
+export const auth: Auth = createAuth();
 export const db: Firestore = getFirestore(app);

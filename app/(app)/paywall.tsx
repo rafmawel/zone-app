@@ -24,7 +24,7 @@ import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { PulsingOrb } from '@/components/PulsingOrb';
+import { ZoneOrbe } from '@/components/ZoneOrbe';
 
 type PlanKey = 'monthly' | 'annual';
 
@@ -216,7 +216,7 @@ export default function PaywallScreen(): React.ReactElement {
           </ZoneText>
           <View style={styles.divider} />
           <View style={styles.orbWrap}>
-            <PulsingOrb size={80} color={colors.accent.gold} />
+            <ZoneOrbe score={73} size={80} animated />
           </View>
           <ZoneText
             variant="heading"

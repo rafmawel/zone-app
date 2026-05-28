@@ -7,7 +7,9 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { AppState } from 'react-native';
 import { colors } from '@/theme/colors';
+import { playBeep, playRestComplete } from '@/lib/sound';
 
 export interface ActiveSessionState {
   sessionId: string;
@@ -20,6 +22,8 @@ export interface ActiveSessionState {
   isResting: boolean;
   restSecondsRemaining: number;
   restTotalSeconds: number;
+  /** Epoch ms when the current rest ends; drives a wall-clock timer. */
+  restEndsAt: number | null;
   zoneColor: string;
   startedAt: Date;
 }
@@ -45,6 +49,7 @@ function defaultState(sessionId: string): ActiveSessionState {
     isResting: false,
     restSecondsRemaining: 0,
     restTotalSeconds: 0,
+    restEndsAt: null,
     zoneColor: colors.accent.gold,
     startedAt: new Date(),
   };
@@ -53,6 +58,10 @@ function defaultState(sessionId: string): ActiveSessionState {
 export function SessionProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [activeSession, setActiveSession] = useState<ActiveSessionState | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Tracks the last whole-second value we played a beep for, to fire
+  // each countdown sound exactly once.
+  const lastBeepSecondRef = useRef<number | null>(null);
+  const endPlayedRef = useRef<boolean>(false);
 
   const clearTimer = useCallback((): void => {
     if (intervalRef.current) {
@@ -62,25 +71,51 @@ export function SessionProvider({ children }: { children: React.ReactNode }): Re
   }, []);
 
   const isResting = activeSession?.isResting === true;
+  const restEndsAt = activeSession?.restEndsAt ?? null;
+
+  // Wall-clock timer: derive remaining seconds from restEndsAt so the
+  // countdown stays accurate across background/foreground transitions.
+  const tick = useCallback((): void => {
+    setActiveSession((s) => {
+      if (!s || !s.isResting || s.restEndsAt === null) return s;
+      const remainingMs = s.restEndsAt - Date.now();
+      const remaining = Math.max(0, Math.ceil(remainingMs / 1000));
+
+      if (remaining <= 3 && remaining > 0 && lastBeepSecondRef.current !== remaining) {
+        lastBeepSecondRef.current = remaining;
+        void playBeep();
+      }
+      if (remaining <= 0) {
+        if (!endPlayedRef.current) {
+          endPlayedRef.current = true;
+          void playRestComplete();
+        }
+        return { ...s, isResting: false, restSecondsRemaining: 0, restEndsAt: null };
+      }
+      if (remaining === s.restSecondsRemaining) return s;
+      return { ...s, restSecondsRemaining: remaining };
+    });
+  }, []);
 
   useEffect(() => {
-    if (!isResting) {
+    if (!isResting || restEndsAt === null) {
       clearTimer();
       return;
     }
-    if (intervalRef.current) return;
-    intervalRef.current = setInterval(() => {
-      setActiveSession((s) => {
-        if (!s || !s.isResting) return s;
-        const next = s.restSecondsRemaining - 1;
-        if (next <= 0) {
-          return { ...s, isResting: false, restSecondsRemaining: 0 };
-        }
-        return { ...s, restSecondsRemaining: next };
-      });
-    }, 1000);
+    lastBeepSecondRef.current = null;
+    endPlayedRef.current = false;
+    tick();
+    intervalRef.current = setInterval(tick, 250);
     return clearTimer;
-  }, [isResting, clearTimer]);
+  }, [isResting, restEndsAt, tick, clearTimer]);
+
+  // Resync immediately when the app returns to the foreground.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') tick();
+    });
+    return () => sub.remove();
+  }, [tick]);
 
   useEffect(() => () => clearTimer(), [clearTimer]);
 
@@ -93,7 +128,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }): Re
 
   const updateSessionProgress = useCallback(
     (update: Partial<ActiveSessionState>): void => {
-      setActiveSession((s) => (s ? { ...s, ...update } : s));
+      setActiveSession((s) => {
+        if (!s) return s;
+        const merged = { ...s, ...update };
+        // Recompute the wall-clock deadline whenever a rest starts,
+        // restarts, or its duration is adjusted.
+        const restTouched =
+          'isResting' in update ||
+          'restSecondsRemaining' in update ||
+          'restTotalSeconds' in update;
+        if (restTouched) {
+          if (merged.isResting && merged.restSecondsRemaining > 0) {
+            merged.restEndsAt = Date.now() + merged.restSecondsRemaining * 1000;
+          } else if (!merged.isResting) {
+            merged.restEndsAt = null;
+          }
+        }
+        return merged;
+      });
     },
     [],
   );

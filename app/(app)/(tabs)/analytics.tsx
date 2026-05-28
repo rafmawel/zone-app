@@ -42,6 +42,7 @@ import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { LockedAnalytics } from '@/components/analytics/LockedAnalytics';
 import { AnalyticsSkeleton } from '@/components/analytics/AnalyticsSkeleton';
+import { CheckinBanner } from '@/components/CheckinBanner';
 import { ProReadinessCard } from '@/components/analytics/ProReadinessCard';
 import { FormFatigueCard } from '@/components/analytics/FormFatigueCard';
 import { ACWRCard } from '@/components/analytics/ACWRCard';
@@ -149,6 +150,9 @@ export default function AnalyticsScreen(): React.ReactElement {
   }
 
   const computed = computeAnalytics(state);
+  const hasCheckinToday = state.checkins.some(
+    (c) => c.date === todayDateString(),
+  );
 
   return (
     <SafeScreen>
@@ -156,6 +160,7 @@ export default function AnalyticsScreen(): React.ReactElement {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+        {!hasCheckinToday ? <CheckinBanner /> : null}
         <ProReadinessCard
           readiness={computed.readiness}
           zoneScore={state.zoneScore}
