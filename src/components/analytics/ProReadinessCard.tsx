@@ -38,6 +38,9 @@ export function ProReadinessCard({
       ]}
     >
       <View style={[styles.leftStrip, { backgroundColor: tint }]} />
+      <ZoneText variant="label" size={13} color={colors.text.primary} style={styles.cardTitle}>
+        Comment tu te sens aujourd’hui
+      </ZoneText>
       <View style={styles.row}>
         <View style={styles.left}>
           <ZoneText
@@ -60,26 +63,26 @@ export function ProReadinessCard({
         <View style={styles.indicators}>
           <Indicator
             icon={<Activity size={14} color={colors.text.muted} />}
-            label="Zone"
+            label="Ton niveau d’énergie"
             value={`${Math.round(zoneScore)}/100`}
             dotColor={colorForScore(zoneScore)}
           />
           <Indicator
             icon={<TrendingUp size={14} color={colors.text.muted} />}
-            label="ACWR"
-            value={`${acwr.toFixed(2)} · ${acwrRiskLabel}`}
+            label="Ton rythme d’entraînement"
+            value={acwrRiskLabel}
             dotColor={colorForACWR(acwr)}
           />
           <Indicator
             icon={<Moon size={14} color={colors.text.muted} />}
-            label="Sommeil"
+            label="Ton sommeil cette semaine"
             value={`${avgSleepHours.toFixed(1)} h`}
             dotColor={colorForSleep(avgSleepHours)}
           />
           <Indicator
             icon={<Brain size={14} color={colors.text.muted} />}
-            label="Forme"
-            value={`${tsb > 0 ? '+' : ''}${tsb.toFixed(0)} · ${tsbLabel}`}
+            label="Ta forme du moment"
+            value={tsbLabel}
             dotColor={colorForTSB(tsb)}
           />
         </View>
@@ -169,6 +172,10 @@ const styles = StyleSheet.create({
   left: {
     width: 120,
     alignItems: 'flex-start',
+  },
+  cardTitle: {
+    letterSpacing: 1,
+    marginBottom: 12,
   },
   scoreText: {
     letterSpacing: 1,
