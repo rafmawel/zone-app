@@ -51,6 +51,10 @@ export interface UserProfile {
   health_data_source: HealthDataSource;
   sessions_organization: SessionsOrganization;
   optimize_global_progression?: boolean;
+  /** Daily check-in reminder, "HH:MM" 24h. */
+  notification_time?: string;
+  /** Whether the daily check-in reminder is enabled. */
+  notifications_enabled?: boolean;
   zone_score: number;
 }
 
