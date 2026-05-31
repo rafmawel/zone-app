@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronRight } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import {
   collection,
   doc,
@@ -14,15 +14,21 @@ import { auth, db } from '@/lib/firebase';
 import {
   createPlannedSession,
   createRunSession,
+  getCompletedRuns,
   getCompletedSessions,
   getExerciseMaxes,
+  getHyroxSessionHistory,
   getHyroxStationAverages,
+  getUpcomingRuns,
+  getUpcomingSessions,
   getUserSchedule,
   setMuscleDeloadActive,
   todayDateString,
   type DailyCheckin,
   type HyroxProfile,
+  type HyroxSessionRecord,
   type MuscleProfile,
+  type RunSession,
   type RunningProfile,
   type ScheduleSport,
   type SessionExercise,
@@ -70,6 +76,93 @@ import { Button } from '@/components/ui/Button';
 interface ZoneBanner {
   border: string;
   message: string;
+}
+
+/** A dated session (completed or planned) used by the weekly calendar. */
+interface CalendarSession {
+  id: string;
+  date: string;
+  sport: ScheduleSport;
+  status: 'completed' | 'planned';
+  sessionType?: string;
+  exerciseCount?: number;
+  durationMin?: number | null;
+  distanceKm?: number | null;
+  rpe?: number | null;
+}
+
+function sessionSport(s: TrainingSession): ScheduleSport {
+  if (s.discipline === 'musculation') return 'musculation';
+  if (s.sport_key === 'running') return 'running';
+  return 'weightlifting';
+}
+
+function buildCalendarSessions(input: {
+  completed: TrainingSession[];
+  runs: RunSession[];
+  hyrox: HyroxSessionRecord[];
+  plannedSessions: TrainingSession[];
+  plannedRuns: RunSession[];
+}): CalendarSession[] {
+  const out: CalendarSession[] = [];
+  for (const s of input.completed) {
+    out.push({
+      id: s.id,
+      date: s.date,
+      sport: sessionSport(s),
+      status: 'completed',
+      sessionType: s.discipline ?? s.sport_key,
+      exerciseCount: (s.planned_exercises ?? []).length,
+      durationMin: s.duration_minutes ?? null,
+      rpe: s.rpe ?? null,
+    });
+  }
+  for (const r of input.runs) {
+    out.push({
+      id: r.id,
+      date: r.date,
+      sport: 'running',
+      status: 'completed',
+      sessionType: r.session_type,
+      durationMin: r.actual_duration_seconds
+        ? Math.round(r.actual_duration_seconds / 60)
+        : r.estimated_duration_min,
+      distanceKm: r.actual_distance_km ?? r.estimated_distance_km,
+    });
+  }
+  for (const h of input.hyrox) {
+    out.push({
+      id: h.id,
+      date: h.date,
+      sport: 'hyrox',
+      status: 'completed',
+      sessionType: h.session_type,
+      durationMin: h.total_time_sec ? Math.round(h.total_time_sec / 60) : null,
+    });
+  }
+  for (const s of input.plannedSessions) {
+    out.push({
+      id: s.id,
+      date: s.date,
+      sport: sessionSport(s),
+      status: 'planned',
+      sessionType: s.discipline ?? s.sport_key,
+      exerciseCount: (s.planned_exercises ?? []).length,
+      durationMin: s.duration_minutes ?? null,
+    });
+  }
+  for (const r of input.plannedRuns) {
+    out.push({
+      id: r.id,
+      date: r.date,
+      sport: 'running',
+      status: 'planned',
+      sessionType: r.session_type,
+      durationMin: r.estimated_duration_min,
+      distanceKm: r.estimated_distance_km,
+    });
+  }
+  return out;
 }
 
 // Projected race km pace (sec/km) by Hyrox level, for race prediction.
@@ -133,6 +226,7 @@ export default function ProgramScreen(): React.ReactElement {
   const [hyroxProfile, setHyroxProfile] = useState<HyroxProfile | null>(null);
   const [hyroxPrediction, setHyroxPrediction] = useState<RacePrediction | null>(null);
   const [schedule, setSchedule] = useState<UserSchedule | null>(null);
+  const [calendarSessions, setCalendarSessions] = useState<CalendarSession[]>([]);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -232,6 +326,30 @@ export default function ProgramScreen(): React.ReactElement {
       unsubH();
     };
   }, []);
+
+  // Load dated sessions (completed + planned) for the multi-week calendar.
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    let cancelled = false;
+    void (async () => {
+      const [completed, runs, hyrox, plannedSessions, plannedRuns] =
+        await Promise.all([
+          getCompletedSessions(user.uid).catch(() => []),
+          getCompletedRuns(user.uid, 60).catch(() => []),
+          getHyroxSessionHistory(user.uid, 60).catch(() => []),
+          getUpcomingSessions(user.uid, 40).catch(() => []),
+          getUpcomingRuns(user.uid, 40).catch(() => []),
+        ]);
+      if (cancelled) return;
+      setCalendarSessions(
+        buildCalendarSessions({ completed, runs, hyrox, plannedSessions, plannedRuns }),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [program, runningProfile, muscleProfile, hyroxProfile, upcoming]);
 
   const onStartRun = async (): Promise<void> => {
     const user = auth.currentUser;
@@ -472,6 +590,7 @@ export default function ProgramScreen(): React.ReactElement {
             muscleProfile={muscleProfile}
             hyroxProfile={hyroxProfile}
             configuredSports={configuredSports}
+            calendarSessions={calendarSessions}
             generatingWeightlifting={generating}
             generatingRun={generatingRun}
             generatingMuscle={generatingMuscle}
@@ -803,6 +922,70 @@ function HyroxCard({
 }
 
 const FR_DAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+const FR_DAY_FULL = [
+  'Lundi',
+  'Mardi',
+  'Mercredi',
+  'Jeudi',
+  'Vendredi',
+  'Samedi',
+  'Dimanche',
+];
+
+/** Number of weeks navigable on each side of the current week. */
+const WEEK_RANGE = 4;
+
+type PillStatus = 'completed' | 'missed' | 'planned';
+
+interface CalPillStatus {
+  sport: ScheduleSport;
+  status: PillStatus;
+  session?: CalendarSession;
+  date: string;
+  dayIdx: number;
+}
+
+function weekMondayDate(weekOffset: number): Date {
+  const now = new Date();
+  const dayIdx = (now.getDay() + 6) % 7;
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  monday.setDate(monday.getDate() - dayIdx + weekOffset * 7);
+  return monday;
+}
+
+function weekDateStrings(weekOffset: number): string[] {
+  const monday = weekMondayDate(weekOffset);
+  const out: string[] = [];
+  for (let i = 0; i < 7; i += 1) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    out.push(todayDateString(d));
+  }
+  return out;
+}
+
+function frenchDayMonth(date: Date): string {
+  try {
+    return new Intl.DateTimeFormat('fr-FR', {
+      day: 'numeric',
+      month: 'long',
+    }).format(date);
+  } catch {
+    return '';
+  }
+}
+
+function statusLabel(status: PillStatus): string {
+  if (status === 'completed') return 'Séance complétée ✓';
+  if (status === 'missed') return 'Séance manquée —';
+  return 'Séance planifiée';
+}
+
+function statusColor(status: PillStatus): string {
+  if (status === 'completed') return colors.success;
+  if (status === 'missed') return colors.text.muted;
+  return colors.accent.gold;
+}
 
 const DAY_KEYS: Weekday[] = [
   'lundi',
@@ -856,6 +1039,7 @@ function MaSemaineSection({
   muscleProfile,
   hyroxProfile,
   configuredSports,
+  calendarSessions,
   generatingWeightlifting,
   generatingRun,
   generatingMuscle,
@@ -868,6 +1052,7 @@ function MaSemaineSection({
   muscleProfile: MuscleProfile | null;
   hyroxProfile: HyroxProfile | null;
   configuredSports: ScheduleSport[];
+  calendarSessions: CalendarSession[];
   generatingWeightlifting: boolean;
   generatingRun: boolean;
   generatingMuscle: boolean;
@@ -906,6 +1091,9 @@ function MaSemaineSection({
     return out;
   }, [schedule, program, runningProfile, muscleProfile, hyroxProfile]);
 
+  const [weekOffset, setWeekOffset] = useState<number>(0);
+  const [preview, setPreview] = useState<CalPillStatus | null>(null);
+
   const todayPills = weekPills[todayIdx] ?? [];
   const notes = compatibilityNotes(todayPills.map((p) => p.sport));
   const busyGen: Record<ScheduleSport, boolean> = {
@@ -914,6 +1102,54 @@ function MaSemaineSection({
     musculation: generatingMuscle,
     hyrox: false,
   };
+
+  // For past/future weeks, overlay actual dated sessions onto the template.
+  const weekItems = useMemo<CalPillStatus[][]>(() => {
+    if (weekOffset === 0) return [];
+    const dates = weekDateStrings(weekOffset);
+    const past = weekOffset < 0;
+    return dates.map((date, i) => {
+      const template = weekPills[i] ?? [];
+      const actuals = calendarSessions.filter((s) => s.date === date);
+      const used = new Set<string>();
+      const pills: CalPillStatus[] = [];
+      for (const t of template) {
+        if (past) {
+          const match = actuals.find(
+            (a) => a.sport === t.sport && a.status === 'completed' && !used.has(a.id),
+          );
+          if (match) {
+            used.add(match.id);
+            pills.push({ sport: t.sport, status: 'completed', session: match, date, dayIdx: i });
+          } else {
+            pills.push({ sport: t.sport, status: 'missed', date, dayIdx: i });
+          }
+        } else {
+          const match = actuals.find(
+            (a) => a.sport === t.sport && a.status === 'planned' && !used.has(a.id),
+          );
+          if (match) used.add(match.id);
+          pills.push({ sport: t.sport, status: 'planned', session: match, date, dayIdx: i });
+        }
+      }
+      // Actual sessions with no matching template slot still appear.
+      for (const a of actuals) {
+        if (used.has(a.id)) continue;
+        if (past && a.status === 'completed') {
+          used.add(a.id);
+          pills.push({ sport: a.sport, status: 'completed', session: a, date, dayIdx: i });
+        } else if (!past && a.status === 'planned') {
+          used.add(a.id);
+          pills.push({ sport: a.sport, status: 'planned', session: a, date, dayIdx: i });
+        }
+      }
+      return pills;
+    });
+  }, [weekOffset, weekPills, calendarSessions]);
+
+  const weekSessionRows = useMemo(() => weekItems.flat(), [weekItems]);
+  const weekLabel = frenchDayMonth(weekMondayDate(weekOffset));
+  const isCurrentWeek = weekOffset === 0;
 
   return (
     <View style={styles.plannerWrap}>
@@ -928,77 +1164,237 @@ function MaSemaineSection({
         ) : null}
       </View>
 
-      <View style={styles.weekRowOuter}>
-        {weekPills.map((pills, idx) => (
-          <TouchableOpacity
-            key={DAY_KEYS[idx]}
-            activeOpacity={0.7}
-            onPress={() => (pills.length > 0 ? onStartSport(pills[0].sport) : onModifyPlanning())}
-            style={styles.dayColumn}
-          >
-            <ZoneText
-              variant="caption"
-              color={idx === todayIdx ? colors.accent.gold : colors.text.muted}
-              style={styles.dayLetter}
-            >
-              {FR_DAYS[idx]}
-            </ZoneText>
-            <View style={styles.pillStack}>
-              {pills.length === 0 ? (
-                <View style={[styles.sessionDot, { backgroundColor: colors.border }]} />
-              ) : (
-                pills.map((p, i) => (
-                  <View
-                    key={i}
-                    style={[styles.calPill, { backgroundColor: sportColor(p.sport as SchedulerSport) }]}
-                  />
-                ))
-              )}
-            </View>
-          </TouchableOpacity>
-        ))}
+      <View style={styles.weekNavRow}>
+        <TouchableOpacity
+          onPress={() => setWeekOffset((w) => Math.max(-WEEK_RANGE, w - 1))}
+          disabled={weekOffset <= -WEEK_RANGE}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={styles.weekNavBtn}
+        >
+          <ChevronLeft
+            size={20}
+            color={weekOffset <= -WEEK_RANGE ? colors.text.muted : colors.accent.gold}
+          />
+        </TouchableOpacity>
+        <ZoneText variant="label" color={colors.text.primary} style={styles.weekNavLabel}>
+          {isCurrentWeek ? 'Cette semaine' : `Semaine du ${weekLabel}`}
+        </ZoneText>
+        <TouchableOpacity
+          onPress={() => setWeekOffset((w) => Math.min(WEEK_RANGE, w + 1))}
+          disabled={weekOffset >= WEEK_RANGE}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={styles.weekNavBtn}
+        >
+          <ChevronRight
+            size={20}
+            color={weekOffset >= WEEK_RANGE ? colors.text.muted : colors.accent.gold}
+          />
+        </TouchableOpacity>
       </View>
 
-      <TouchableOpacity onPress={onModifyPlanning} activeOpacity={0.7} style={styles.modifyPlanning}>
-        <ZoneText variant="caption" color={colors.accent.gold}>
-          Modifier mon planning
-        </ZoneText>
-      </TouchableOpacity>
-
-      <ZoneText variant="caption" color={colors.text.muted} style={styles.todayEyebrow}>
-        AUJOURD’HUI
-      </ZoneText>
-      {todayPills.length === 0 ? (
-        <View style={styles.todayRest}>
-          <ZoneText variant="caption" color={colors.text.muted}>
-            Repos aujourd’hui. Récupération active possible.
-          </ZoneText>
+      {isCurrentWeek ? (
+        <View style={styles.weekRowOuter}>
+          {weekPills.map((pills, idx) => (
+            <TouchableOpacity
+              key={DAY_KEYS[idx]}
+              activeOpacity={0.7}
+              onPress={() => (pills.length > 0 ? onStartSport(pills[0].sport) : onModifyPlanning())}
+              style={styles.dayColumn}
+            >
+              <ZoneText
+                variant="caption"
+                color={idx === todayIdx ? colors.accent.gold : colors.text.muted}
+                style={styles.dayLetter}
+              >
+                {FR_DAYS[idx]}
+              </ZoneText>
+              <View style={styles.pillStack}>
+                {pills.length === 0 ? (
+                  <View style={[styles.sessionDot, { backgroundColor: colors.border }]} />
+                ) : (
+                  pills.map((p, i) => (
+                    <View
+                      key={i}
+                      style={[styles.calPill, { backgroundColor: sportColor(p.sport as SchedulerSport) }]}
+                    />
+                  ))
+                )}
+              </View>
+            </TouchableOpacity>
+          ))}
         </View>
       ) : (
-        <>
-          {todayPills.map((p, i) => (
-            <View key={i} style={[styles.todayCard, { borderLeftColor: sportColor(p.sport as SchedulerSport) }]}>
-              <ZoneText variant="caption" color={colors.text.muted} style={styles.todaySlot}>
-                {SLOT_LABEL[p.slot]} · {SPORT_LABEL[p.sport]}
+        <View style={styles.weekRowOuter}>
+          {weekItems.map((pills, idx) => (
+            <View key={DAY_KEYS[idx]} style={styles.dayColumn}>
+              <ZoneText variant="caption" color={colors.text.muted} style={styles.dayLetter}>
+                {FR_DAYS[idx]}
               </ZoneText>
-              <View style={styles.todayCta}>
-                <Button
-                  title={busyGen[p.sport] ? 'Génération…' : 'Commencer'}
-                  disabled={busyGen[p.sport]}
-                  onPress={() => onStartSport(p.sport)}
-                />
+              <View style={styles.pillStack}>
+                {pills.length === 0 ? (
+                  <View style={[styles.sessionDot, { backgroundColor: colors.border }]} />
+                ) : (
+                  pills.map((p, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        styles.calPill,
+                        {
+                          backgroundColor:
+                            p.status === 'missed'
+                              ? colors.border
+                              : sportColor(p.sport as SchedulerSport),
+                          opacity: p.status === 'missed' ? 0.5 : 1,
+                        },
+                      ]}
+                    />
+                  ))
+                )}
               </View>
             </View>
           ))}
-          {notes.map((n, i) => (
-            <View key={`note-${i}`} style={styles.compatNote}>
-              <ZoneText variant="caption" color={colors.text.secondary} style={styles.compatNoteText}>
-                {n}
+        </View>
+      )}
+
+      {isCurrentWeek ? (
+        <>
+          <TouchableOpacity onPress={onModifyPlanning} activeOpacity={0.7} style={styles.modifyPlanning}>
+            <ZoneText variant="caption" color={colors.accent.gold}>
+              Modifier mon planning
+            </ZoneText>
+          </TouchableOpacity>
+
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.todayEyebrow}>
+            AUJOURD’HUI
+          </ZoneText>
+          {todayPills.length === 0 ? (
+            <View style={styles.todayRest}>
+              <ZoneText variant="caption" color={colors.text.muted}>
+                Repos aujourd’hui. Récupération active possible.
               </ZoneText>
             </View>
-          ))}
+          ) : (
+            <>
+              {todayPills.map((p, i) => (
+                <View key={i} style={[styles.todayCard, { borderLeftColor: sportColor(p.sport as SchedulerSport) }]}>
+                  <ZoneText variant="caption" color={colors.text.muted} style={styles.todaySlot}>
+                    {SLOT_LABEL[p.slot]} · {SPORT_LABEL[p.sport]}
+                  </ZoneText>
+                  <View style={styles.todayCta}>
+                    <Button
+                      title={busyGen[p.sport] ? 'Génération…' : 'Commencer'}
+                      disabled={busyGen[p.sport]}
+                      onPress={() => onStartSport(p.sport)}
+                    />
+                  </View>
+                </View>
+              ))}
+              {notes.map((n, i) => (
+                <View key={`note-${i}`} style={styles.compatNote}>
+                  <ZoneText variant="caption" color={colors.text.secondary} style={styles.compatNoteText}>
+                    {n}
+                  </ZoneText>
+                </View>
+              ))}
+            </>
+          )}
         </>
+      ) : (
+        <View style={styles.weekListWrap}>
+          {weekSessionRows.length === 0 ? (
+            <View style={styles.todayRest}>
+              <ZoneText variant="caption" color={colors.text.muted}>
+                Aucune séance cette semaine.
+              </ZoneText>
+            </View>
+          ) : (
+            weekSessionRows.map((p, i) => (
+              <TouchableOpacity
+                key={`${p.date}-${i}`}
+                activeOpacity={0.8}
+                onPress={() => setPreview(p)}
+                style={[
+                  styles.weekCard,
+                  {
+                    borderLeftColor:
+                      p.status === 'missed' ? colors.border : sportColor(p.sport as SchedulerSport),
+                  },
+                ]}
+              >
+                <View style={styles.weekCardMain}>
+                  <ZoneText variant="caption" color={colors.text.primary} style={styles.todaySlot}>
+                    {FR_DAY_FULL[p.dayIdx]} · {SPORT_LABEL[p.sport]}
+                  </ZoneText>
+                  <ZoneText variant="caption" color={statusColor(p.status)}>
+                    {statusLabel(p.status)}
+                  </ZoneText>
+                </View>
+                <ChevronRight size={16} color={colors.text.muted} />
+              </TouchableOpacity>
+            ))
+          )}
+        </View>
       )}
+
+      <Modal
+        visible={preview !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPreview(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            {preview ? (
+              <>
+                <ZoneText variant="heading" style={styles.modalTitle}>
+                  {statusLabel(preview.status)}
+                </ZoneText>
+                <ZoneText variant="label" color={colors.accent.gold} style={styles.modalSport}>
+                  {SPORT_LABEL[preview.sport]}
+                </ZoneText>
+                {preview.session?.sessionType ? (
+                  <ModalRow label="Type" value={preview.session.sessionType} />
+                ) : null}
+                {preview.session?.exerciseCount ? (
+                  <ModalRow label="Exercices" value={`${preview.session.exerciseCount}`} />
+                ) : null}
+                {preview.session?.durationMin ? (
+                  <ModalRow label="Durée estimée" value={`${preview.session.durationMin} min`} />
+                ) : null}
+                {preview.session?.distanceKm ? (
+                  <ModalRow label="Distance" value={`${preview.session.distanceKm.toFixed(1)} km`} />
+                ) : null}
+                {preview.session?.rpe ? (
+                  <ModalRow label="RPE" value={`${preview.session.rpe}`} />
+                ) : null}
+                <ZoneText variant="caption" color={colors.text.muted} style={styles.modalDate}>
+                  {preview.status === 'completed'
+                    ? `Séance réalisée le ${formatSessionDate(preview.date)}`
+                    : preview.status === 'planned'
+                      ? `Cette séance aura lieu le ${formatSessionDate(preview.date)}`
+                      : `Séance prévue le ${formatSessionDate(preview.date)}`}
+                </ZoneText>
+                <View style={styles.modalCta}>
+                  <Button title="Fermer" variant="secondary" onPress={() => setPreview(null)} />
+                </View>
+              </>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+function ModalRow({ label, value }: { label: string; value: string }): React.ReactElement {
+  return (
+    <View style={styles.modalRow}>
+      <ZoneText variant="caption" color={colors.text.muted}>
+        {label}
+      </ZoneText>
+      <ZoneText variant="caption" color={colors.text.primary}>
+        {value}
+      </ZoneText>
     </View>
   );
 }
@@ -1184,4 +1580,58 @@ const styles = StyleSheet.create({
   },
   sessionMain: { flex: 1 },
   sessionTitle: { color: colors.text.primary, fontSize: 14 },
+  weekNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  weekNavBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekNavLabel: { fontSize: 14, letterSpacing: 0.5, textTransform: 'capitalize' },
+  weekListWrap: { marginTop: 14 },
+  weekCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.bg.elevated,
+    borderLeftWidth: 3,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  weekCardMain: { flex: 1 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: colors.bg.elevated,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 20,
+  },
+  modalTitle: { fontSize: 22, letterSpacing: 0.5, color: colors.text.primary },
+  modalSport: { marginTop: 2, marginBottom: 10 },
+  modalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+    borderTopWidth: 0.5,
+    borderTopColor: colors.border,
+  },
+  modalDate: { marginTop: 12, lineHeight: 16 },
+  modalCta: { marginTop: 16 },
 });

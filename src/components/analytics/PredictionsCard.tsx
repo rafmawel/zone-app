@@ -7,7 +7,8 @@ import { Card } from '@/components/ui/Card';
 import type { WorkloadSport } from '@/lib/pro';
 import type { DailyPerformanceMetrics } from '@/lib/pro';
 import type { ExerciseMax, RunningProfile } from '@/lib/firestore';
-import { calculateVDOTPaces, formatPace as formatRunPace, raceLabel } from '@/lib/runningEngine';
+import { calculateVDOTPaces, raceLabel } from '@/lib/runningEngine';
+import { getExerciseById } from '@/data/exercises';
 
 export interface PredictionsCardProps {
   activeSports: WorkloadSport[];
@@ -27,10 +28,10 @@ export function PredictionsCard({
   return (
     <Card style={styles.card}>
       <ZoneText variant="heading" size={22} color={colors.text.primary} style={styles.title}>
-        TES PROJECTIONS
+        TES OBJECTIFS DANS 8 SEMAINES
       </ZoneText>
       <ZoneText variant="caption" color={colors.text.muted} style={styles.subtitle}>
-        Basé sur ton CTL actuel et ta progression
+        Si tu maintiens ce rythme...
       </ZoneText>
 
       {activeSports.includes('running') ? (
@@ -45,7 +46,7 @@ export function PredictionsCard({
         <View style={styles.windowHeader}>
           <Calendar size={16} color={colors.accent.gold} />
           <ZoneText variant="label" color={colors.accent.gold}>
-            Fenêtre de forme optimale
+            Ta prochaine fenêtre de forme
           </ZoneText>
         </View>
         <ZoneText variant="body" size={13} color={colors.text.primary} style={styles.windowBody}>
@@ -82,22 +83,27 @@ function RunningPrediction({
     improvement = `-${formatHMS(currentSec - projSec)}`;
   }
 
+  if (currentVDOT <= 0) {
+    return (
+      <View style={styles.predictionCard}>
+        <ZoneText variant="body" size={13} color={colors.text.primary}>
+          Renseigne ton allure de référence pour activer ta projection course.
+        </ZoneText>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.predictionCard}>
-      <ZoneText variant="caption" color={colors.text.muted}>
-        Dans 8 semaines · Course
-      </ZoneText>
-      <ZoneText variant="heading" size={28} color={colors.accent.gold}>
-        {projectedTime}
-      </ZoneText>
-      <ZoneText variant="caption" color={colors.text.muted}>
-        {raceLabel(targetDistance)} · actuel {currentTime}
+      <ZoneText variant="body" size={14} color={colors.text.primary} style={styles.predSentence}>
+        Dans 8 semaines, tu pourrais courir un {raceLabel(targetDistance)} en{' '}
+        <ZoneText variant="body" size={14} color={colors.accent.gold}>
+          {projectedTime}
+        </ZoneText>
+        .
       </ZoneText>
       <ZoneText variant="caption" color={colors.success}>
-        Amélioration estimée : {improvement}
-      </ZoneText>
-      <ZoneText variant="caption" color={colors.text.muted} style={styles.predDetail}>
-        Basé sur VDOT progression de +1,2/mois
+        Soit {improvement} de mieux qu’aujourd’hui ({currentTime}).
       </ZoneText>
     </View>
   );
@@ -127,20 +133,19 @@ function WeightliftingPrediction({
   }
   const projected = Math.round(mainLift.estimated_1rm + 5);
   const delta = projected - Math.round(mainLift.estimated_1rm);
+  const liftName = (getExerciseById(mainLift.exercise_id)?.name ?? mainLift.exercise_id).toLowerCase();
 
   return (
     <View style={styles.predictionCard}>
-      <ZoneText variant="caption" color={colors.text.muted}>
-        Dans 4 semaines · {mainLift.exercise_id}
-      </ZoneText>
-      <ZoneText variant="heading" size={28} color={colors.accent.gold}>
-        {projected} kg
+      <ZoneText variant="body" size={14} color={colors.text.primary} style={styles.predSentence}>
+        Dans 4 semaines, ton {liftName} pourrait atteindre{' '}
+        <ZoneText variant="body" size={14} color={colors.accent.gold}>
+          {projected} kg
+        </ZoneText>
+        .
       </ZoneText>
       <ZoneText variant="caption" color={colors.success}>
-        +{delta} kg estimé
-      </ZoneText>
-      <ZoneText variant="caption" color={colors.text.muted} style={styles.predDetail}>
-        Basé sur ta vélocité de progression actuelle
+        +{delta} kg estimé.
       </ZoneText>
     </View>
   );
@@ -153,7 +158,7 @@ function MusculationPrediction(): React.ReactElement {
         Pic de volume dans 3 semaines · Musculation
       </ZoneText>
       <ZoneText variant="body" color={colors.text.primary}>
-        Tu atteindras le MAV sur les principaux groupes musculaires.
+        Tu atteindras un volume d’entraînement optimal sur tes principaux groupes musculaires.
       </ZoneText>
       <ZoneText variant="caption" color={colors.text.muted} style={styles.predDetail}>
         Premiers changements visibles attendus à partir de la semaine prochaine.
@@ -171,22 +176,20 @@ function findUpcomingPeakWindow(metrics: DailyPerformanceMetrics[]): PeakWindow 
   if (metrics.length === 0) {
     return {
       description: 'Continue à enregistrer tes séances pour activer la projection.',
-      detail: 'La fenêtre de forme apparaît une fois ton CTL stabilisé.',
+      detail: 'Ta fenêtre de forme apparaît après quelques semaines de données.',
     };
   }
   const last = metrics[metrics.length - 1];
   if (last.tsb >= 5 && last.tsb <= 25) {
     return {
-      description: 'Tu es dans la fenêtre maintenant.',
-      detail: `TSB actuel : +${Math.round(last.tsb)}. Profite de cette fraîcheur.`,
+      description: 'Ton corps est au sommet en ce moment.',
+      detail: 'C’est le meilleur moment pour te dépasser.',
     };
   }
   const daysAway = Math.max(1, Math.min(28, Math.round((10 - last.tsb) / 1.3)));
-  const targetDate = new Date();
-  targetDate.setDate(targetDate.getDate() + daysAway);
   return {
-    description: `Dans environ ${daysAway} jours.`,
-    detail: `TSB projeté : +${Math.round(Math.max(5, 10))}. Date estimée : ${targetDate.toLocaleDateString('fr-FR')}.`,
+    description: `Dans ${daysAway} jours, ton corps sera au sommet.`,
+    detail: 'C’est le meilleur moment pour te dépasser.',
   };
 }
 
@@ -234,6 +237,10 @@ const styles = StyleSheet.create({
   },
   predDetail: {
     marginTop: 6,
+  },
+  predSentence: {
+    lineHeight: 20,
+    marginBottom: 4,
   },
   window: {
     marginTop: 16,
