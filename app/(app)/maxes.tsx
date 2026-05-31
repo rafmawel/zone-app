@@ -116,6 +116,8 @@ export default function MaxesScreen(): React.ReactElement {
     () => estimateOneRepMax(draft.weight, draft.reps),
     [draft.weight, draft.reps],
   );
+  // The raw estimate can land on any value; suggest it on the 2.5kg grid.
+  const oneRmSuggested = useMemo(() => roundTo2_5(oneRm), [oneRm]);
   const baseline = LEVEL_BASELINES[levelKey][lift];
 
   const setDraft = (patch: Partial<DraftMax>): void => {
@@ -309,7 +311,7 @@ export default function MaxesScreen(): React.ReactElement {
                 1RM estimé
               </ZoneText>
               <ZoneText variant="heading" style={styles.estimateValue}>
-                {oneRm} kg
+                {formatPickerValue(oneRmSuggested)} kg
               </ZoneText>
             </View>
 
@@ -319,7 +321,7 @@ export default function MaxesScreen(): React.ReactElement {
                   pathname: '/(app)/strength-test',
                   params: {
                     exerciseId: KEY_LIFTS[stepIdx],
-                    estimatedMax: String(oneRm),
+                    estimatedMax: String(oneRmSuggested),
                   },
                 })
               }
