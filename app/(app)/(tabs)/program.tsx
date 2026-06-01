@@ -43,6 +43,7 @@ import {
   generateWeeklySession,
   previewWeightliftingSession,
   projectProgram,
+  rirIntensityDelta,
   type SessionExercisePreview,
 } from '@/lib/programEngine';
 import { calculateACWR, type WorkloadDataPoint, type WorkloadSport } from '@/lib/pro';
@@ -98,6 +99,22 @@ function sessionSport(s: TrainingSession): ScheduleSport {
   if (s.discipline === 'musculation') return 'musculation';
   if (s.sport_key === 'running') return 'running';
   return 'weightlifting';
+}
+
+// Reps-in-reserve (RIR = 10 - session RPE) for the last two completed
+// weightlifting sessions, oldest first, used to autoregulate intensity.
+function computeRecentRir(completed: TrainingSession[]): number[] {
+  return completed
+    .filter(
+      (s) =>
+        s.status === 'completed' &&
+        s.sport_key === 'weightlifting' &&
+        s.discipline !== 'musculation' &&
+        typeof s.rpe === 'number',
+    )
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-2)
+    .map((s) => Math.max(0, 10 - (s.rpe as number)));
 }
 
 const VALID_WORKLOAD_SPORTS: ReadonlySet<WorkloadSport> = new Set([
@@ -254,6 +271,7 @@ export default function ProgramScreen(): React.ReactElement {
   const [schedule, setSchedule] = useState<UserSchedule | null>(null);
   const [calendarSessions, setCalendarSessions] = useState<CalendarSession[]>([]);
   const [maxes, setMaxes] = useState<ExerciseMax[]>([]);
+  const [recentRir, setRecentRir] = useState<number[]>([]);
   const [acwrHigh, setAcwrHigh] = useState<boolean>(false);
   const [addSportVisible, setAddSportVisible] = useState<boolean>(false);
   const [startingBonus, setStartingBonus] = useState<boolean>(false);
@@ -378,6 +396,7 @@ export default function ProgramScreen(): React.ReactElement {
         buildCalendarSessions({ completed, runs, hyrox, plannedSessions, plannedRuns }),
       );
       setMaxes(exMaxes);
+      setRecentRir(computeRecentRir(completed));
       const acwr = calculateACWR(toWorkloadPoints(workload), todayDateString());
       setAcwrHigh(acwr.riskLevel === 'danger');
     })();
@@ -446,19 +465,27 @@ export default function ProgramScreen(): React.ReactElement {
     }
     setGenerating(true);
     try {
-      const maxes = await getExerciseMaxes(user.uid);
+      const sessionMaxes = await getExerciseMaxes(user.uid);
       const generated = generateWeeklySession({
         program,
-        maxes,
+        maxes: sessionMaxes,
         dayOfWeek: program.current_day,
         zoneScore: score,
+        recentRir,
       });
+      const rirDelta = rirIntensityDelta(recentRir);
+      const autoNote =
+        rirDelta > 0
+          ? 'Tes 2 dernières séances étaient faciles (RIR élevé) : intensité augmentée de 2,5%. '
+          : rirDelta < 0
+            ? 'Tes 2 dernières séances étaient très dures (RIR 0) : intensité réduite. '
+            : '';
       const id = await createPlannedSession(user.uid, {
         date: todayDateString(),
         sport_key: program.sport_key,
         planned_exercises: generated.exercises,
         zone_score_at_start: score,
-        zone_message: generated.message,
+        zone_message: autoNote + generated.message,
       });
       router.push(`/(app)/session/${id}`);
     } catch {
