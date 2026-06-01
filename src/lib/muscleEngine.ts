@@ -319,6 +319,22 @@ export interface GenerateMuscleSessionParams {
   goal: MuscleGoal;
   weakPoints: MuscleGroup[];
   zoneScore: number | null;
+  /** Recent musculation RIR (10 - RPE), oldest first, for volume autoreg. */
+  recentRir?: number[];
+}
+
+/**
+ * Volume autoregulation from recent musculation RIR. Two easy sessions add a
+ * set per exercise; two failure-grade sessions (RIR 0) remove one.
+ *
+ * @param recentRir recent RIR values, oldest first
+ */
+export function muscleVolumeDelta(recentRir?: number[]): number {
+  if (!recentRir || recentRir.length < 2) return 0;
+  const last2 = recentRir.slice(-2);
+  if (last2.every((r) => r >= 3)) return 1;
+  if (last2.every((r) => r === 0)) return -1;
+  return 0;
 }
 
 export function generateMuscleSession(params: GenerateMuscleSessionParams): PlannedMuscleSession {
@@ -326,6 +342,7 @@ export function generateMuscleSession(params: GenerateMuscleSessionParams): Plan
   const templates = TEMPLATES[split];
   const tpl = templates[(params.dayOfWeek - 1) % templates.length];
   const adaptation = adaptMuscleSessionToZone(params.zoneScore);
+  const volumeDelta = muscleVolumeDelta(params.recentRir);
 
   let working = tpl.exercises;
   if (params.zoneScore !== null && params.zoneScore <= 30) {
@@ -338,7 +355,7 @@ export function generateMuscleSession(params: GenerateMuscleSessionParams): Plan
       : params.goal === 'fitness'
         ? 'endurance'
         : ex.range;
-    const adjustedSets = Math.max(1, ex.sets + adaptation.setsDelta);
+    const adjustedSets = Math.max(1, ex.sets + adaptation.setsDelta + volumeDelta);
     const repsTxt = `${REP_RANGES[range].min}-${REP_RANGES[range].max}`;
     const sets: PlannedMuscleSet[] = [];
     for (let i = 1; i <= adjustedSets; i += 1) {
@@ -363,11 +380,17 @@ export function generateMuscleSession(params: GenerateMuscleSessionParams): Plan
 
   const totalSets = exercises.reduce((acc, e) => acc + e.sets.length, 0);
   const estDur = Math.round(totalSets * 3.2);
+  const volumeNote =
+    volumeDelta > 0
+      ? ' Tes 2 dernières séances étaient faciles : +1 série par exercice.'
+      : volumeDelta < 0
+        ? ' Tes 2 dernières séances étaient à l’échec : volume réduit d’une série.'
+        : '';
   return {
     block_label: tpl.label,
     split_day: tpl.label,
     exercises,
-    message: adaptation.message,
+    message: adaptation.message + volumeNote,
     estimated_duration_min: estDur,
   };
 }

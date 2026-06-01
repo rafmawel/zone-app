@@ -173,6 +173,22 @@ export interface BuildSessionParams {
   level: 'beginner' | 'intermediate' | 'advanced';
   block: ProgramBlockRunning;
   week: WeekIndexRunning;
+  /** Autoregulation multiplier on target paces (<1 faster, >1 slower). */
+  paceFactor?: number;
+}
+
+/**
+ * Pace autoregulation from recent run RIR (10 - session RPE), oldest first.
+ * Two easy runs nudge paces 1% faster; two maxed-out runs ease them 1.5%.
+ *
+ * @param recentRir recent run RIR values, oldest first
+ */
+export function runningPaceFactor(recentRir: number[]): number {
+  if (recentRir.length < 2) return 1;
+  const last2 = recentRir.slice(-2);
+  if (last2.every((r) => r >= 3)) return 0.99;
+  if (last2.every((r) => r === 0)) return 1.015;
+  return 1;
 }
 
 function steady(label: string, minutes: number, pace: number | null): RunningSessionStep {
@@ -275,7 +291,7 @@ function distanceOfSteps(steps: RunningSessionStep[]): number {
 }
 
 export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan {
-  const { type, paces, level, block } = params;
+  const { type, paces, level } = params;
   let steps: RunningSessionStep[] = [];
   let message = '';
 
@@ -338,9 +354,23 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
     }
   }
 
-  const adjustedSteps = block === 1 && (type === 'IV' || type === 'RV')
-    ? steps
-    : steps;
+  const factor = params.paceFactor ?? 1;
+  const adjustedSteps =
+    factor === 1
+      ? steps
+      : steps.map((s) => ({
+          ...s,
+          targetPaceSecPerKm:
+            s.targetPaceSecPerKm != null
+              ? Math.round(s.targetPaceSecPerKm * factor)
+              : null,
+        }));
+
+  if (factor < 1) {
+    message += ' Tes 2 dernières sorties étaient faciles : allures légèrement accélérées.';
+  } else if (factor > 1) {
+    message += ' Tes 2 dernières sorties étaient très dures : allures assouplies pour récupérer.';
+  }
 
   const dur = durationOfSteps(adjustedSteps);
   const dist = distanceOfSteps(adjustedSteps);

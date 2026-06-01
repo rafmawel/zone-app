@@ -61,6 +61,7 @@ import {
   calculateVDOTPaces,
   formatPace,
   getWeeklyDistribution,
+  runningPaceFactor,
   sessionName,
   type ProgramBlockRunning,
   type RunningSessionType,
@@ -115,6 +116,27 @@ function computeRecentRir(completed: TrainingSession[]): number[] {
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(-2)
     .map((s) => Math.max(0, 10 - (s.rpe as number)));
+}
+
+function computeMuscleRir(completed: TrainingSession[]): number[] {
+  return completed
+    .filter(
+      (s) =>
+        s.status === 'completed' &&
+        s.discipline === 'musculation' &&
+        typeof s.rpe === 'number',
+    )
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-2)
+    .map((s) => Math.max(0, 10 - (s.rpe as number)));
+}
+
+function computeRunRir(runs: RunSession[]): number[] {
+  return runs
+    .filter((r) => r.status === 'completed' && typeof r.rpe === 'number')
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-2)
+    .map((r) => Math.max(0, 10 - (r.rpe as number)));
 }
 
 const VALID_WORKLOAD_SPORTS: ReadonlySet<WorkloadSport> = new Set([
@@ -272,6 +294,8 @@ export default function ProgramScreen(): React.ReactElement {
   const [calendarSessions, setCalendarSessions] = useState<CalendarSession[]>([]);
   const [maxes, setMaxes] = useState<ExerciseMax[]>([]);
   const [recentRir, setRecentRir] = useState<number[]>([]);
+  const [recentMuscleRir, setRecentMuscleRir] = useState<number[]>([]);
+  const [recentRunRir, setRecentRunRir] = useState<number[]>([]);
   const [acwrHigh, setAcwrHigh] = useState<boolean>(false);
   const [addSportVisible, setAddSportVisible] = useState<boolean>(false);
   const [startingBonus, setStartingBonus] = useState<boolean>(false);
@@ -397,6 +421,8 @@ export default function ProgramScreen(): React.ReactElement {
       );
       setMaxes(exMaxes);
       setRecentRir(computeRecentRir(completed));
+      setRecentMuscleRir(computeMuscleRir(completed));
+      setRecentRunRir(computeRunRir(runs));
       const acwr = calculateACWR(toWorkloadPoints(workload), todayDateString());
       setAcwrHigh(acwr.riskLevel === 'danger');
     })();
@@ -426,7 +452,14 @@ export default function ProgramScreen(): React.ReactElement {
           : runningProfile.vdot < 55
             ? 'intermediate'
             : 'advanced';
-      const plan = buildSessionPlan({ type, paces, level, block, week });
+      const plan = buildSessionPlan({
+        type,
+        paces,
+        level,
+        block,
+        week,
+        paceFactor: runningPaceFactor(recentRunRir),
+      });
       const id = await createRunSession(user.uid, {
         date: todayDateString(),
         session_type: plan.type,
@@ -531,6 +564,7 @@ export default function ProgramScreen(): React.ReactElement {
         goal: muscleProfile.goal,
         weakPoints: (muscleProfile.weak_points ?? []) as MuscleGroup[],
         zoneScore: score,
+        recentRir: recentMuscleRir,
       });
       const deloadActive = muscleProfile.deload_active === true;
       const planned: SessionExercise[] = generated.exercises.map((ex) => ({
