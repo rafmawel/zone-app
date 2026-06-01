@@ -652,8 +652,9 @@ export function previewWeightliftingSession(
   program: UserProgram,
   maxes: ExerciseMax[],
   dayOfWeek: number,
+  recentRir: number[] = [],
 ): WeightliftingSessionPreview {
-  const built = buildWeightliftingSession({ program, maxes, dayOfWeek, zoneScore: null });
+  const built = buildWeightliftingSession({ program, maxes, dayOfWeek, zoneScore: null, recentRir });
   return {
     title: built.title,
     block: built.block,

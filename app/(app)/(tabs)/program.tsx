@@ -633,7 +633,14 @@ export default function ProgramScreen(): React.ReactElement {
               ? 'intermediate'
               : 'advanced';
         const type: RunningSessionType = option === 'recovery' ? 'RA' : 'EF';
-        const plan = buildSessionPlan({ type, paces, level, block: 1, week: 1 });
+        const plan = buildSessionPlan({
+          type,
+          paces,
+          level,
+          block: 1,
+          week: 1,
+          paceFactor: runningPaceFactor(recentRunRir),
+        });
         const id = await createRunSession(user.uid, {
           date: todayDateString(),
           session_type: plan.type,
@@ -660,6 +667,7 @@ export default function ProgramScreen(): React.ReactElement {
           maxes,
           dayOfWeek: program.current_day,
           zoneScore: 60,
+          recentRir,
         });
         const id = await createPlannedSession(user.uid, {
           date: todayDateString(),
@@ -680,6 +688,7 @@ export default function ProgramScreen(): React.ReactElement {
           goal: muscleProfile.goal,
           weakPoints: (muscleProfile.weak_points ?? []) as MuscleGroup[],
           zoneScore: 30,
+          recentRir: recentMuscleRir,
         });
         const planned: SessionExercise[] = generated.exercises.map((ex) => ({
           exercise_id: ex.exercise_id,
@@ -754,6 +763,9 @@ export default function ProgramScreen(): React.ReactElement {
             configuredSports={configuredSports}
             calendarSessions={calendarSessions}
             maxes={maxes}
+            recentRir={recentRir}
+            recentMuscleRir={recentMuscleRir}
+            recentRunRir={recentRunRir}
             acwrHigh={acwrHigh}
             bonusAvailable={bonusAvailable}
             startingBonus={startingBonus}
@@ -1094,6 +1106,9 @@ function MaSemaineSection({
   configuredSports,
   calendarSessions,
   maxes,
+  recentRir,
+  recentMuscleRir,
+  recentRunRir,
   acwrHigh,
   bonusAvailable,
   startingBonus,
@@ -1112,6 +1127,9 @@ function MaSemaineSection({
   configuredSports: ScheduleSport[];
   calendarSessions: CalendarSession[];
   maxes: ExerciseMax[];
+  recentRir: number[];
+  recentMuscleRir: number[];
+  recentRunRir: number[];
   acwrHigh: boolean;
   bonusAvailable: boolean;
   startingBonus: boolean;
@@ -1193,7 +1211,7 @@ function MaSemaineSection({
     }
     if (pill.sport === 'weightlifting' && program) {
       const projected = projectProgram(program, Math.max(0, weekOffset));
-      const wl = previewWeightliftingSession(projected, maxes, pill.dayIdx + 1);
+      const wl = previewWeightliftingSession(projected, maxes, pill.dayIdx + 1, recentRir);
       return { title: wl.title, lines: wl.exercises.map(formatWlLine), durationMin: wl.durationMin };
     }
     if (pill.sport === 'running' && runningProfile) {
@@ -1207,7 +1225,14 @@ function MaSemaineSection({
       const dist = getWeeklyDistribution(runningProfile.sessions_per_week, 1, 1);
       const item = dist.items.find((i) => i.dayIndex === pill.dayIdx);
       const type: RunningSessionType = item && item.type !== 'REST' ? item.type : 'EF';
-      const plan = buildSessionPlan({ type, paces, level, block: 1, week: 1 });
+      const plan = buildSessionPlan({
+        type,
+        paces,
+        level,
+        block: 1,
+        week: 1,
+        paceFactor: runningPaceFactor(recentRunRir),
+      });
       const mainPace = plan.steps.find((s) => s.targetPaceSecPerKm)?.targetPaceSecPerKm ?? null;
       const lines = [
         `${plan.estimatedDistanceKm} km à allure ${type}`,
@@ -1222,6 +1247,7 @@ function MaSemaineSection({
         goal: muscleProfile.goal,
         weakPoints: (muscleProfile.weak_points ?? []) as MuscleGroup[],
         zoneScore: null,
+        recentRir: recentMuscleRir,
       });
       const lines = gen.exercises.slice(0, 3).map((ex) => {
         const name = getExerciseById(ex.exercise_id)?.name ?? ex.exercise_id;
