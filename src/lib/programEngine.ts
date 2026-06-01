@@ -52,6 +52,39 @@ export function getBlockName(block: ProgramBlock): string {
   return 'RÉALISATION';
 }
 
+export type WeightliftingLevelTier = 'beginner' | 'intermediate' | 'advanced';
+
+/** Map the French onboarding level onto a coarse training tier. */
+export function levelTier(level: string): WeightliftingLevelTier {
+  if (level === 'avance' || level === 'confirme') return 'advanced';
+  if (level === 'intermediaire') return 'intermediate';
+  return 'beginner';
+}
+
+// Working sets per exercise, scaled by block and level. Volume peaks in
+// block 2 (intensification) and tapers in block 3 (realisation).
+const SETS_BY_BLOCK_LEVEL: Record<ProgramBlock, Record<WeightliftingLevelTier, number>> = {
+  1: { beginner: 3, intermediate: 4, advanced: 5 },
+  2: { beginner: 4, intermediate: 5, advanced: 6 },
+  3: { beginner: 3, intermediate: 4, advanced: 5 },
+};
+
+/** Working set count per exercise for a given block and level. */
+export function setsForBlockLevel(block: ProgramBlock, level: string): number {
+  return SETS_BY_BLOCK_LEVEL[block][levelTier(level)];
+}
+
+const EXERCISES_BY_LEVEL: Record<WeightliftingLevelTier, number> = {
+  beginner: 3,
+  intermediate: 4,
+  advanced: 5,
+};
+
+/** Number of exercises per session for a given level. */
+export function exerciseCountForLevel(level: string): number {
+  return EXERCISES_BY_LEVEL[levelTier(level)];
+}
+
 export interface ZoneAdaptation {
   weightMultiplier: number;
   setsDelta: number;
@@ -261,9 +294,55 @@ function pickTemplate(level: string, dayOfWeek: number, sessionsPerWeek: number)
   return map[dayKey] ?? map[1];
 }
 
+// Accessory movements used to pad a session up to the target exercise
+// count (e.g. advanced athletes need 5 movements, templates carry 4).
+const ACCESSORY_POOL: TemplateExercise[] = [
+  { exercise_id: 'pullup_pronation', sets: 3, reps: '8', uses_main_pct: false },
+  { exercise_id: 'barbell_row', sets: 3, reps: '8', uses_main_pct: false, pct_of_max: 60 },
+  { exercise_id: 'face_pull', sets: 3, reps: '12', uses_main_pct: false },
+  { exercise_id: 'plank', sets: 3, reps: '45s', uses_main_pct: false },
+];
+
+function fitToExerciseCount(
+  template: TemplateExercise[],
+  count: number,
+): TemplateExercise[] {
+  const chosen = template.slice(0, count);
+  for (const acc of ACCESSORY_POOL) {
+    if (chosen.length >= count) break;
+    if (!chosen.some((e) => e.exercise_id === acc.exercise_id)) chosen.push(acc);
+  }
+  return chosen;
+}
+
 function roundToBarbellPlate(kg: number): number {
   if (kg <= 0) return 0;
   return roundToBar(kg);
+}
+
+const AVG_SET_TIME_SEC = 45;
+
+/**
+ * Estimate a session's wall-clock duration in minutes.
+ *
+ * Each set costs a fixed working time plus its prescribed rest, so the
+ * estimate is `sum over sets of (avg_set_time + rest_seconds)`.
+ *
+ * @param exercises planned exercises with their sets
+ */
+export function estimateSessionDurationMin(exercises: SessionExercise[]): number {
+  let seconds = 0;
+  for (const ex of exercises) {
+    for (const s of ex.sets) {
+      seconds += AVG_SET_TIME_SEC + (s.rest_seconds ?? 0);
+    }
+  }
+  return Math.round(seconds / 60);
+}
+
+function sessionLetter(dayOfWeek: number): string {
+  const idx = Math.max(1, dayOfWeek) - 1;
+  return String.fromCharCode(65 + (idx % 26));
 }
 
 function rpeForBlock(block: ProgramBlock, week: WeekIndex): number {
@@ -284,9 +363,38 @@ export interface GeneratedSession {
   exercises: SessionExercise[];
   message: string;
   appliedAdaptation: ZoneAdaptation;
+  durationMin: number;
 }
 
-export function generateWeeklySession(params: GenerateParams): GeneratedSession {
+/** One line of a session preview: the prescription for a single exercise. */
+export interface SessionExercisePreview {
+  exerciseId: string;
+  sets: number;
+  reps: string;
+  pct: number | null;
+  weightKg: number | null;
+  rpe: number | null;
+}
+
+export interface WeightliftingSessionPreview {
+  title: string;
+  block: ProgramBlock;
+  week: WeekIndex;
+  durationMin: number;
+  exercises: SessionExercisePreview[];
+}
+
+interface BuiltWeightliftingSession {
+  exercises: SessionExercise[];
+  preview: SessionExercisePreview[];
+  durationMin: number;
+  title: string;
+  block: ProgramBlock;
+  week: WeekIndex;
+  adaptation: ZoneAdaptation;
+}
+
+function buildWeightliftingSession(params: GenerateParams): BuiltWeightliftingSession {
   const { program, maxes, dayOfWeek, zoneScore } = params;
   const week = Math.min(4, Math.max(1, program.current_week)) as WeekIndex;
   const block = program.current_block;
@@ -294,13 +402,21 @@ export function generateWeeklySession(params: GenerateParams): GeneratedSession 
   const adaptation = adaptToZoneScore(zoneScore);
   const targetRpe = rpeForBlock(block, week);
 
-  const template = pickTemplate(program.level, dayOfWeek, program.sessions_per_week);
+  const rawTemplate = pickTemplate(program.level, dayOfWeek, program.sessions_per_week);
+  const template = fitToExerciseCount(rawTemplate, exerciseCountForLevel(program.level));
+
+  // Working sets scale with block + level; the week-4 deload trims a set.
+  let workingSets = setsForBlockLevel(block, program.level);
+  if (week === 4) workingSets = Math.max(2, workingSets - 1);
+  workingSets = Math.max(2, workingSets + adaptation.setsDelta);
 
   const maxLookup = new Map<string, number>();
   for (const m of maxes) maxLookup.set(m.exercise_id, m.estimated_1rm);
 
-  const exercises: SessionExercise[] = template.map((t) => {
-    const adjustedSets = Math.max(2, t.sets + adaptation.setsDelta);
+  const exercises: SessionExercise[] = [];
+  const preview: SessionExercisePreview[] = [];
+
+  for (const t of template) {
     const oneRm = maxLookup.get(t.exercise_id) ?? 0;
     const pct = t.uses_main_pct ? mainPct : (t.pct_of_max ?? null);
     const targetWeight =
@@ -308,26 +424,93 @@ export function generateWeeklySession(params: GenerateParams): GeneratedSession 
         ? roundToBarbellPlate(oneRm * (pct / 100) * adaptation.weightMultiplier)
         : null;
     const baseRest = restBaseForExercise(t.exercise_id);
+    const rpe = t.rpe ?? (t.uses_main_pct ? targetRpe : null);
 
     const sets: PlannedSet[] = [];
-    for (let i = 1; i <= adjustedSets; i += 1) {
+    for (let i = 1; i <= workingSets; i += 1) {
       sets.push({
         exercise_id: t.exercise_id,
         set_number: i,
         target_reps: t.reps,
         target_weight_kg: targetWeight,
-        target_rpe: t.rpe ?? (t.uses_main_pct ? targetRpe : null),
+        target_rpe: rpe,
         rest_seconds: baseRest,
       });
     }
-    return { exercise_id: t.exercise_id, sets };
-  });
+    exercises.push({ exercise_id: t.exercise_id, sets });
+    preview.push({
+      exerciseId: t.exercise_id,
+      sets: workingSets,
+      reps: t.reps,
+      pct,
+      weightKg: targetWeight,
+      rpe,
+    });
+  }
 
   return {
     exercises,
-    message: adaptation.message,
-    appliedAdaptation: adaptation,
+    preview,
+    durationMin: estimateSessionDurationMin(exercises),
+    title: `SÉANCE ${sessionLetter(dayOfWeek)} · BLOC ${block} SEMAINE ${week}`,
+    block,
+    week,
+    adaptation,
   };
+}
+
+export function generateWeeklySession(params: GenerateParams): GeneratedSession {
+  const built = buildWeightliftingSession(params);
+  return {
+    exercises: built.exercises,
+    message: built.adaptation.message,
+    appliedAdaptation: built.adaptation,
+    durationMin: built.durationMin,
+  };
+}
+
+/**
+ * Build a read-only preview of a weightlifting session (no Zone adaptation),
+ * for calendar previews and the programme intro screen.
+ *
+ * @param program user programme state (block/week/day)
+ * @param maxes known 1RMs, used to fill target weights
+ * @param dayOfWeek 1-based day index used to pick the session template
+ */
+export function previewWeightliftingSession(
+  program: UserProgram,
+  maxes: ExerciseMax[],
+  dayOfWeek: number,
+): WeightliftingSessionPreview {
+  const built = buildWeightliftingSession({ program, maxes, dayOfWeek, zoneScore: null });
+  return {
+    title: built.title,
+    block: built.block,
+    week: built.week,
+    durationMin: built.durationMin,
+    exercises: built.preview,
+  };
+}
+
+/**
+ * Project a programme forward by a number of whole weeks, rolling the
+ * week counter (1..4) and advancing the block (1..3) as needed.
+ *
+ * @param program current programme state
+ * @param weeksForward number of weeks to advance (negative clamps to now)
+ */
+export function projectProgram(
+  program: UserProgram,
+  weeksForward: number,
+): UserProgram {
+  if (weeksForward <= 0) return program;
+  let week = program.current_week + weeksForward;
+  let block = program.current_block;
+  while (week > 4) {
+    week -= 4;
+    block = ((block % 3) + 1) as ProgramBlock;
+  }
+  return { ...program, current_week: week, current_block: block };
 }
 
 export function getNextSessionDate(
