@@ -70,6 +70,7 @@ const BLOCKS: BlockOverview[] = [
 
 function previewLine(ex: SessionExercisePreview): string {
   const name = getExerciseById(ex.exerciseId)?.name ?? ex.exerciseId;
+  if (ex.display) return `${name} — ${ex.display}`;
   const pct = ex.pct != null ? ` @ ${ex.pct}%` : '';
   return `${name} — ${ex.sets} séries × ${ex.reps} reps${pct}`;
 }

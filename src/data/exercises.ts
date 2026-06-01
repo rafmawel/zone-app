@@ -840,6 +840,72 @@ export const EXERCISES: Exercise[] = [
     default_rest_seconds: 150,
   },
   {
+    id: 'snatch_balance',
+    name: 'Snatch balance',
+    name_en: 'Snatch Balance',
+    sport: 'weightlifting',
+    category: 'olympic_lift',
+    difficulty: 'advanced',
+    equipment: ['barbell', 'rack'],
+    muscles_primary: ['shoulders', 'quadriceps', 'glutes', 'traps'],
+    muscles_secondary: ['core', 'upper_back', 'lower_back'],
+    description:
+      "Exercice technique de l'arraché. Barre sur le dos (prise large), on se reçoit vite en squat overhead bras verrouillés. Grave la vitesse et la confiance sous la barre.",
+    setup:
+      "Barre sur les trapèzes, prise d'arraché. Pieds largeur des hanches, gainage serré.",
+    execution:
+      "Dip court, légère impulsion, puis tire-toi agressivement en réception squat overhead bras tendus. Stabilise en bas puis relève-toi.",
+    cues: [
+      "Punch sous la barre, ne pousse pas la barre vers le haut",
+      "Coudes verrouillés instantanément",
+      "Réception basse et stable",
+      "Regard devant",
+    ],
+    feeling:
+      "Sensation de plonger sous une barre fixe, gainage explosif.",
+    common_errors: [
+      "Réception trop haute",
+      "Barre qui part en avant",
+      "Coudes mous à la réception",
+    ],
+    default_sets: 3,
+    default_reps: '3',
+    default_rest_seconds: 120,
+  },
+  {
+    id: 'jerk_from_blocks',
+    name: 'Jeté depuis blocs',
+    name_en: 'Jerk from Blocks',
+    sport: 'weightlifting',
+    category: 'olympic_lift',
+    difficulty: 'advanced',
+    equipment: ['barbell', 'rack'],
+    muscles_primary: ['shoulders', 'triceps', 'quadriceps', 'glutes'],
+    muscles_secondary: ['core', 'upper_back', 'calves'],
+    description:
+      "Jeté isolé depuis des blocs (ou rack) à hauteur d'épaules. Permet de charger lourd le jeté sans la fatigue de l'épaulé.",
+    setup:
+      "Barre sur blocs à hauteur de clavicules, position rack épaules, coudes hauts, pieds largeur de hanches.",
+    execution:
+      "Dip vertical court, extension explosive, fends-toi sous la barre (split jerk) bras verrouillés. Récupère pied arrière puis pied avant.",
+    cues: [
+      "Dip strictement vertical",
+      "Pousse la tête à travers",
+      "Fente franche et stable",
+      "Verrouille avant de récupérer",
+    ],
+    feeling:
+      "Puissance verticale pure, réception solide en fente.",
+    common_errors: [
+      "Dip vers l'avant",
+      "Barre poussée devant la tête",
+      "Fente trop courte",
+    ],
+    default_sets: 4,
+    default_reps: '2',
+    default_rest_seconds: 150,
+  },
+  {
     id: 'bench_press',
     name: 'Développé couché',
     name_en: 'Bench Press',
