@@ -52,6 +52,39 @@ export function getBlockName(block: ProgramBlock): string {
   return 'RÉALISATION';
 }
 
+export type WeightliftingLevelTier = 'beginner' | 'intermediate' | 'advanced';
+
+/** Map the French onboarding level onto a coarse training tier. */
+export function levelTier(level: string): WeightliftingLevelTier {
+  if (level === 'avance' || level === 'confirme') return 'advanced';
+  if (level === 'intermediaire') return 'intermediate';
+  return 'beginner';
+}
+
+// Working sets per exercise, scaled by block and level. Volume peaks in
+// block 2 (intensification) and tapers in block 3 (realisation).
+const SETS_BY_BLOCK_LEVEL: Record<ProgramBlock, Record<WeightliftingLevelTier, number>> = {
+  1: { beginner: 3, intermediate: 4, advanced: 5 },
+  2: { beginner: 4, intermediate: 5, advanced: 6 },
+  3: { beginner: 3, intermediate: 4, advanced: 5 },
+};
+
+/** Working set count per exercise for a given block and level. */
+export function setsForBlockLevel(block: ProgramBlock, level: string): number {
+  return SETS_BY_BLOCK_LEVEL[block][levelTier(level)];
+}
+
+const EXERCISES_BY_LEVEL: Record<WeightliftingLevelTier, number> = {
+  beginner: 3,
+  intermediate: 4,
+  advanced: 5,
+};
+
+/** Number of exercises per session for a given level. */
+export function exerciseCountForLevel(level: string): number {
+  return EXERCISES_BY_LEVEL[levelTier(level)];
+}
+
 export interface ZoneAdaptation {
   weightMultiplier: number;
   setsDelta: number;
@@ -158,119 +191,299 @@ export function computeRestSeconds(exerciseId: string, mod: RestModifiers): numb
   return Math.max(20, rest);
 }
 
-interface TemplateExercise {
+// ── Prilepin's table (1975) ────────────────────────────────────────────────
+// Optimal total reps and per-set reps for each intensity zone. The classic
+// competition lifts (and squats) are validated against these ranges so the
+// generated session always sits in Prilepin's productive window.
+export type PrilepinZone = '55-65' | '70-75' | '80-85' | '90+';
+
+interface PrilepinRule {
+  minTotal: number;
+  maxTotal: number;
+  minPerSet: number;
+  maxPerSet: number;
+}
+
+const PRILEPIN: Record<PrilepinZone, PrilepinRule> = {
+  '55-65': { minTotal: 18, maxTotal: 24, minPerSet: 3, maxPerSet: 6 },
+  '70-75': { minTotal: 12, maxTotal: 24, minPerSet: 3, maxPerSet: 6 },
+  '80-85': { minTotal: 10, maxTotal: 20, minPerSet: 2, maxPerSet: 4 },
+  '90+': { minTotal: 4, maxTotal: 10, minPerSet: 1, maxPerSet: 2 },
+};
+
+/** Map an intensity percentage to its Prilepin zone. */
+export function prilepinZoneForPct(pct: number): PrilepinZone {
+  if (pct >= 88) return '90+';
+  if (pct >= 80) return '80-85';
+  if (pct >= 68) return '70-75';
+  return '55-65';
+}
+
+/**
+ * Clamp a set count so total reps land inside Prilepin's optimal range for
+ * the movement's intensity zone. Per-set reps are held; only sets move.
+ *
+ * @param sets authored set count
+ * @param reps reps per set
+ * @param pct working intensity (% of 1RM)
+ */
+export function prilepinAdjustSets(sets: number, reps: number, pct: number): number {
+  const zone = PRILEPIN[prilepinZoneForPct(pct)];
+  let s = Math.max(1, sets);
+  while (s * reps > zone.maxTotal && s > 1) s -= 1;
+  while (s * reps < zone.minTotal) s += 1;
+  return s;
+}
+
+type MovementRole = 'main' | 'pull' | 'squat' | 'accessory';
+
+interface MovementBlueprint {
   exercise_id: string;
   sets: number;
-  reps: string;
-  uses_main_pct: boolean;
-  pct_of_max?: number;
-  rpe?: number;
+  reps: number;
+  repsLabel?: string;
+  pct: number;
+  role: MovementRole;
+  toMax?: boolean;
 }
 
-type TemplateMap = Record<number, TemplateExercise[]>;
+interface SessionBlueprint {
+  name: string;
+  movements: MovementBlueprint[];
+}
 
-const BEGINNER: TemplateMap = {
+// Intermediate baselines per block (Catalyst Athletics / Soviet block model).
+// Beginner and advanced are derived from these (see levelizeSession): fewer or
+// more exercises and a set offset, with Prilepin keeping the classic lifts in
+// range. Percentages are the week-1 value; later weeks ramp +2.5%/week.
+const BLOCK_SESSIONS: Record<ProgramBlock, SessionBlueprint[]> = {
   1: [
-    { exercise_id: 'snatch', sets: 5, reps: '3', uses_main_pct: true },
-    { exercise_id: 'back_squat_high', sets: 4, reps: '5', uses_main_pct: true },
-    { exercise_id: 'strict_press', sets: 3, reps: '8', uses_main_pct: false, pct_of_max: 60 },
-    { exercise_id: 'pullup_pronation', sets: 3, reps: '6-10', uses_main_pct: false },
+    {
+      name: 'Arraché',
+      movements: [
+        { exercise_id: 'snatch', sets: 5, reps: 3, pct: 70, role: 'main' },
+        { exercise_id: 'snatch_pull', sets: 4, reps: 3, pct: 92, role: 'pull' },
+        { exercise_id: 'front_squat', sets: 4, reps: 4, pct: 75, role: 'squat' },
+        { exercise_id: 'push_press', sets: 3, reps: 5, pct: 70, role: 'accessory' },
+      ],
+    },
+    {
+      name: 'Épaulé-jeté',
+      movements: [
+        { exercise_id: 'clean_and_jerk', sets: 5, reps: 2, repsLabel: '2+1', pct: 70, role: 'main' },
+        { exercise_id: 'clean_pull', sets: 4, reps: 3, pct: 92, role: 'pull' },
+        { exercise_id: 'back_squat_high', sets: 4, reps: 4, pct: 78, role: 'squat' },
+        { exercise_id: 'snatch_balance', sets: 3, reps: 3, pct: 60, role: 'accessory' },
+      ],
+    },
+    {
+      name: 'Technique et force',
+      movements: [
+        { exercise_id: 'hang_snatch', sets: 4, reps: 3, pct: 70, role: 'main' },
+        { exercise_id: 'power_clean', sets: 4, reps: 3, pct: 75, role: 'main' },
+        { exercise_id: 'overhead_squat', sets: 3, reps: 5, pct: 65, role: 'accessory' },
+        { exercise_id: 'romanian_deadlift', sets: 3, reps: 5, pct: 70, role: 'accessory' },
+      ],
+    },
   ],
   2: [
-    { exercise_id: 'clean_and_jerk', sets: 5, reps: '3', uses_main_pct: true },
-    { exercise_id: 'front_squat', sets: 4, reps: '5', uses_main_pct: true },
-    { exercise_id: 'romanian_deadlift', sets: 3, reps: '8', uses_main_pct: false, pct_of_max: 60 },
-    { exercise_id: 'barbell_row', sets: 3, reps: '8', uses_main_pct: false, pct_of_max: 60 },
-  ],
-};
-
-const INTERMEDIATE: TemplateMap = {
-  1: [
-    { exercise_id: 'snatch', sets: 6, reps: '2', uses_main_pct: true },
-    { exercise_id: 'snatch_pull', sets: 4, reps: '3', uses_main_pct: false, pct_of_max: 90 },
-    { exercise_id: 'overhead_squat', sets: 3, reps: '3', uses_main_pct: false, pct_of_max: 70 },
-    { exercise_id: 'pullup_pronation', sets: 3, reps: '8', uses_main_pct: false },
-  ],
-  2: [
-    { exercise_id: 'clean_and_jerk', sets: 5, reps: '2', uses_main_pct: true },
-    { exercise_id: 'front_squat', sets: 4, reps: '3', uses_main_pct: true },
-    { exercise_id: 'strict_press', sets: 4, reps: '5', uses_main_pct: false, pct_of_max: 70 },
-    { exercise_id: 'romanian_deadlift', sets: 3, reps: '6', uses_main_pct: false, pct_of_max: 70 },
+    {
+      name: 'Arraché lourd',
+      movements: [
+        { exercise_id: 'snatch', sets: 6, reps: 2, pct: 80, role: 'main' },
+        { exercise_id: 'snatch_pull', sets: 5, reps: 2, pct: 102, role: 'pull' },
+        { exercise_id: 'front_squat', sets: 5, reps: 3, pct: 83, role: 'squat' },
+        { exercise_id: 'jerk_from_blocks', sets: 4, reps: 2, pct: 80, role: 'accessory' },
+      ],
+    },
+    {
+      name: 'Épaulé-jeté lourd',
+      movements: [
+        { exercise_id: 'clean_and_jerk', sets: 6, reps: 1, repsLabel: '1+1', pct: 82, role: 'main' },
+        { exercise_id: 'clean_pull', sets: 5, reps: 2, pct: 100, role: 'pull' },
+        { exercise_id: 'back_squat_high', sets: 5, reps: 3, pct: 83, role: 'squat' },
+        { exercise_id: 'push_press', sets: 4, reps: 3, pct: 75, role: 'accessory' },
+      ],
+    },
+    {
+      name: 'Puissance',
+      movements: [
+        { exercise_id: 'power_snatch', sets: 5, reps: 2, pct: 78, role: 'main' },
+        { exercise_id: 'power_clean', sets: 5, reps: 2, pct: 80, role: 'main' },
+        { exercise_id: 'front_squat', sets: 5, reps: 3, pct: 82, role: 'squat' },
+        { exercise_id: 'romanian_deadlift', sets: 4, reps: 5, pct: 75, role: 'accessory' },
+      ],
+    },
   ],
   3: [
-    { exercise_id: 'back_squat_high', sets: 5, reps: '3', uses_main_pct: true },
-    { exercise_id: 'deadlift', sets: 4, reps: '3', uses_main_pct: false, pct_of_max: 80 },
-    { exercise_id: 'bench_press', sets: 4, reps: '5', uses_main_pct: false, pct_of_max: 75 },
-    { exercise_id: 'barbell_row', sets: 4, reps: '6', uses_main_pct: false, pct_of_max: 65 },
-  ],
-  4: [
-    { exercise_id: 'power_snatch', sets: 5, reps: '2', uses_main_pct: false, pct_of_max: 65 },
-    { exercise_id: 'power_clean', sets: 5, reps: '2', uses_main_pct: false, pct_of_max: 65 },
-    { exercise_id: 'front_squat', sets: 3, reps: '5', uses_main_pct: false, pct_of_max: 65 },
-    { exercise_id: 'plank', sets: 3, reps: '45s', uses_main_pct: false },
-  ],
-};
-
-const ADVANCED: TemplateMap = {
-  1: [
-    { exercise_id: 'snatch', sets: 6, reps: '1', uses_main_pct: true },
-    { exercise_id: 'hang_snatch', sets: 4, reps: '2', uses_main_pct: false, pct_of_max: 80 },
-    { exercise_id: 'snatch_pull', sets: 4, reps: '3', uses_main_pct: false, pct_of_max: 95 },
-    { exercise_id: 'overhead_squat', sets: 3, reps: '3', uses_main_pct: false, pct_of_max: 75 },
-  ],
-  2: [
-    { exercise_id: 'clean_and_jerk', sets: 5, reps: '1', uses_main_pct: true },
-    { exercise_id: 'hang_clean', sets: 4, reps: '2', uses_main_pct: false, pct_of_max: 80 },
-    { exercise_id: 'clean_pull', sets: 4, reps: '3', uses_main_pct: false, pct_of_max: 95 },
-    { exercise_id: 'split_jerk', sets: 4, reps: '2', uses_main_pct: false, pct_of_max: 85 },
-  ],
-  3: [
-    { exercise_id: 'back_squat_high', sets: 6, reps: '3', uses_main_pct: true },
-    { exercise_id: 'front_squat', sets: 4, reps: '3', uses_main_pct: false, pct_of_max: 85 },
-    { exercise_id: 'romanian_deadlift', sets: 3, reps: '5', uses_main_pct: false, pct_of_max: 75 },
-    { exercise_id: 'side_plank', sets: 3, reps: '30s', uses_main_pct: false },
-  ],
-  4: [
-    { exercise_id: 'power_snatch', sets: 5, reps: '2', uses_main_pct: false, pct_of_max: 70 },
-    { exercise_id: 'overhead_squat', sets: 3, reps: '3', uses_main_pct: false, pct_of_max: 65 },
-    { exercise_id: 'pullup_pronation', sets: 3, reps: '6', uses_main_pct: false },
-  ],
-  5: [
-    { exercise_id: 'power_clean', sets: 5, reps: '2', uses_main_pct: false, pct_of_max: 70 },
-    { exercise_id: 'push_jerk', sets: 4, reps: '2', uses_main_pct: false, pct_of_max: 70 },
-    { exercise_id: 'strict_press', sets: 4, reps: '5', uses_main_pct: false, pct_of_max: 70 },
-    { exercise_id: 'face_pull', sets: 3, reps: '12', uses_main_pct: false },
-  ],
-  6: [
-    { exercise_id: 'kb_swing', sets: 5, reps: '15', uses_main_pct: false },
-    { exercise_id: 'bulgarian_split_squat', sets: 3, reps: '10', uses_main_pct: false },
-    { exercise_id: 'plank', sets: 3, reps: '60s', uses_main_pct: false },
-    { exercise_id: 'pushups', sets: 3, reps: '15', uses_main_pct: false },
+    {
+      name: 'Réalisation arraché',
+      movements: [
+        { exercise_id: 'snatch', sets: 5, reps: 1, pct: 90, role: 'main', toMax: true },
+        { exercise_id: 'clean_and_jerk', sets: 5, reps: 1, pct: 90, role: 'main', toMax: true },
+        { exercise_id: 'front_squat', sets: 3, reps: 2, pct: 90, role: 'squat' },
+      ],
+    },
+    {
+      name: 'Réalisation épaulé',
+      movements: [
+        { exercise_id: 'clean_and_jerk', sets: 5, reps: 1, pct: 90, role: 'main', toMax: true },
+        { exercise_id: 'snatch', sets: 4, reps: 1, pct: 88, role: 'main' },
+        { exercise_id: 'back_squat_high', sets: 3, reps: 2, pct: 88, role: 'squat' },
+      ],
+    },
+    {
+      name: 'Puissance et pics',
+      movements: [
+        { exercise_id: 'power_snatch', sets: 4, reps: 1, pct: 82, role: 'main' },
+        { exercise_id: 'power_clean', sets: 4, reps: 1, pct: 83, role: 'main' },
+        { exercise_id: 'front_squat', sets: 3, reps: 2, pct: 87, role: 'squat' },
+      ],
+    },
   ],
 };
 
-function pickTemplate(level: string, dayOfWeek: number, sessionsPerWeek: number): TemplateExercise[] {
-  const map =
-    level === 'avance' || level === 'confirme'
-      ? ADVANCED
-      : level === 'intermediaire'
-        ? INTERMEDIATE
-        : BEGINNER;
-  const total = Math.max(1, Math.min(sessionsPerWeek, Object.keys(map).length));
-  const dayKey = ((dayOfWeek - 1) % total) + 1;
-  return map[dayKey] ?? map[1];
+const DELOAD_SESSION: SessionBlueprint = {
+  name: 'Décharge',
+  movements: [
+    { exercise_id: 'snatch', sets: 3, reps: 3, pct: 65, role: 'main' },
+    { exercise_id: 'clean_and_jerk', sets: 3, reps: 3, pct: 65, role: 'main' },
+    { exercise_id: 'front_squat', sets: 3, reps: 3, pct: 65, role: 'squat' },
+  ],
+};
+
+// Extra movements used to pad advanced sessions up to five exercises.
+const ADVANCED_PADDING: MovementBlueprint[] = [
+  { exercise_id: 'overhead_squat', sets: 3, reps: 3, pct: 65, role: 'accessory' },
+  { exercise_id: 'snatch_balance', sets: 3, reps: 3, pct: 65, role: 'accessory' },
+  { exercise_id: 'push_press', sets: 3, reps: 5, pct: 70, role: 'accessory' },
+  { exercise_id: 'romanian_deadlift', sets: 3, reps: 5, pct: 70, role: 'accessory' },
+];
+
+// Resolve which stored 1RM a movement's percentage is based on. Only snatch,
+// clean & jerk, front squat and strict press are measured; everything else is
+// derived from the closest lift.
+function resolveBaseMax(exerciseId: string, lookup: Map<string, number>): number {
+  const snatch = lookup.get('snatch') ?? 0;
+  const clean = lookup.get('clean_and_jerk') ?? 0;
+  const front = lookup.get('front_squat') ?? 0;
+  const press = lookup.get('strict_press') ?? 0;
+  switch (exerciseId) {
+    case 'snatch':
+    case 'snatch_pull':
+    case 'hang_snatch':
+    case 'power_snatch':
+    case 'overhead_squat':
+    case 'snatch_balance':
+      return snatch;
+    case 'clean_and_jerk':
+    case 'clean_pull':
+    case 'hang_clean':
+    case 'power_clean':
+    case 'push_jerk':
+    case 'jerk_from_blocks':
+    case 'push_press':
+      return clean;
+    case 'front_squat':
+      return front;
+    case 'back_squat_high':
+      return front > 0 ? front * 1.18 : 0;
+    case 'romanian_deadlift':
+    case 'good_morning':
+      return clean > 0 ? clean * 1.1 : 0;
+    case 'strict_press':
+      return press;
+    default:
+      return 0;
+  }
 }
 
-function roundToBarbellPlate(kg: number): number {
-  if (kg <= 0) return 0;
-  return roundToBar(kg);
+function movementCount(tier: WeightliftingLevelTier, block: ProgramBlock): number {
+  if (block === 3) return tier === 'advanced' ? 4 : 3;
+  return tier === 'beginner' ? 3 : tier === 'advanced' ? 5 : 4;
 }
 
-function rpeForBlock(block: ProgramBlock, week: WeekIndex): number {
-  if (week === 4) return 6;
-  if (block === 1) return 7;
-  if (block === 2) return 8;
-  return 9;
+function setOffsetForTier(tier: WeightliftingLevelTier): number {
+  return tier === 'beginner' ? -1 : tier === 'advanced' ? 1 : 0;
+}
+
+function levelizeSession(
+  session: SessionBlueprint,
+  tier: WeightliftingLevelTier,
+  block: ProgramBlock,
+): MovementBlueprint[] {
+  const target = movementCount(tier, block);
+  let movements = session.movements.slice();
+  for (const pad of ADVANCED_PADDING) {
+    if (movements.length >= target) break;
+    if (!movements.some((m) => m.exercise_id === pad.exercise_id)) movements.push(pad);
+  }
+  movements = movements.slice(0, target);
+  const delta = setOffsetForTier(tier);
+  return movements.map((m) => ({ ...m, sets: Math.max(2, m.sets + delta) }));
+}
+
+/** Week-over-week intensity ramp inside a block: +2.5% per week (wk1..3). */
+function weekIntensityDelta(week: number): number {
+  const w = Math.min(3, Math.max(1, week));
+  return (w - 1) * 2.5;
+}
+
+/**
+ * Autoregulation from recent reps-in-reserve. Two easy sessions (RIR >= 3)
+ * bump intensity; two grinder sessions (RIR 0) pull it back.
+ *
+ * @param recentRir most recent RIR values, oldest first
+ */
+export function rirIntensityDelta(recentRir: number[]): number {
+  if (recentRir.length < 2) return 0;
+  const last2 = recentRir.slice(-2);
+  if (last2.every((r) => r >= 3)) return 2.5;
+  if (last2.every((r) => r === 0)) return -2.5;
+  return 0;
+}
+
+function clampPct(pct: number): number {
+  return Math.max(40, Math.min(100, Math.round(pct * 10) / 10));
+}
+
+function rpeForPct(pct: number): number {
+  if (pct >= 88) return 9;
+  if (pct >= 80) return 8;
+  if (pct >= 70) return 7;
+  return 6;
+}
+
+function sessionLetter(dayOfWeek: number): string {
+  const idx = Math.max(1, dayOfWeek) - 1;
+  return String.fromCharCode(65 + (idx % 26));
+}
+
+// Session duration model: 10 min warm-up, 45 s of work per set, and the
+// movement's rest after every set (compound 180 s, accessory 120 s).
+const WARMUP_SEC = 600;
+const WORK_PER_SET_SEC = 45;
+const REST_COMPOUND_SEC = 180;
+const REST_ACCESSORY_SEC = 120;
+
+function restForRole(role: MovementRole): number {
+  return role === 'accessory' ? REST_ACCESSORY_SEC : REST_COMPOUND_SEC;
+}
+
+/**
+ * Estimate a session's wall-clock duration in minutes:
+ * warm-up + Σ(45 s work) + Σ(rest) across every set.
+ *
+ * @param exercises planned exercises with their sets
+ */
+export function estimateSessionDurationMin(exercises: SessionExercise[]): number {
+  let seconds = WARMUP_SEC;
+  for (const ex of exercises) {
+    for (const s of ex.sets) {
+      seconds += WORK_PER_SET_SEC + (s.rest_seconds ?? 0);
+    }
+  }
+  return Math.round(seconds / 60);
 }
 
 export interface GenerateParams {
@@ -278,56 +491,198 @@ export interface GenerateParams {
   maxes: ExerciseMax[];
   dayOfWeek: number;
   zoneScore: number | null;
+  /** Recent reps-in-reserve for autoregulation, oldest first. */
+  recentRir?: number[];
 }
 
 export interface GeneratedSession {
   exercises: SessionExercise[];
   message: string;
   appliedAdaptation: ZoneAdaptation;
+  durationMin: number;
 }
 
-export function generateWeeklySession(params: GenerateParams): GeneratedSession {
+/** One line of a session preview: the prescription for a single exercise. */
+export interface SessionExercisePreview {
+  exerciseId: string;
+  sets: number;
+  reps: string;
+  pct: number | null;
+  weightKg: number | null;
+  rpe: number | null;
+  /** When set, replaces the "N séries × R reps" rendering (complexes, max-out). */
+  display?: string;
+}
+
+export interface WeightliftingSessionPreview {
+  title: string;
+  block: ProgramBlock;
+  week: WeekIndex;
+  durationMin: number;
+  exercises: SessionExercisePreview[];
+}
+
+interface BuiltWeightliftingSession {
+  exercises: SessionExercise[];
+  preview: SessionExercisePreview[];
+  durationMin: number;
+  title: string;
+  block: ProgramBlock;
+  week: WeekIndex;
+  adaptation: ZoneAdaptation;
+}
+
+function selectBlueprint(
+  block: ProgramBlock,
+  week: number,
+  dayOfWeek: number,
+): { blueprint: SessionBlueprint; isDeload: boolean } {
+  if (week >= 4) return { blueprint: DELOAD_SESSION, isDeload: true };
+  const sessions = BLOCK_SESSIONS[block];
+  const idx = (Math.max(1, dayOfWeek) - 1) % sessions.length;
+  return { blueprint: sessions[idx], isDeload: false };
+}
+
+function buildWeightliftingSession(params: GenerateParams): BuiltWeightliftingSession {
   const { program, maxes, dayOfWeek, zoneScore } = params;
+  const recentRir = params.recentRir ?? [];
   const week = Math.min(4, Math.max(1, program.current_week)) as WeekIndex;
   const block = program.current_block;
-  const mainPct = getTrainingPercentage(block, week, program.level);
+  const tier = levelTier(program.level);
   const adaptation = adaptToZoneScore(zoneScore);
-  const targetRpe = rpeForBlock(block, week);
 
-  const template = pickTemplate(program.level, dayOfWeek, program.sessions_per_week);
+  const { blueprint, isDeload } = selectBlueprint(block, week, dayOfWeek);
+  const movements = isDeload
+    ? blueprint.movements
+    : levelizeSession(blueprint, tier, block);
+  const intensityDelta = isDeload
+    ? 0
+    : weekIntensityDelta(week) + rirIntensityDelta(recentRir);
 
   const maxLookup = new Map<string, number>();
   for (const m of maxes) maxLookup.set(m.exercise_id, m.estimated_1rm);
 
-  const exercises: SessionExercise[] = template.map((t) => {
-    const adjustedSets = Math.max(2, t.sets + adaptation.setsDelta);
-    const oneRm = maxLookup.get(t.exercise_id) ?? 0;
-    const pct = t.uses_main_pct ? mainPct : (t.pct_of_max ?? null);
-    const targetWeight =
-      pct !== null && oneRm > 0
-        ? roundToBarbellPlate(oneRm * (pct / 100) * adaptation.weightMultiplier)
-        : null;
-    const baseRest = restBaseForExercise(t.exercise_id);
+  const exercises: SessionExercise[] = [];
+  const preview: SessionExercisePreview[] = [];
 
-    const sets: PlannedSet[] = [];
-    for (let i = 1; i <= adjustedSets; i += 1) {
-      sets.push({
-        exercise_id: t.exercise_id,
+  for (const m of movements) {
+    const pct = clampPct(m.pct + intensityDelta);
+    let reps = m.reps;
+    let sets = m.sets;
+
+    // Strict Prilepin applies to the classic lifts and squats. Pulls (supra-
+    // maximal) and accessories keep their prescribed volume.
+    if ((m.role === 'main' || m.role === 'squat') && !m.toMax) {
+      const zone = PRILEPIN[prilepinZoneForPct(pct)];
+      reps = Math.min(zone.maxPerSet, Math.max(zone.minPerSet, m.reps));
+      sets = prilepinAdjustSets(sets, reps, pct);
+    }
+    if (m.toMax) {
+      reps = 1;
+      sets = Math.min(10, Math.max(4, sets)); // singles within the 90%+ window
+    }
+    sets = Math.max(1, sets + adaptation.setsDelta);
+
+    const baseMax = resolveBaseMax(m.exercise_id, maxLookup);
+    const targetWeight =
+      baseMax > 0
+        ? roundToBar(baseMax * (pct / 100) * adaptation.weightMultiplier)
+        : null;
+    const rest = restForRole(m.role);
+    const rpe = rpeForPct(pct);
+    const repsLabel = m.toMax ? '1' : (m.repsLabel ?? String(reps));
+
+    const setList: PlannedSet[] = [];
+    for (let i = 1; i <= sets; i += 1) {
+      setList.push({
+        exercise_id: m.exercise_id,
         set_number: i,
-        target_reps: t.reps,
+        target_reps: repsLabel,
         target_weight_kg: targetWeight,
-        target_rpe: t.rpe ?? (t.uses_main_pct ? targetRpe : null),
-        rest_seconds: baseRest,
+        target_rpe: rpe,
+        rest_seconds: rest,
       });
     }
-    return { exercise_id: t.exercise_id, sets };
-  });
+    exercises.push({ exercise_id: m.exercise_id, sets: setList });
+    preview.push({
+      exerciseId: m.exercise_id,
+      sets,
+      reps: repsLabel,
+      pct,
+      weightKg: targetWeight,
+      rpe,
+      display: m.toMax ? 'montée à la max du jour + 2×1 @ 90%' : undefined,
+    });
+  }
+
+  const title = isDeload
+    ? `SÉANCE ${sessionLetter(dayOfWeek)} · DÉCHARGE`
+    : `SÉANCE ${sessionLetter(dayOfWeek)} · BLOC ${block} SEMAINE ${week}`;
 
   return {
     exercises,
-    message: adaptation.message,
-    appliedAdaptation: adaptation,
+    preview,
+    durationMin: estimateSessionDurationMin(exercises),
+    title,
+    block,
+    week,
+    adaptation,
   };
+}
+
+export function generateWeeklySession(params: GenerateParams): GeneratedSession {
+  const built = buildWeightliftingSession(params);
+  return {
+    exercises: built.exercises,
+    message: built.adaptation.message,
+    appliedAdaptation: built.adaptation,
+    durationMin: built.durationMin,
+  };
+}
+
+/**
+ * Build a read-only preview of a weightlifting session (no Zone adaptation),
+ * for calendar previews and the programme intro screen.
+ *
+ * @param program user programme state (block/week/day)
+ * @param maxes known 1RMs, used to fill target weights
+ * @param dayOfWeek 1-based day index used to pick the session template
+ */
+export function previewWeightliftingSession(
+  program: UserProgram,
+  maxes: ExerciseMax[],
+  dayOfWeek: number,
+  recentRir: number[] = [],
+): WeightliftingSessionPreview {
+  const built = buildWeightliftingSession({ program, maxes, dayOfWeek, zoneScore: null, recentRir });
+  return {
+    title: built.title,
+    block: built.block,
+    week: built.week,
+    durationMin: built.durationMin,
+    exercises: built.preview,
+  };
+}
+
+/**
+ * Project a programme forward by a number of whole weeks, rolling the
+ * week counter (1..4) and advancing the block (1..3) as needed.
+ *
+ * @param program current programme state
+ * @param weeksForward number of weeks to advance (negative clamps to now)
+ */
+export function projectProgram(
+  program: UserProgram,
+  weeksForward: number,
+): UserProgram {
+  if (weeksForward <= 0) return program;
+  let week = program.current_week + weeksForward;
+  let block = program.current_block;
+  while (week > 4) {
+    week -= 4;
+    block = ((block % 3) + 1) as ProgramBlock;
+  }
+  return { ...program, current_week: week, current_block: block };
 }
 
 export function getNextSessionDate(

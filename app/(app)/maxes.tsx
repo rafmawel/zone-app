@@ -182,7 +182,7 @@ export default function MaxesScreen(): React.ReactElement {
       } catch {
         // non-blocking: dashboard will show "no session" until next manual generate
       }
-      router.replace('/(app)/(tabs)/program');
+      router.replace('/(app)/program-intro');
     } catch {
       setError('Enregistrement impossible. Réessaie.');
     } finally {
