@@ -8,16 +8,22 @@ import {
   getUserProfile,
   todayDateString,
   type DailyCheckin,
+  type HyroxProfile,
+  type MuscleProfile,
+  type RunningProfile,
   type TrainingSession,
   type UserProfile,
+  type UserProgram,
 } from '@/lib/firestore';
 import { getZoneLevel } from '@/lib/zoneScore';
+import { useWeekBilans } from '@/hooks/useWeekBilans';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { CheckinBanner } from '@/components/CheckinBanner';
 import { ZoneOrbe } from '@/components/ZoneOrbe';
+import { BilanCard } from '@/components/BilanCard';
 
 function frenchDate(): string {
   try {
@@ -59,6 +65,48 @@ export default function DashboardScreen(): React.ReactElement {
   const [nextSession, setNextSession] = useState<TrainingSession | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
   const [healthConnected, setHealthConnected] = useState<boolean>(false);
+  const [program, setProgram] = useState<UserProgram | null>(null);
+  const [runningProfile, setRunningProfile] = useState<RunningProfile | null>(null);
+  const [muscleProfile, setMuscleProfile] = useState<MuscleProfile | null>(null);
+  const [hyroxProfile, setHyroxProfile] = useState<HyroxProfile | null>(null);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const unsubProg = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'program'),
+      (snap) => setProgram(snap.exists() ? (snap.data() as UserProgram) : null),
+      () => setProgram(null),
+    );
+    const unsubRun = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'running_profile'),
+      (snap) => setRunningProfile(snap.exists() ? (snap.data() as RunningProfile) : null),
+      () => setRunningProfile(null),
+    );
+    const unsubMuscle = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'muscle_profile'),
+      (snap) => setMuscleProfile(snap.exists() ? (snap.data() as MuscleProfile) : null),
+      () => setMuscleProfile(null),
+    );
+    const unsubHyrox = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'hyrox_profile'),
+      (snap) => setHyroxProfile(snap.exists() ? (snap.data() as HyroxProfile) : null),
+      () => setHyroxProfile(null),
+    );
+    return () => {
+      unsubProg();
+      unsubRun();
+      unsubMuscle();
+      unsubHyrox();
+    };
+  }, []);
+
+  const { bilans, advance, repeat } = useWeekBilans({
+    program,
+    runningProfile,
+    muscleProfile,
+    hyroxProfile,
+  });
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -226,6 +274,27 @@ export default function DashboardScreen(): React.ReactElement {
           </View>
         ) : null}
 
+        {bilans.length > 0 ? (
+          <View style={styles.bilansBlock}>
+            {bilans.map((b) => (
+              <BilanCard
+                key={b.sport}
+                summary={b.summary}
+                onAdvance={() => {
+                  void advance(b.sport);
+                }}
+                onRepeat={
+                  b.summary.result.shouldRepeat
+                    ? () => {
+                        void repeat(b.sport);
+                      }
+                    : undefined
+                }
+              />
+            ))}
+          </View>
+        ) : null}
+
         <TouchableOpacity
           activeOpacity={nextSession ? 0.85 : 1}
           disabled={!nextSession}
@@ -349,6 +418,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   doneText: { fontSize: 14 },
+  bilansBlock: { marginTop: 16, marginHorizontal: -24 },
   sessionCard: {
     marginTop: 16,
     backgroundColor: colors.bg.card,

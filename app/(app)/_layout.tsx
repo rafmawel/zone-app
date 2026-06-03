@@ -27,6 +27,7 @@ export default function AppLayout(): React.ReactElement {
       <Stack.Screen name="hyrox-baseline" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="paywall" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
       <Stack.Screen name="strength-test" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="skip-week" options={{ animation: 'slide_from_bottom' }} />
     </Stack>
   );
 }

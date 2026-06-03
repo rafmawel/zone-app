@@ -34,6 +34,7 @@ import {
   zoneAdjustedTarget,
   type HyroxZoneRaceAdaptation,
 } from '@/lib/hyroxScience';
+import { readCurrentWeek, readProgrammeQueue, recordSessionComplete, startWeek } from '@/lib/weekTracking';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
@@ -232,6 +233,19 @@ export default function HyroxSessionScreen(): React.ReactElement {
       if (weakest.length > 0) await updateWeakStations(user.uid, weakest.slice(0, 4));
     } catch {
       // surfaced in summary
+    }
+    try {
+      const profile = await getHyroxProfile(user.uid);
+      const queue = await readProgrammeQueue(user.uid);
+      const week = readCurrentWeek(queue, 'hyrox');
+      const sessionsPerWeek = profile?.sessions_per_week ?? 3;
+      const stationsCovered = Array.from(new Set(stations.map((s) => s.station_id)));
+      await startWeek(user.uid, 'hyrox', week, { sessions: sessionsPerWeek });
+      await recordSessionComplete(user.uid, 'hyrox', week, {
+        stations: stationsCovered,
+      });
+    } catch {
+      // tracking is best effort
     }
   };
 

@@ -28,6 +28,8 @@ import {
   type TrainingSession,
 } from '@/lib/firestore';
 import { estimateOneRepMax } from '@/lib/programEngine';
+import { getMuscleProfile } from '@/lib/firestore';
+import { readCurrentWeek, readProgrammeQueue, recordSessionComplete, startWeek } from '@/lib/weekTracking';
 import { usePro } from '@/hooks/usePro';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { getExerciseById } from '@/data/exercises';
@@ -348,6 +350,23 @@ export default function MuscleSessionScreen(): React.ReactElement {
       await reconcileMaxes(user.uid, allSets, maxes);
     } catch {
       // surfaced via summary
+    }
+    try {
+      const profile = await getMuscleProfile(user.uid);
+      const queue = await readProgrammeQueue(user.uid);
+      const week = readCurrentWeek(queue, 'musculation');
+      const sessionsPerWeek = profile?.sessions_per_week ?? 3;
+      const setsByMuscle: Record<string, number> = {};
+      for (const set of allSets) {
+        const muscles = primaryMusclesFor(set.exercise_id);
+        for (const m of muscles) setsByMuscle[m] = (setsByMuscle[m] ?? 0) + 1;
+      }
+      await startWeek(user.uid, 'musculation', week, { sessions: sessionsPerWeek });
+      await recordSessionComplete(user.uid, 'musculation', week, {
+        muscleSets: setsByMuscle,
+      });
+    } catch {
+      // tracking is best effort
     }
   };
 
