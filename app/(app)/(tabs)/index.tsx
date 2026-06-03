@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Dumbbell } from 'lucide-react-native';
+import { ChevronRight, Dumbbell, Info } from 'lucide-react-native';
 import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import {
@@ -24,6 +24,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { CheckinBanner } from '@/components/CheckinBanner';
 import { ZoneOrbe } from '@/components/ZoneOrbe';
 import { BilanCard } from '@/components/BilanCard';
+import type { ProSport } from '@/lib/weekProgression';
 
 function frenchDate(): string {
   try {
@@ -47,6 +48,12 @@ function sessionTitle(session: TrainingSession): string {
         ? 'Course'
         : 'Haltérophilie';
   return `${sport} · ${exCount} exercice${exCount > 1 ? 's' : ''}`;
+}
+
+function proSportFromSession(session: TrainingSession): ProSport {
+  if (session.discipline === 'musculation') return 'musculation';
+  if (session.sport_key === 'running') return 'running';
+  return 'weightlifting';
 }
 
 function sessionMeta(session: TrainingSession): string {
@@ -290,6 +297,12 @@ export default function DashboardScreen(): React.ReactElement {
                       }
                     : undefined
                 }
+                onInfoPress={() =>
+                  router.push({
+                    pathname: '/(app)/programme-overview',
+                    params: { sport: b.sport },
+                  })
+                }
               />
             ))}
           </View>
@@ -303,9 +316,26 @@ export default function DashboardScreen(): React.ReactElement {
           }}
           style={styles.sessionCard}
         >
-          <ZoneText variant="caption" color={colors.text.muted} style={styles.sessionEyebrow}>
-            PROCHAINE SÉANCE
-          </ZoneText>
+          <View style={styles.sessionEyebrowRow}>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.sessionEyebrow}>
+              PROCHAINE SÉANCE
+            </ZoneText>
+            {nextSession ? (
+              <TouchableOpacity
+                hitSlop={12}
+                onPress={() =>
+                  router.push({
+                    pathname: '/(app)/programme-overview',
+                    params: { sport: proSportFromSession(nextSession) },
+                  })
+                }
+                accessibilityLabel="Voir le programme en détail"
+                style={styles.sessionInfoBtn}
+              >
+                <Info size={14} color={colors.text.muted} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
           <View style={styles.sessionRow}>
             <Dumbbell size={20} color={colors.accent.gold} />
             <View style={styles.sessionTextCol}>
@@ -429,6 +459,12 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   sessionEyebrow: { fontFamily: 'BebasNeue', letterSpacing: 1, fontSize: 14 },
+  sessionEyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sessionInfoBtn: { padding: 4 },
   sessionRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   sessionTextCol: { marginLeft: 12, flex: 1 },
   sessionTitle: { color: colors.text.primary, fontSize: 16 },

@@ -157,7 +157,10 @@ export default function MuscleMaxesScreen(): React.ReactElement {
         };
         await saveExerciseMax(user.uid, max);
       }
-      router.replace('/(app)/(tabs)/program');
+      router.replace({
+        pathname: '/(app)/programme-overview',
+        params: { sport: 'musculation' },
+      });
     } catch {
       setError('Enregistrement impossible. Réessaie.');
     } finally {
