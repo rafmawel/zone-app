@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Animated, {
   Easing,
@@ -74,6 +74,47 @@ function parseTargetReps(target: string): number {
   }
   const n = parseInt(target, 10);
   return Number.isFinite(n) && n > 0 ? n : 8;
+}
+
+function buildRepOptions(target: number): number[] {
+  const start = Math.max(1, target - 2);
+  return [0, 1, 2, 3, 4].map((i) => start + i);
+}
+
+function formatWeight(v: number): string {
+  return Number.isInteger(v) ? `${v}` : v.toFixed(1);
+}
+
+function WeightInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+}): React.ReactElement {
+  const [text, setText] = useState<string>(formatWeight(value));
+  useEffect(() => {
+    setText(formatWeight(value));
+  }, [value]);
+  const commit = (): void => {
+    const parsed = parseFloat(text.replace(',', '.'));
+    const next = Number.isFinite(parsed) ? Math.max(0, Math.round(parsed / 2.5) * 2.5) : value;
+    onChange(next);
+    setText(formatWeight(next));
+  };
+  return (
+    <TextInput
+      value={text}
+      onChangeText={setText}
+      onBlur={commit}
+      onSubmitEditing={commit}
+      keyboardType="decimal-pad"
+      returnKeyType="done"
+      selectionColor={colors.accent.gold}
+      style={styles.weightInput}
+      maxLength={6}
+    />
+  );
 }
 
 export default function MuscleSessionScreen(): React.ReactElement {
@@ -353,7 +394,7 @@ export default function MuscleSessionScreen(): React.ReactElement {
 
   const onClose = (): void => {
     endSession();
-    router.replace('/(app)/(tabs)/program');
+    router.replace('/(app)/(tabs)/aujourd-hui');
   };
 
   if (state.loading) {
@@ -480,9 +521,58 @@ export default function MuscleSessionScreen(): React.ReactElement {
             </View>
           ) : null}
 
+          <View style={styles.weightCard}>
+            <View style={styles.weightRow}>
+              <TouchableOpacity
+                onPress={() => setActualWeight(Math.max(0, +(actualWeight - 2.5).toFixed(2)))}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={styles.weightBtn}
+                activeOpacity={0.7}
+              >
+                <Minus size={24} color={colors.accent.gold} />
+              </TouchableOpacity>
+              <View style={styles.weightValueWrap}>
+                <WeightInput value={actualWeight} onChange={(n) => setActualWeight(Math.max(0, n))} />
+                <ZoneText variant="caption" color={colors.text.muted}>
+                  kg
+                </ZoneText>
+              </View>
+              <TouchableOpacity
+                onPress={() => setActualWeight(+(actualWeight + 2.5).toFixed(2))}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={styles.weightBtn}
+                activeOpacity={0.7}
+              >
+                <Plus size={24} color={colors.accent.gold} />
+              </TouchableOpacity>
+            </View>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.objective}>
+              Objectif: {currentSet.target_reps} reps
+            </ZoneText>
+          </View>
+
+          <View style={styles.repsRow}>
+            {buildRepOptions(parseTargetReps(currentSet.target_reps)).map((n) => {
+              const active = actualReps === n;
+              return (
+                <TouchableOpacity
+                  key={n}
+                  onPress={() => setActualReps(n)}
+                  activeOpacity={0.85}
+                  style={[styles.repCell, active ? styles.repCellActive : null]}
+                >
+                  <ZoneText variant="number" size={24} color={active ? colors.bg.primary : colors.text.primary}>
+                    {n}
+                  </ZoneText>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.repsCaption}>
+            reps réalisées
+          </ZoneText>
+
           <View style={styles.inputCard}>
-            <Stepper label="POIDS (kg)" value={actualWeight} step={2.5} onChange={(n) => setActualWeight(Math.max(0, n))} />
-            <Stepper label="REPS RÉALISÉES" value={actualReps} step={1} onChange={(n) => setActualReps(Math.max(0, n))} />
             <View style={styles.rirRow}>
               <ZoneText variant="caption" color={colors.text.muted} style={styles.rirLabel}>
                 RIR (reps en réserve)
@@ -848,6 +938,49 @@ const styles = StyleSheet.create({
   bannerBody: { marginTop: 4, lineHeight: 16 },
   skipExerciseBtn: { marginTop: 10, alignSelf: 'flex-start' },
   inputCard: { marginTop: 16, backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 16 },
+  weightCard: {
+    marginTop: 16,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 20,
+    paddingVertical: 22,
+    paddingHorizontal: 16,
+  },
+  weightRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  weightBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weightValueWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  weightInput: {
+    minWidth: 120,
+    textAlign: 'center',
+    color: colors.accent.gold,
+    fontFamily: 'BebasNeue-Regular',
+    fontSize: 60,
+    lineHeight: 66,
+    paddingVertical: 0,
+  },
+  objective: { textAlign: 'center', marginTop: 14 },
+  repsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 18, gap: 8 },
+  repCell: {
+    flex: 1,
+    height: 56,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  repCellActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
+  repsCaption: { textAlign: 'center', marginTop: 8 },
   stepperRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 },
   stepperLabel: { letterSpacing: 1, fontSize: 11 },
   stepperControl: { flexDirection: 'row', alignItems: 'center' },

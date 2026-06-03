@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useFonts } from 'expo-font';
+import { Syne_600SemiBold, Syne_700Bold } from '@expo-google-fonts/syne';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -183,9 +184,12 @@ function RootNavigator(): React.ReactElement {
 export default function RootLayout(): React.ReactElement | null {
   const [fontsLoaded, fontError] = useFonts({
     BebasNeue: require('../assets/fonts/BebasNeue-Regular.ttf'),
+    'BebasNeue-Regular': require('../assets/fonts/BebasNeue-Regular.ttf'),
     'Inter-Regular': require('../assets/fonts/Inter-Regular.ttf'),
     'Inter-Medium': require('../assets/fonts/Inter-Medium.ttf'),
     'Inter-Bold': require('../assets/fonts/Inter-Bold.ttf'),
+    'Syne-Bold': Syne_700Bold,
+    'Syne-SemiBold': Syne_600SemiBold,
   });
 
   useEffect(() => {

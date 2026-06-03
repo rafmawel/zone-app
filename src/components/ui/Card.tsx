@@ -20,6 +20,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 16,
-    padding: 16,
+    padding: 20,
   },
 });

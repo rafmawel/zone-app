@@ -161,25 +161,6 @@ export default function HistoryScreen(): React.ReactElement {
           </ZoneText>
         </View>
 
-        <View style={[styles.banner, { borderLeftColor: banner.border }]}>
-          <ZoneText variant="caption" style={styles.bannerText}>
-            {banner.message}
-          </ZoneText>
-        </View>
-
-        <View style={styles.section}>
-          <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
-            SCORE ZONE · 7 JOURS
-          </ZoneText>
-          <View style={styles.chartCard} onLayout={onChartLayout}>
-            {chartWidth > 0 && checkins ? (
-              <ZoneSparkline checkins={checkins} width={chartWidth} />
-            ) : (
-              <Skeleton width="100%" height={140} borderRadius={12} />
-            )}
-          </View>
-        </View>
-
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}

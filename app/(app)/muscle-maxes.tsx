@@ -157,7 +157,7 @@ export default function MuscleMaxesScreen(): React.ReactElement {
         };
         await saveExerciseMax(user.uid, max);
       }
-      router.replace('/(app)/(tabs)/program');
+      router.replace('/(app)/(tabs)/aujourd-hui');
     } catch {
       setError('Enregistrement impossible. Réessaie.');
     } finally {

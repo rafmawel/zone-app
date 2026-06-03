@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Modal, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Animated, {
   Easing,
@@ -405,6 +405,7 @@ export default function SessionScreen(): React.ReactElement {
         <WorkView
           exerciseName={exerciseMeta?.name.toUpperCase() ?? currentExercise.exercise_id}
           canShowInfo={!!exerciseMeta}
+          isProUser={isPro}
           setIdx={setIdx}
           totalSets={totalSets}
           plannedSet={currentSet}
@@ -620,9 +621,51 @@ function PRFlash({ pr }: { pr: ResultPR }): React.ReactElement {
   );
 }
 
+function buildRepOptions(target: number): number[] {
+  const start = Math.max(1, target - 2);
+  return [0, 1, 2, 3, 4].map((i) => start + i);
+}
+
+function formatWeight(v: number): string {
+  return Number.isInteger(v) ? `${v}` : v.toFixed(1);
+}
+
+function WeightInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+}): React.ReactElement {
+  const [text, setText] = useState<string>(formatWeight(value));
+  useEffect(() => {
+    setText(formatWeight(value));
+  }, [value]);
+  const commit = (): void => {
+    const parsed = parseFloat(text.replace(',', '.'));
+    const next = Number.isFinite(parsed) ? Math.max(0, Math.round(parsed / 2.5) * 2.5) : value;
+    onChange(next);
+    setText(formatWeight(next));
+  };
+  return (
+    <TextInput
+      value={text}
+      onChangeText={setText}
+      onBlur={commit}
+      onSubmitEditing={commit}
+      keyboardType="decimal-pad"
+      returnKeyType="done"
+      selectionColor={colors.accent.gold}
+      style={styles.weightInput}
+      maxLength={6}
+    />
+  );
+}
+
 function WorkView({
   exerciseName,
   canShowInfo,
+  isProUser,
   setIdx,
   totalSets,
   plannedSet,
@@ -637,6 +680,7 @@ function WorkView({
 }: {
   exerciseName: string;
   canShowInfo: boolean;
+  isProUser: boolean;
   setIdx: number;
   totalSets: number;
   plannedSet: PlannedSet;
@@ -649,10 +693,19 @@ function WorkView({
   onDone: () => void;
   onShowInfo: () => void;
 }): React.ReactElement {
+  const target = parseTargetReps(plannedSet.target_reps);
+  const repOptions = buildRepOptions(target);
+  const rirOptions: { label: string; rpe: number }[] = [
+    { label: '0', rpe: 10 },
+    { label: '1', rpe: 9 },
+    { label: '2', rpe: 8 },
+    { label: '3+', rpe: 7 },
+  ];
+
   return (
     <View style={styles.workWrap}>
       <View style={styles.exerciseNameRow}>
-        <ZoneText variant="heading" style={styles.exerciseName}>
+        <ZoneText variant="title" size={22} style={styles.exerciseName}>
           {exerciseName}
         </ZoneText>
         {canShowInfo ? (
@@ -667,74 +720,97 @@ function WorkView({
         ) : null}
       </View>
       <ZoneText variant="caption" color={colors.text.muted} style={styles.setProgress}>
-        Série {setIdx + 1}/{totalSets}
+        SÉRIE {setIdx + 1}/{totalSets}
       </ZoneText>
 
-      <View style={styles.targetCard}>
-        <View style={styles.targetRow}>
-          <ZoneText variant="caption" color={colors.text.muted}>
-            CIBLE
-          </ZoneText>
-          {plannedSet.target_rpe ? (
-            <View style={styles.rpeBadge}>
-              <ZoneText style={styles.rpeBadgeText}>RPE {plannedSet.target_rpe}</ZoneText>
-            </View>
-          ) : null}
+      {/* Editable weight, slot-machine style */}
+      <View style={styles.weightCard}>
+        <View style={styles.weightRow}>
+          <TouchableOpacity
+            onPress={() => onChangeWeight(Math.max(0, +(actualWeight - 2.5).toFixed(2)))}
+            hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+            style={styles.weightBtn}
+            activeOpacity={0.7}
+          >
+            <Minus size={24} color={colors.accent.gold} />
+          </TouchableOpacity>
+          <View style={styles.weightValueWrap}>
+            <WeightInput value={actualWeight} onChange={onChangeWeight} />
+            <ZoneText variant="caption" color={colors.text.muted}>
+              kg
+            </ZoneText>
+          </View>
+          <TouchableOpacity
+            onPress={() => onChangeWeight(+(actualWeight + 2.5).toFixed(2))}
+            hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+            style={styles.weightBtn}
+            activeOpacity={0.7}
+          >
+            <Plus size={24} color={colors.accent.gold} />
+          </TouchableOpacity>
         </View>
-        <View style={styles.targetMain}>
-          <ZoneText variant="heading" style={styles.targetWeight}>
-            {plannedSet.target_weight_kg ?? '-'}
-          </ZoneText>
-          <ZoneText variant="caption" color={colors.text.muted}>
-            kg
-          </ZoneText>
-          <ZoneText variant="heading" style={styles.targetReps}>
-            × {plannedSet.target_reps}
-          </ZoneText>
-        </View>
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.objective}>
+          Objectif: {plannedSet.target_reps} reps
+          {plannedSet.target_weight_kg ? ` · cible ${plannedSet.target_weight_kg} kg` : ''}
+        </ZoneText>
       </View>
 
-      <View style={styles.inputCard}>
-        <NumberStepper label="POIDS (kg)" value={actualWeight} step={2.5} min={0} onChange={onChangeWeight} />
-        <NumberStepper label="REPS RÉALISÉES" value={actualReps} step={1} min={0} onChange={onChangeReps} />
-        <View style={styles.rpeRow}>
-          <ZoneText variant="caption" color={colors.text.muted} style={styles.rpeLabel}>
-            RPE RESSENTI
-          </ZoneText>
-          <View style={styles.rpeScale}>
-            {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
-              const active = setRpe === n;
-              return (
-                <TouchableOpacity
-                  key={n}
-                  onPress={() => onChangeRpe(n)}
-                  activeOpacity={0.8}
-                  style={[
-                    styles.rpeCell,
-                    {
-                      backgroundColor: active ? colors.accent.gold : colors.bg.card,
-                      borderColor: active ? colors.accent.gold : colors.border,
-                    },
-                  ]}
-                >
-                  <ZoneText
-                    style={{
-                      color: active ? colors.bg.primary : colors.text.secondary,
-                      fontFamily: 'Inter-Bold',
-                      fontSize: 12,
-                    }}
-                  >
-                    {n}
-                  </ZoneText>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
+      {/* Reps tap targets */}
+      <View style={styles.repsRow}>
+        {repOptions.map((n) => {
+          const active = actualReps === n;
+          return (
+            <TouchableOpacity
+              key={n}
+              onPress={() => onChangeReps(n)}
+              activeOpacity={0.85}
+              style={[styles.repCell, active ? styles.repCellActive : null]}
+            >
+              <ZoneText
+                variant="number"
+                size={24}
+                color={active ? colors.bg.primary : colors.text.primary}
+              >
+                {n}
+              </ZoneText>
+            </TouchableOpacity>
+          );
+        })}
       </View>
+      <ZoneText variant="caption" color={colors.text.muted} style={styles.repsCaption}>
+        reps réalisées
+      </ZoneText>
+
+      {/* RIR (Pro) */}
+      {isProUser ? (
+        <View style={styles.rirRow}>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.rirLabel}>
+            RIR:
+          </ZoneText>
+          {rirOptions.map((o) => {
+            const active = setRpe === o.rpe;
+            return (
+              <TouchableOpacity
+                key={o.label}
+                onPress={() => onChangeRpe(o.rpe)}
+                activeOpacity={0.85}
+                style={[styles.rirCell, active ? styles.rirCellActive : null]}
+              >
+                <ZoneText
+                  variant="caption"
+                  color={active ? colors.bg.primary : colors.text.secondary}
+                  style={styles.rirCellText}
+                >
+                  {o.label}
+                </ZoneText>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ) : null}
 
       <View style={styles.workFooter}>
-        <Button title="Série terminée" onPress={onDone} />
+        <Button title="SÉRIE TERMINÉE  →" onPress={onDone} />
       </View>
     </View>
   );
@@ -832,7 +908,7 @@ function RestView({
           />
         </Svg>
         <Animated.View style={[styles.ringContent, contentStyle]}>
-          <ZoneText variant="heading" style={[styles.ringValue, { color: accentColor }]}>
+          <ZoneText variant="number" style={[styles.ringValue, { color: accentColor }]}>
             {formatRestMS(remaining)}
           </ZoneText>
           <ZoneText variant="caption" color={colors.text.muted}>
@@ -915,7 +991,7 @@ function SummaryView({
             <ZoneText variant="caption" color={colors.text.muted}>
               Tu étais à
             </ZoneText>
-            <ZoneText variant="heading" style={[styles.zoneSummaryScore, { color: accentColor }]}>
+            <ZoneText variant="number" style={[styles.zoneSummaryScore, { color: accentColor }]}>
               {zoneScore}
             </ZoneText>
             <ZoneText variant="label" style={{ letterSpacing: 2, color: colors.text.primary }}>
@@ -946,7 +1022,7 @@ function SummaryStat({
         {label}
       </ZoneText>
       <View style={styles.summaryStatValueRow}>
-        <ZoneText variant="heading" style={styles.summaryStatValue}>
+        <ZoneText variant="number" style={styles.summaryStatValue}>
           {value}
         </ZoneText>
         {unit ? (
@@ -1107,7 +1183,65 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  workFooter: { marginTop: 20, marginBottom: 16 },
+  workFooter: { marginTop: 'auto', marginBottom: 16 },
+  weightCard: {
+    marginTop: 24,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 20,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+  },
+  weightRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  weightBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weightValueWrap: { flex: 1, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 4 },
+  weightInput: {
+    minWidth: 120,
+    textAlign: 'center',
+    color: colors.accent.gold,
+    fontFamily: 'BebasNeue-Regular',
+    fontSize: 64,
+    lineHeight: 70,
+    paddingVertical: 0,
+  },
+  objective: { textAlign: 'center', marginTop: 16 },
+  repsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 24, gap: 8 },
+  repCell: {
+    flex: 1,
+    height: 56,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  repCellActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
+  repsCaption: { textAlign: 'center', marginTop: 8 },
+  rirRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 20, justifyContent: 'center' },
+  rirLabel: { letterSpacing: 1 },
+  rirCell: {
+    minWidth: 44,
+    height: 36,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rirCellActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
+  rirCellText: { fontFamily: 'Inter-Bold' },
   restWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
   restEyebrow: { letterSpacing: 3, fontFamily: 'Inter-Bold', marginBottom: 16 },
   ringWrap: { width: 220, height: 220, alignItems: 'center', justifyContent: 'center' },
