@@ -22,7 +22,6 @@ export default function AppLayout(): React.ReactElement {
       <Stack.Screen name="session-detail/[id]" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="running-setup" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="run-session/[id]" options={{ animation: 'none', gestureEnabled: true }} />
-      <Stack.Screen name="planner" options={{ animation: 'slide_from_bottom' }} />
       <Stack.Screen name="muscle-setup" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="muscle-maxes" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="hyrox-session/[id]" options={{ animation: 'slide_from_bottom' }} />
