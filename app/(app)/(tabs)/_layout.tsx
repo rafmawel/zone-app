@@ -1,6 +1,7 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { Tabs } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BarChart3, CalendarDays, Home, Play, User } from 'lucide-react-native';
 import { colors } from '@/theme/colors';
 import { ZoneText } from '@/components/ui/ZoneText';
@@ -33,6 +34,7 @@ function CenterIcon(): React.ReactElement {
 
 export default function AppLayout(): React.ReactElement {
   const { activeSession } = useSession();
+  const insets = useSafeAreaInsets();
   const showMini = activeSession !== null;
 
   return (
@@ -46,9 +48,9 @@ export default function AppLayout(): React.ReactElement {
             backgroundColor: colors.bg.card,
             borderTopWidth: 0.5,
             borderTopColor: colors.border,
-            height: TAB_BAR_HEIGHT,
-            paddingTop: 10,
-            paddingBottom: 12,
+            height: TAB_BAR_HEIGHT + insets.bottom,
+            paddingTop: 8,
+            paddingBottom: (Platform.OS === 'android' ? 8 : 0) + insets.bottom,
           },
           tabBarItemStyle: { flex: 1, minWidth: 0, paddingHorizontal: 0 },
           sceneStyle: {
@@ -94,7 +96,7 @@ export default function AppLayout(): React.ReactElement {
         />
       </Tabs>
       {showMini ? (
-        <View style={[styles.miniWrap, { bottom: TAB_BAR_HEIGHT }]} pointerEvents="box-none">
+        <View style={[styles.miniWrap, { bottom: TAB_BAR_HEIGHT + insets.bottom }]} pointerEvents="box-none">
           <SessionMiniBar />
         </View>
       ) : null}

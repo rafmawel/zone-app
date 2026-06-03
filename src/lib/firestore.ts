@@ -1174,3 +1174,101 @@ export async function saveStrengthTestSession1(
     { merge: true },
   );
 }
+
+// ── On-demand recovery helpers ──────────────────────────────────────────────
+// These power the smart recovery warnings: how long since the last session of
+// a given sport, and what was trained on a given day.
+
+function timestampToDate(t: Timestamp | null | undefined): Date | null {
+  if (!t) return null;
+  try {
+    return t.toDate();
+  } catch {
+    return null;
+  }
+}
+
+/** Fallback when a session has no completion timestamp: noon on its date. */
+function dateStringToDate(date: string): Date | null {
+  const d = new Date(`${date}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function latestDate(dates: (Date | null)[]): Date | null {
+  let best: Date | null = null;
+  for (const d of dates) {
+    if (!d) continue;
+    if (!best || d.getTime() > best.getTime()) best = d;
+  }
+  return best;
+}
+
+/**
+ * Most recent completed session date/time for a sport, or null.
+ *
+ * @param uid Firebase auth UID
+ * @param sport one of weightlifting / running / musculation / hyrox
+ */
+export async function getLastSessionBySport(
+  uid: string,
+  sport: ScheduleSport,
+): Promise<Date | null> {
+  if (sport === 'running') {
+    const runs = await getCompletedRuns(uid, 10);
+    return latestDate(
+      runs.map((r) => timestampToDate(r.completed_at) ?? dateStringToDate(r.date)),
+    );
+  }
+  if (sport === 'hyrox') {
+    const records = await getHyroxSessionHistory(uid, 10);
+    return latestDate(
+      records.map((h) => timestampToDate(h.created_at) ?? dateStringToDate(h.date)),
+    );
+  }
+  const sessions = await getCompletedSessions(uid);
+  const filtered = sessions.filter((s) =>
+    sport === 'musculation'
+      ? s.discipline === 'musculation'
+      : s.discipline !== 'musculation',
+  );
+  return latestDate(
+    filtered.map((s) => timestampToDate(s.completed_at) ?? dateStringToDate(s.date)),
+  );
+}
+
+export interface DatedSportSession {
+  sport: ScheduleSport;
+  at: Date | null;
+}
+
+/**
+ * Every completed session (all sports) on a given calendar date.
+ *
+ * @param uid Firebase auth UID
+ * @param date ISO date string (YYYY-MM-DD)
+ */
+export async function getLastSessionsByDate(
+  uid: string,
+  date: string,
+): Promise<DatedSportSession[]> {
+  const [sessions, runs, hyrox] = await Promise.all([
+    getCompletedSessions(uid).catch(() => [] as TrainingSession[]),
+    getCompletedRuns(uid, 30).catch(() => [] as RunSession[]),
+    getHyroxSessionHistory(uid, 20).catch(() => [] as HyroxSessionRecord[]),
+  ]);
+  const out: DatedSportSession[] = [];
+  for (const s of sessions) {
+    if (s.date !== date) continue;
+    out.push({
+      sport: s.discipline === 'musculation' ? 'musculation' : 'weightlifting',
+      at: timestampToDate(s.completed_at),
+    });
+  }
+  for (const r of runs) {
+    if (r.date === date) out.push({ sport: 'running', at: timestampToDate(r.completed_at) });
+  }
+  for (const h of hyrox) {
+    if (h.date === date) out.push({ sport: 'hyrox', at: timestampToDate(h.created_at) });
+  }
+  return out;
+}
