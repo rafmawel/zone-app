@@ -184,7 +184,7 @@ export default function EntrainerScreen(): React.ReactElement {
               <TouchableOpacity
                 key={s.id}
                 activeOpacity={0.8}
-                onPress={() => router.push(`/(app)/session-detail/${s.id}`)}
+                onPress={() => router.push(`/(app)/session-preview?id=${s.id}`)}
                 style={styles.recentRow}
               >
                 <ZoneText style={styles.recentIcon}>{sp.icon}</ZoneText>

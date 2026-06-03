@@ -5,14 +5,12 @@ import { ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import {
-  createPlannedSession,
   createRunSession,
+  createPlannedSession,
   getCompletedRuns,
   getCompletedSessions,
   getExerciseMaxes,
   getHyroxSessionHistory,
-  getLastSessionBySport,
-  getLastSessionsByDate,
   getWorkloadHistory,
   setMuscleDeloadActive,
   todayDateString,
@@ -29,15 +27,25 @@ import {
   type UserProgram,
 } from '@/lib/firestore';
 import {
-  generateWeeklySession,
+  getBlockName,
   previewWeightliftingSession,
-  rirIntensityDelta,
+  projectProgram,
 } from '@/lib/programEngine';
+import { createWeightliftingSession } from '@/lib/sessionLaunch';
+import {
+  buildRecoveryWarning,
+  loadRecoveryContext,
+  EMPTY_RECOVERY_CONTEXT,
+  type RecoveryContext,
+  type RecoveryWarning,
+  type WarnLevel,
+} from '@/lib/recovery';
 import { calculateACWR, type WorkloadDataPoint, type WorkloadSport } from '@/lib/pro';
 import { generateMuscleSession } from '@/lib/muscleEngine';
 import { evaluateDeloadNeed, type DeloadRecommendation } from '@/lib/muscleSessionScience';
 import { blockFromWeeksToRace, hyroxWeeklyPlan, type HyroxBlockPhase } from '@/lib/hyroxScience';
 import type { MuscleGroup } from '@/data/exercises';
+import { getExerciseById } from '@/data/exercises';
 import {
   buildSessionPlan,
   calculateVDOTPaces,
@@ -79,32 +87,21 @@ const ADD_SPORT_ROUTE: Record<
 };
 
 const ALL_SPORTS: ScheduleSport[] = ['weightlifting', 'running', 'musculation', 'hyrox'];
+// On-demand sports: the weightlifting programme is shown as a queue instead.
+const ON_DEMAND_SPORTS: ScheduleSport[] = ['running', 'musculation', 'hyrox'];
 
 type BonusOption = 'recovery' | 'technique' | 'cardio';
 
 const BONUS_OPTIONS: { id: BonusOption; title: string; description: string; detail: string }[] = [
-  {
-    id: 'recovery',
-    title: 'RÉCUPÉRATION ACTIVE · 20 min',
-    description: 'Mobilité + étirements dynamiques',
-    detail: "N'impacte pas ta récupération",
-  },
-  {
-    id: 'technique',
-    title: 'TRAVAIL TECHNIQUE · 25 min',
-    description: 'Répétitions légères pour graver les patterns',
-    detail: 'Charge: 50-60% de ton max',
-  },
-  {
-    id: 'cardio',
-    title: 'CARDIO LÉGER · 30 min',
-    description: 'Zone 2 uniquement, préserve ta récupération',
-    detail: 'FC max 130-140 bpm',
-  },
+  { id: 'recovery', title: 'RÉCUPÉRATION ACTIVE · 20 min', description: 'Mobilité + étirements dynamiques', detail: "N'impacte pas ta récupération" },
+  { id: 'technique', title: 'TRAVAIL TECHNIQUE · 25 min', description: 'Répétitions légères pour graver les patterns', detail: 'Charge: 50-60% de ton max' },
+  { id: 'cardio', title: 'CARDIO LÉGER · 30 min', description: 'Zone 2 uniquement, préserve ta récupération', detail: 'FC max 130-140 bpm' },
 ];
 
 const FR_DAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 const WEEK_RANGE = 4;
+const SESSION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+const QUEUE_WEEKS = 3;
 
 function weekMondayDate(weekOffset: number): Date {
   const now = new Date();
@@ -145,32 +142,35 @@ interface CompletedSessionLite {
   date: string;
 }
 
+interface QueueSession {
+  day: number;
+  letter: string;
+  title: string;
+  summary: string;
+  durationMin: number;
+}
+
+interface QueueWeek {
+  weekOffset: number;
+  block: number;
+  week: number;
+  label: string;
+  active: boolean;
+  sessions: QueueSession[];
+}
+
 function sessionSport(s: TrainingSession): ScheduleSport {
   if (s.discipline === 'musculation') return 'musculation';
   if (s.sport_key === 'running') return 'running';
   return 'weightlifting';
 }
 
-function computeRir(values: number[]): number[] {
-  return values.slice(-2);
-}
-
 const VALID_WORKLOAD_SPORTS: ReadonlySet<WorkloadSport> = new Set([
-  'weightlifting',
-  'running',
-  'musculation',
-  'hyrox',
+  'weightlifting', 'running', 'musculation', 'hyrox',
 ]);
 
 function toWorkloadPoints(
-  entries: {
-    date: string;
-    tss: number;
-    sport: string;
-    sessionType: string;
-    durationMinutes: number;
-    intensityFactor: number;
-  }[],
+  entries: { date: string; tss: number; sport: string; sessionType: string; durationMinutes: number; intensityFactor: number }[],
 ): WorkloadDataPoint[] {
   const out: WorkloadDataPoint[] = [];
   for (const e of entries) {
@@ -187,110 +187,11 @@ function toWorkloadPoints(
   return out;
 }
 
-type WarnLevel = 'info' | 'warn' | 'danger';
-interface RecoveryWarning {
-  level: WarnLevel;
-  message: string;
-}
-
-function hoursBetween(a: Date, b: Date): number {
-  return Math.abs(a.getTime() - b.getTime()) / 3_600_000;
-}
-
-/**
- * Smart recovery guidance before launching a session. Cross-sport same-day
- * checks take priority, then per-sport recovery since the last session.
- */
-function buildRecoveryWarning(
-  sport: ScheduleSport,
-  lastBySport: Record<ScheduleSport, Date | null>,
-  todaySports: ScheduleSport[],
-  now: Date,
-): RecoveryWarning | null {
-  // Same-day cross-sport.
-  if (sport === 'weightlifting' && todaySports.includes('weightlifting')) {
-    return {
-      level: 'danger',
-      message:
-        "🔴 Deux séances d'haltéro le même jour, ce n'est pas recommandé. Ton système nerveux ne peut pas récupérer en quelques heures.",
-    };
-  }
-  if (sport === 'weightlifting' && todaySports.includes('running')) {
-    return {
-      level: 'warn',
-      message:
-        "⚠️ Course avant l'haltéro, ce n'est pas idéal. La fatigue cardiovasculaire nuit aux performances techniques.",
-    };
-  }
-  if (sport === 'running' && todaySports.includes('weightlifting')) {
-    return {
-      level: 'info',
-      message:
-        '💡 Bon choix. Laisse 4 à 6h entre les deux séances. Tu as fait l\'haltéro en premier, c\'est le bon ordre.',
-    };
-  }
-
-  const last = lastBySport[sport];
-  if (sport === 'weightlifting' && last) {
-    const h = hoursBetween(now, last);
-    if (h < 24) {
-      return {
-        level: 'warn',
-        message: `⚠️ Tu as fait de l'haltéro il y a moins de 24h (${Math.round(h)}h). Ton SNC n'est pas complètement récupéré. Performance réduite probable.`,
-      };
-    }
-    if (h <= 48) {
-      return {
-        level: 'info',
-        message: `✓ Récupération correcte (${Math.round(h)}h depuis la dernière séance).`,
-      };
-    }
-    return null;
-  }
-  if (sport === 'musculation' && last) {
-    const h = hoursBetween(now, last);
-    if (h < 48) {
-      return {
-        level: 'warn',
-        message: `⚠️ Tu as fait de la muscu il y a ${Math.round(h)}h. Pour éviter le surentraînement, varie les groupes musculaires ou attends ${Math.max(1, Math.round(48 - h))}h.`,
-      };
-    }
-    return null;
-  }
-  if (sport === 'running' && last) {
-    const h = hoursBetween(now, last);
-    if (h < 12) {
-      return {
-        level: 'warn',
-        message: `⚠️ Sortie course il y a moins de 12h (${Math.round(h)}h). Privilégie une sortie facile.`,
-      };
-    }
-  }
-  if (sport === 'running' && lastBySport.weightlifting) {
-    const hw = hoursBetween(now, lastBySport.weightlifting);
-    if (hw < 24) {
-      return {
-        level: 'info',
-        message:
-          "💡 Tu as fait de l'haltéro récemment. Course possible mais évite le tempo ou les intervalles aujourd'hui.",
-      };
-    }
-  }
-  return null;
-}
-
 function warnColor(level: WarnLevel): string {
   if (level === 'danger') return colors.orbe.red;
   if (level === 'warn') return colors.orbe.amber;
   return colors.orbe.blue;
 }
-
-const EMPTY_LAST: Record<ScheduleSport, Date | null> = {
-  weightlifting: null,
-  running: null,
-  musculation: null,
-  hyrox: null,
-};
 
 export default function AujourdhuiScreen(): React.ReactElement {
   const router = useRouter();
@@ -306,106 +207,89 @@ export default function AujourdhuiScreen(): React.ReactElement {
   const [recentRunRir, setRecentRunRir] = useState<number[]>([]);
   const [acwrHigh, setAcwrHigh] = useState<boolean>(false);
   const [deload, setDeload] = useState<DeloadRecommendation | null>(null);
-  const [lastBySport, setLastBySport] = useState<Record<ScheduleSport, Date | null>>(EMPTY_LAST);
-  const [todaySports, setTodaySports] = useState<ScheduleSport[]>([]);
+  const [recovery, setRecovery] = useState<RecoveryContext>(EMPTY_RECOVERY_CONTEXT);
+  const [sessionIdByDate, setSessionIdByDate] = useState<Record<string, string>>({});
 
   const [weekOffset, setWeekOffset] = useState<number>(0);
-  const [pending, setPending] = useState<{ sport: ScheduleSport; warning: RecoveryWarning } | null>(null);
+  const [pending, setPending] = useState<{ sport: ScheduleSport; day: number | null; warning: RecoveryWarning } | null>(null);
   const [bonusVisible, setBonusVisible] = useState<boolean>(false);
   const [addSportVisible, setAddSportVisible] = useState<boolean>(false);
   const [busy, setBusy] = useState<ScheduleSport | 'bonus' | null>(null);
 
-  // Live profile + score documents.
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
     const subs = [
       onSnapshot(doc(db, 'users', user.uid, 'checkins', todayDateString()), (s) =>
-        setScore(s.exists() ? (s.data() as DailyCheckin).zone_score : null),
-        () => setScore(null),
-      ),
+        setScore(s.exists() ? (s.data() as DailyCheckin).zone_score : null), () => setScore(null)),
       onSnapshot(doc(db, 'users', user.uid, 'state', 'program'), (s) =>
-        setProgram(s.exists() ? (s.data() as UserProgram) : null), () => undefined,
-      ),
+        setProgram(s.exists() ? (s.data() as UserProgram) : null), () => undefined),
       onSnapshot(doc(db, 'users', user.uid, 'state', 'running_profile'), (s) =>
-        setRunningProfile(s.exists() ? (s.data() as RunningProfile) : null), () => undefined,
-      ),
+        setRunningProfile(s.exists() ? (s.data() as RunningProfile) : null), () => undefined),
       onSnapshot(doc(db, 'users', user.uid, 'state', 'muscle_profile'), (s) =>
-        setMuscleProfile(s.exists() ? (s.data() as MuscleProfile) : null), () => undefined,
-      ),
+        setMuscleProfile(s.exists() ? (s.data() as MuscleProfile) : null), () => undefined),
       onSnapshot(doc(db, 'users', user.uid, 'state', 'hyrox_profile'), (s) =>
-        setHyroxProfile(s.exists() ? (s.data() as HyroxProfile) : null), () => undefined,
-      ),
+        setHyroxProfile(s.exists() ? (s.data() as HyroxProfile) : null), () => undefined),
     ];
     return () => subs.forEach((u) => u());
   }, []);
 
-  // History + recovery data; reloaded whenever the screen regains focus.
   const loadHistory = useCallback(async (): Promise<void> => {
     const user = auth.currentUser;
     if (!user) return;
-    const [sessions, runs, hyrox, exMaxes, workload, wl, ru, mu, hy, today] = await Promise.all([
+    const [sessions, runs, hyrox, exMaxes, workload, ctx] = await Promise.all([
       getCompletedSessions(user.uid).catch(() => [] as TrainingSession[]),
       getCompletedRuns(user.uid, 60).catch(() => [] as RunSession[]),
       getHyroxSessionHistory(user.uid, 60).catch(() => [] as HyroxSessionRecord[]),
       getExerciseMaxes(user.uid).catch(() => [] as ExerciseMax[]),
       getWorkloadHistory(user.uid, 35).catch(() => []),
-      getLastSessionBySport(user.uid, 'weightlifting').catch(() => null),
-      getLastSessionBySport(user.uid, 'running').catch(() => null),
-      getLastSessionBySport(user.uid, 'musculation').catch(() => null),
-      getLastSessionBySport(user.uid, 'hyrox').catch(() => null),
-      getLastSessionsByDate(user.uid, todayDateString()).catch(() => []),
+      loadRecoveryContext(user.uid).catch(() => EMPTY_RECOVERY_CONTEXT),
     ]);
-    const lite: CompletedSessionLite[] = [
+    setCompleted([
       ...sessions.map((s) => ({ sport: sessionSport(s), date: s.date })),
       ...runs.map((r) => ({ sport: 'running' as ScheduleSport, date: r.date })),
       ...hyrox.map((h) => ({ sport: 'hyrox' as ScheduleSport, date: h.date })),
-    ];
-    setCompleted(lite);
+    ]);
     setMaxes(exMaxes);
     setRecentRir(
-      computeRir(
-        sessions
-          .filter((s) => s.sport_key === 'weightlifting' && s.discipline !== 'musculation' && typeof s.rpe === 'number')
-          .sort((a, b) => a.date.localeCompare(b.date))
-          .map((s) => Math.max(0, 10 - (s.rpe as number))),
-      ),
+      sessions.filter((s) => s.sport_key === 'weightlifting' && s.discipline !== 'musculation' && typeof s.rpe === 'number')
+        .sort((a, b) => a.date.localeCompare(b.date)).slice(-2).map((s) => Math.max(0, 10 - (s.rpe as number))),
     );
     setRecentMuscleRir(
-      computeRir(
-        sessions
-          .filter((s) => s.discipline === 'musculation' && typeof s.rpe === 'number')
-          .sort((a, b) => a.date.localeCompare(b.date))
-          .map((s) => Math.max(0, 10 - (s.rpe as number))),
-      ),
+      sessions.filter((s) => s.discipline === 'musculation' && typeof s.rpe === 'number')
+        .sort((a, b) => a.date.localeCompare(b.date)).slice(-2).map((s) => Math.max(0, 10 - (s.rpe as number))),
     );
     setRecentRunRir(
-      computeRir(
-        runs
-          .filter((r) => typeof r.rpe === 'number')
-          .sort((a, b) => a.date.localeCompare(b.date))
-          .map((r) => Math.max(0, 10 - (r.rpe as number))),
-      ),
+      runs.filter((r) => typeof r.rpe === 'number')
+        .sort((a, b) => a.date.localeCompare(b.date)).slice(-2).map((r) => Math.max(0, 10 - (r.rpe as number))),
     );
-    const acwr = calculateACWR(toWorkloadPoints(workload), todayDateString());
-    setAcwrHigh(acwr.riskLevel === 'danger');
-    setLastBySport({ weightlifting: wl, running: ru, musculation: mu, hyrox: hy });
-    setTodaySports(today.map((t) => t.sport));
-    setDeload(
-      evaluateDeloadNeed(
-        sessions.filter((s) => s.discipline === 'musculation'),
-        'intermediaire',
-      ),
-    );
+    setAcwrHigh(calculateACWR(toWorkloadPoints(workload), todayDateString()).riskLevel === 'danger');
+    const byDate: Record<string, string> = {};
+    for (const s of sessions) if (!byDate[s.date]) byDate[s.date] = s.id;
+    setSessionIdByDate(byDate);
+    setRecovery(ctx);
+    setDeload(evaluateDeloadNeed(sessions.filter((s) => s.discipline === 'musculation'), 'intermediaire'));
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      void loadHistory();
-    }, [loadHistory]),
-  );
+  useFocusEffect(useCallback(() => { void loadHistory(); }, [loadHistory]));
 
-  // ── Session generators (with autoregulation) ──────────────────────────────
+  // ── Launchers ─────────────────────────────────────────────────────────────
+  const onLaunchWeightlifting = async (day: number): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user || !program) return;
+    setBusy('weightlifting');
+    try {
+      const id = await createWeightliftingSession({
+        uid: user.uid, program, maxes, zoneScore: score, recentRir, dayOfWeek: day,
+      });
+      router.push(`/(app)/session/${id}`);
+    } catch {
+      // no-op
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const onStartRun = async (): Promise<void> => {
     const user = auth.currentUser;
     if (!user || !runningProfile) return;
@@ -425,11 +309,8 @@ export default function AujourdhuiScreen(): React.ReactElement {
         date: todayDateString(),
         session_type: plan.type,
         steps: plan.steps.map((s) => ({
-          kind: s.kind,
-          label: s.label,
-          duration_seconds: s.durationSeconds,
-          target_pace_sec_per_km: s.targetPaceSecPerKm,
-          distance_meters: s.distanceMeters,
+          kind: s.kind, label: s.label, duration_seconds: s.durationSeconds,
+          target_pace_sec_per_km: s.targetPaceSecPerKm, distance_meters: s.distanceMeters,
         })),
         estimated_duration_min: plan.estimatedDurationMin,
         estimated_distance_km: plan.estimatedDistanceKm,
@@ -437,40 +318,6 @@ export default function AujourdhuiScreen(): React.ReactElement {
         zone_message: plan.message,
       });
       router.push(`/(app)/run-session/${id}`);
-    } catch {
-      // no-op
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const onStartWeightlifting = async (): Promise<void> => {
-    const user = auth.currentUser;
-    if (!user || !program) return;
-    setBusy('weightlifting');
-    try {
-      const generated = generateWeeklySession({
-        program,
-        maxes,
-        dayOfWeek: program.current_day,
-        zoneScore: score,
-        recentRir,
-      });
-      const rirDelta = rirIntensityDelta(recentRir);
-      const autoNote =
-        rirDelta > 0
-          ? 'Tes 2 dernières séances étaient faciles (RIR élevé) : intensité augmentée de 2,5%. '
-          : rirDelta < 0
-            ? 'Tes 2 dernières séances étaient très dures (RIR 0) : intensité réduite. '
-            : '';
-      const id = await createPlannedSession(user.uid, {
-        date: todayDateString(),
-        sport_key: program.sport_key,
-        planned_exercises: generated.exercises,
-        zone_score_at_start: score,
-        zone_message: autoNote + generated.message,
-      });
-      router.push(`/(app)/session/${id}`);
     } catch {
       // no-op
     } finally {
@@ -503,9 +350,7 @@ export default function AujourdhuiScreen(): React.ReactElement {
         discipline: 'musculation',
         planned_exercises: planned,
         zone_score_at_start: score,
-        zone_message: deloadActive
-          ? 'Semaine de décharge · volume réduit, charges maintenues.'
-          : generated.message,
+        zone_message: deloadActive ? 'Semaine de décharge · volume réduit, charges maintenues.' : generated.message,
       });
       router.push(`/(app)/muscle-session/${id}`);
     } catch {
@@ -515,9 +360,7 @@ export default function AujourdhuiScreen(): React.ReactElement {
     }
   };
 
-  const hyroxBlock: HyroxBlockPhase = blockFromWeeksToRace(
-    weeksUntil(hyroxProfile?.target_race_date ?? null),
-  );
+  const hyroxBlock: HyroxBlockPhase = blockFromWeeksToRace(weeksUntil(hyroxProfile?.target_race_date ?? null));
 
   const onStartHyrox = (): void => {
     if (!hyroxProfile) return;
@@ -528,17 +371,17 @@ export default function AujourdhuiScreen(): React.ReactElement {
     router.push(`/(app)/hyrox-session/new?type=${type}&block=${hyroxBlock}`);
   };
 
-  const launchSport = (sport: ScheduleSport): void => {
-    if (sport === 'weightlifting') void onStartWeightlifting();
+  const launch = (sport: ScheduleSport, day: number | null): void => {
+    if (sport === 'weightlifting') void onLaunchWeightlifting(day ?? program?.current_day ?? 1);
     else if (sport === 'running') void onStartRun();
     else if (sport === 'musculation') void onStartMuscle();
     else if (sport === 'hyrox') onStartHyrox();
   };
 
-  const onPickSport = (sport: ScheduleSport): void => {
-    const warning = buildRecoveryWarning(sport, lastBySport, todaySports, new Date());
-    if (warning) setPending({ sport, warning });
-    else launchSport(sport);
+  const pickSport = (sport: ScheduleSport, day: number | null): void => {
+    const warning = buildRecoveryWarning(sport, recovery, new Date());
+    if (warning) setPending({ sport, day, warning });
+    else launch(sport, day);
   };
 
   const onToggleDeload = async (active: boolean): Promise<void> => {
@@ -563,11 +406,8 @@ export default function AujourdhuiScreen(): React.ReactElement {
           date: todayDateString(),
           session_type: plan.type,
           steps: plan.steps.map((s) => ({
-            kind: s.kind,
-            label: s.label,
-            duration_seconds: s.durationSeconds,
-            target_pace_sec_per_km: s.targetPaceSecPerKm,
-            distance_meters: s.distanceMeters,
+            kind: s.kind, label: s.label, duration_seconds: s.durationSeconds,
+            target_pace_sec_per_km: s.targetPaceSecPerKm, distance_meters: s.distanceMeters,
           })),
           estimated_duration_min: plan.estimatedDurationMin,
           estimated_distance_km: plan.estimatedDistanceKm,
@@ -578,20 +418,12 @@ export default function AujourdhuiScreen(): React.ReactElement {
         return;
       }
       if (program) {
-        const lightProgram: UserProgram = { ...program, current_block: 1, current_week: 4 };
-        const generated = generateWeeklySession({
-          program: lightProgram,
+        const id = await createWeightliftingSession({
+          uid: user.uid,
+          program: { ...program, current_block: 1, current_week: 4 },
           maxes,
-          dayOfWeek: program.current_day,
           zoneScore: 60,
           recentRir,
-        });
-        const id = await createPlannedSession(user.uid, {
-          date: todayDateString(),
-          sport_key: 'weightlifting',
-          planned_exercises: generated.exercises.slice(0, 3),
-          zone_score_at_start: score,
-          zone_message: 'Séance bonus technique · charge légère.',
         });
         router.push(`/(app)/session/${id}`);
         return;
@@ -606,15 +438,11 @@ export default function AujourdhuiScreen(): React.ReactElement {
           zoneScore: 30,
           recentRir: recentMuscleRir,
         });
-        const planned: SessionExercise[] = generated.exercises.map((ex) => ({
-          exercise_id: ex.exercise_id,
-          sets: ex.sets,
-        }));
         const id = await createPlannedSession(user.uid, {
           date: todayDateString(),
           sport_key: 'weightlifting',
           discipline: 'musculation',
-          planned_exercises: planned,
+          planned_exercises: generated.exercises.map((ex) => ({ exercise_id: ex.exercise_id, sets: ex.sets })),
           zone_score_at_start: score,
           zone_message: 'Séance bonus · travail léger.',
         });
@@ -629,27 +457,15 @@ export default function AujourdhuiScreen(): React.ReactElement {
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const configuredSports = ALL_SPORTS.filter((s) =>
-    s === 'weightlifting'
-      ? !!program
-      : s === 'running'
-        ? !!runningProfile
-        : s === 'musculation'
-          ? !!muscleProfile
-          : !!hyroxProfile,
+    s === 'weightlifting' ? !!program : s === 'running' ? !!runningProfile : s === 'musculation' ? !!muscleProfile : !!hyroxProfile,
   );
   const unconfiguredSports = ALL_SPORTS.filter((s) => !configuredSports.includes(s));
+  const onDemandSports = ON_DEMAND_SPORTS.filter((s) => configuredSports.includes(s));
   const bonusAvailable = Boolean(program || runningProfile || muscleProfile);
   const zoneLevel = score !== null ? getZoneLevel(score) : null;
 
-  const durations = useMemo<Partial<Record<ScheduleSport, number>>>(() => {
+  const onDemandDurations = useMemo<Partial<Record<ScheduleSport, number>>>(() => {
     const d: Partial<Record<ScheduleSport, number>> = {};
-    if (program) {
-      try {
-        d.weightlifting = previewWeightliftingSession(program, maxes, program.current_day).durationMin;
-      } catch {
-        d.weightlifting = undefined;
-      }
-    }
     if (muscleProfile) {
       try {
         d.musculation = generateMuscleSession({
@@ -667,7 +483,45 @@ export default function AujourdhuiScreen(): React.ReactElement {
     if (runningProfile) d.running = 50;
     if (hyroxProfile) d.hyrox = 45;
     return d;
-  }, [program, maxes, muscleProfile, runningProfile, hyroxProfile, recentMuscleRir]);
+  }, [muscleProfile, runningProfile, hyroxProfile, recentMuscleRir]);
+
+  // The weightlifting programme as a queue: weeks of sessions A/B/C.
+  const queue = useMemo<QueueWeek[]>(() => {
+    if (!program || program.sport_key !== 'weightlifting') return [];
+    const perWeek = Math.max(1, Math.min(SESSION_LETTERS.length, program.sessions_per_week));
+    const weeks: QueueWeek[] = [];
+    for (let w = 0; w < QUEUE_WEEKS; w += 1) {
+      const projected = projectProgram(program, w);
+      const sessions: QueueSession[] = [];
+      for (let day = 1; day <= perWeek; day += 1) {
+        try {
+          const p = previewWeightliftingSession(projected, maxes, day);
+          const names = p.exercises
+            .slice(0, 3)
+            .map((ex) => getExerciseById(ex.exerciseId)?.name ?? ex.exerciseId)
+            .join(' · ');
+          sessions.push({
+            day,
+            letter: SESSION_LETTERS[day - 1],
+            title: p.title,
+            summary: names,
+            durationMin: p.durationMin,
+          });
+        } catch {
+          // skip a malformed session
+        }
+      }
+      weeks.push({
+        weekOffset: w,
+        block: projected.current_block,
+        week: projected.current_week,
+        label: `SEMAINE ${projected.current_week} · ${getBlockName(projected.current_block)}`,
+        active: w === 0,
+        sessions,
+      });
+    }
+    return weeks;
+  }, [program, maxes]);
 
   const completedByDate = useMemo(() => {
     const map: Record<string, ScheduleSport[]> = {};
@@ -681,13 +535,17 @@ export default function AujourdhuiScreen(): React.ReactElement {
   const weekLabel = frenchDayMonth(weekMondayDate(weekOffset));
   const raceWeeks = weeksUntil(hyroxProfile?.target_race_date ?? null);
 
+  const openPreview = (week: QueueWeek, s: QueueSession): void => {
+    router.push(
+      `/(app)/session-preview?block=${week.block}&week=${week.week}&day=${s.day}&launchable=${week.active ? 'true' : 'false'}`,
+    );
+  };
+
   return (
     <SafeScreen>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <ZoneText variant="heading" style={styles.title}>
-            MON PROGRAMME
-          </ZoneText>
+          <ZoneText variant="heading" style={styles.title}>MON PROGRAMME</ZoneText>
           {program ? (
             <View style={styles.blockBadge}>
               <ZoneText variant="caption" color={colors.bg.primary} style={styles.blockBadgeText}>
@@ -698,18 +556,14 @@ export default function AujourdhuiScreen(): React.ReactElement {
         </View>
 
         <View style={styles.zoneStrip}>
-          <View
-            style={[styles.zoneStripOrb, { backgroundColor: zoneLevel ? zoneLevel.color : colors.border }]}
-          />
-          <ZoneText variant="number" size={18} style={styles.zoneStripScore}>
-            {score ?? '--'}
-          </ZoneText>
+          <View style={[styles.zoneStripOrb, { backgroundColor: zoneLevel ? zoneLevel.color : colors.border }]} />
+          <ZoneText variant="number" size={18} style={styles.zoneStripScore}>{score ?? '--'}</ZoneText>
           <ZoneText variant="caption" color={colors.text.muted} style={styles.zoneStripStatus}>
             {zoneLevel ? zoneLevel.label : 'Pas de check-in aujourd’hui'}
           </ZoneText>
         </View>
 
-        {/* Weekly calendar — completed history, today highlighted, future open */}
+        {/* Calendar — completed history, today highlighted, future open */}
         <View style={styles.calendarCard}>
           <View style={styles.weekNavRow}>
             <TouchableOpacity
@@ -732,28 +586,27 @@ export default function AujourdhuiScreen(): React.ReactElement {
               <ChevronRight size={20} color={weekOffset >= WEEK_RANGE ? colors.text.muted : colors.accent.gold} />
             </TouchableOpacity>
           </View>
-
           <View style={styles.weekRow}>
             {weekDates.map((date, i) => {
               const isToday = date === todayStr;
               const isFuture = date > todayStr;
               const sports = completedByDate[date] ?? [];
+              const previewId = sessionIdByDate[date];
               return (
-                <View key={date} style={[styles.dayCol, isToday ? styles.dayColToday : null]}>
-                  <ZoneText
-                    variant="caption"
-                    color={isToday ? colors.accent.gold : colors.text.muted}
-                    style={styles.dayLetter}
-                  >
+                <TouchableOpacity
+                  key={date}
+                  activeOpacity={previewId ? 0.7 : 1}
+                  disabled={!previewId}
+                  onPress={() => previewId && router.push(`/(app)/session-preview?id=${previewId}`)}
+                  style={[styles.dayCol, isToday ? styles.dayColToday : null]}
+                >
+                  <ZoneText variant="caption" color={isToday ? colors.accent.gold : colors.text.muted} style={styles.dayLetter}>
                     {FR_DAYS[i]}
                   </ZoneText>
                   <View style={styles.pillStack}>
                     {sports.length > 0 ? (
                       sports.map((sp, j) => (
-                        <View
-                          key={j}
-                          style={[styles.calPill, { backgroundColor: sportColor(sp as SchedulerSport) }]}
-                        />
+                        <View key={j} style={[styles.calPill, { backgroundColor: sportColor(sp as SchedulerSport) }]} />
                       ))
                     ) : isFuture ? (
                       <View style={styles.futureDot} />
@@ -761,11 +614,10 @@ export default function AujourdhuiScreen(): React.ReactElement {
                       <View style={styles.restDot} />
                     )}
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </View>
-
           {raceWeeks !== null ? (
             <ZoneText variant="caption" color={colors.accent.gold} style={styles.raceLine}>
               🏁 Course dans {raceWeeks} semaine{raceWeeks > 1 ? 's' : ''} · pense à alléger en fin de cycle
@@ -773,116 +625,168 @@ export default function AujourdhuiScreen(): React.ReactElement {
           ) : null}
         </View>
 
-        {/* Today: pick a sport on demand */}
-        {isCurrentWeek ? (
+        {/* Programme queue */}
+        {queue.length > 0 ? (
           <>
-            <ZoneText variant="caption" style={styles.section}>
-              AUJOURD'HUI
-            </ZoneText>
-            {configuredSports.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <ZoneText variant="caption" color={colors.text.muted}>
-                  Configure un sport pour commencer à t'entraîner.
+            <ZoneText variant="caption" style={styles.section}>PROCHAINES SÉANCES</ZoneText>
+            {queue.map((wk) => (
+              <View key={wk.weekOffset} style={styles.queueWeek}>
+                <ZoneText
+                  variant="caption"
+                  color={wk.active ? colors.accent.gold : colors.text.muted}
+                  style={styles.queueWeekLabel}
+                >
+                  {wk.label}
                 </ZoneText>
-              </View>
-            ) : (
-              configuredSports.map((sport) => {
-                const isBusy = busy === sport;
-                const min = durations[sport];
-                return (
-                  <TouchableOpacity
-                    key={sport}
-                    activeOpacity={0.85}
-                    disabled={isBusy}
-                    onPress={() => onPickSport(sport)}
-                    style={[styles.sportStart, { borderLeftColor: sportColor(sport as SchedulerSport) }]}
-                  >
-                    <ZoneText style={styles.sportStartIcon}>{SPORT_ICON[sport]}</ZoneText>
-                    <View style={styles.sportStartMain}>
-                      <ZoneText variant="titleSm" color={colors.text.primary}>
-                        {SPORT_LABEL[sport]}
+                {wk.sessions.map((s) => (
+                  <View key={s.day} style={[styles.queueCard, wk.active ? null : styles.queueCardIdle]}>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => openPreview(wk, s)}
+                      style={styles.queueCardMain}
+                    >
+                      <View style={styles.queueCardHead}>
+                        <ZoneText variant="titleSm" color={colors.text.primary}>
+                          Session {s.letter}
+                        </ZoneText>
+                        <ChevronRight size={16} color={colors.text.muted} />
+                      </View>
+                      <ZoneText variant="caption" color={colors.text.secondary} style={styles.queueSummary} numberOfLines={1}>
+                        {s.summary}
                       </ZoneText>
-                      <ZoneText variant="caption" color={colors.text.muted}>
-                        {isBusy ? 'Génération…' : `Prêt${min ? ` · ~${min} min` : ''}`}
-                      </ZoneText>
-                    </View>
-                    <ChevronRight size={20} color={colors.accent.gold} />
-                  </TouchableOpacity>
-                );
-              })
-            )}
-
-            {muscleProfile ? (
-              <DeloadCard
-                deload={deload}
-                active={muscleProfile.deload_active === true}
-                onActivate={() => onToggleDeload(true)}
-                onExit={() => onToggleDeload(false)}
-              />
-            ) : null}
-
-            {bonusAvailable ? (
-              <View style={styles.bonusCard}>
-                <ZoneText variant="titleSm" color={colors.text.primary}>
-                  Envie de bouger ?
-                </ZoneText>
-                <ZoneText variant="caption" color={colors.text.muted} style={styles.bonusSub}>
-                  Une séance courte et complémentaire à ton programme.
-                </ZoneText>
-                <TouchableOpacity onPress={() => setBonusVisible(true)} activeOpacity={0.8} style={styles.bonusBtn}>
-                  <ZoneText variant="label" color={colors.accent.gold}>
-                    SÉANCE BONUS
-                  </ZoneText>
-                </TouchableOpacity>
+                      <ZoneText variant="caption" color={colors.text.muted}>~{s.durationMin} min</ZoneText>
+                    </TouchableOpacity>
+                    {wk.active ? (
+                      <TouchableOpacity
+                        onPress={() => pickSport('weightlifting', s.day)}
+                        disabled={busy === 'weightlifting'}
+                        activeOpacity={0.85}
+                        style={styles.queueStartBtn}
+                      >
+                        <ZoneText variant="label" size={13} color={colors.bg.primary}>
+                          {busy === 'weightlifting' ? '...' : 'COMMENCER CETTE SÉANCE'}
+                        </ZoneText>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                ))}
               </View>
-            ) : null}
+            ))}
           </>
-        ) : (
+        ) : null}
+
+        {/* On-demand sports (running / musculation / hyrox) */}
+        {onDemandSports.length > 0 ? (
+          <>
+            <ZoneText variant="caption" style={styles.section}>À LA DEMANDE</ZoneText>
+            {onDemandSports.map((sport) => {
+              const isBusy = busy === sport;
+              const min = onDemandDurations[sport];
+              return (
+                <TouchableOpacity
+                  key={sport}
+                  activeOpacity={0.85}
+                  disabled={isBusy}
+                  onPress={() => pickSport(sport, null)}
+                  style={[styles.sportStart, { borderLeftColor: sportColor(sport as SchedulerSport) }]}
+                >
+                  <ZoneText style={styles.sportStartIcon}>{SPORT_ICON[sport]}</ZoneText>
+                  <View style={styles.sportStartMain}>
+                    <ZoneText variant="titleSm" color={colors.text.primary}>{SPORT_LABEL[sport]}</ZoneText>
+                    <ZoneText variant="caption" color={colors.text.muted}>
+                      {isBusy ? 'Génération…' : `Prêt${min ? ` · ~${min} min` : ''}`}
+                    </ZoneText>
+                  </View>
+                  <ChevronRight size={20} color={colors.accent.gold} />
+                </TouchableOpacity>
+              );
+            })}
+          </>
+        ) : null}
+
+        {muscleProfile ? (
+          <DeloadCard
+            deload={deload}
+            active={muscleProfile.deload_active === true}
+            onActivate={() => onToggleDeload(true)}
+            onExit={() => onToggleDeload(false)}
+          />
+        ) : null}
+
+        {bonusAvailable ? (
+          <View style={styles.bonusCard}>
+            <ZoneText variant="titleSm" color={colors.text.primary}>Envie de bouger ?</ZoneText>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.bonusSub}>
+              Une séance courte et complémentaire à ton programme.
+            </ZoneText>
+            <TouchableOpacity onPress={() => setBonusVisible(true)} activeOpacity={0.8} style={styles.bonusBtn}>
+              <ZoneText variant="label" color={colors.accent.gold}>SÉANCE BONUS</ZoneText>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {configuredSports.length === 0 ? (
           <View style={styles.emptyCard}>
             <ZoneText variant="caption" color={colors.text.muted}>
-              {weekOffset < 0
-                ? 'Historique de la semaine ci-dessus.'
-                : 'Pas de jours fixes : tu décideras au jour le jour.'}
+              Configure un sport pour commencer à t'entraîner.
             </ZoneText>
           </View>
-        )}
+        ) : null}
 
         {unconfiguredSports.length > 0 ? (
           <TouchableOpacity onPress={() => setAddSportVisible(true)} activeOpacity={0.7} style={styles.addSportBtn}>
             <Plus size={16} color={colors.text.secondary} />
-            <ZoneText variant="caption" color={colors.text.secondary} style={styles.addSportText}>
-              Ajouter un sport
-            </ZoneText>
+            <ZoneText variant="caption" color={colors.text.secondary} style={styles.addSportText}>Ajouter un sport</ZoneText>
           </TouchableOpacity>
         ) : null}
       </ScrollView>
 
-      {/* Recovery warning */}
-      <Modal visible={pending !== null} transparent animationType="fade" onRequestClose={() => setPending(null)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+      {/* Recovery sheet */}
+      <Modal visible={pending !== null} transparent animationType="slide" onRequestClose={() => setPending(null)}>
+        <View style={styles.sheetBackdrop}>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
             {pending ? (
               <>
                 <View style={[styles.warnBar, { backgroundColor: warnColor(pending.warning.level) }]} />
-                <ZoneText variant="titleSm" color={colors.text.primary} style={styles.modalTitle}>
-                  {SPORT_LABEL[pending.sport]}
+                <ZoneText variant="title" size={20} style={styles.sheetTitle}>
+                  {SPORT_LABEL[pending.sport].toUpperCase()}
                 </ZoneText>
-                <ZoneText variant="body" size={14} color={colors.text.primary} style={styles.modalBody}>
+                <ZoneText variant="body" size={14} color={colors.text.primary} style={styles.sheetBody}>
                   {pending.warning.message}
                 </ZoneText>
-                <Button
-                  title={pending.warning.level === 'info' ? 'Continuer' : 'Continuer quand même'}
-                  onPress={() => {
-                    const s = pending.sport;
-                    setPending(null);
-                    launchSport(s);
-                  }}
-                />
-                <TouchableOpacity onPress={() => setPending(null)} style={styles.modalCancel} hitSlop={8}>
-                  <ZoneText variant="label" color={colors.text.muted}>
-                    Annuler
-                  </ZoneText>
-                </TouchableOpacity>
+                {pending.warning.canContinue ? (
+                  pending.warning.level === 'info' ? (
+                    <Button
+                      title="CONTINUER"
+                      onPress={() => {
+                        const p = pending;
+                        setPending(null);
+                        launch(p.sport, p.day);
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <Button
+                        title="REPORTER"
+                        onPress={() => setPending(null)}
+                      />
+                      <TouchableOpacity
+                        onPress={() => {
+                          const p = pending;
+                          setPending(null);
+                          launch(p.sport, p.day);
+                        }}
+                        style={styles.ghostBtn}
+                        activeOpacity={0.7}
+                      >
+                        <ZoneText variant="label" color={colors.text.muted}>Continuer quand même</ZoneText>
+                      </TouchableOpacity>
+                    </>
+                  )
+                ) : (
+                  <Button title="REPORTER" onPress={() => setPending(null)} />
+                )}
               </>
             ) : null}
           </View>
@@ -894,9 +798,7 @@ export default function AujourdhuiScreen(): React.ReactElement {
         <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setBonusVisible(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.sheet}>
             <View style={styles.sheetHandle} />
-            <ZoneText variant="title" size={20} style={styles.sheetTitle}>
-              SÉANCE BONUS
-            </ZoneText>
+            <ZoneText variant="title" size={20} style={styles.sheetTitle}>SÉANCE BONUS</ZoneText>
             {acwrHigh ? (
               <View style={styles.bonusWarn}>
                 <ZoneText variant="caption" color={colors.orbe.amber}>
@@ -906,24 +808,11 @@ export default function AujourdhuiScreen(): React.ReactElement {
             ) : null}
             {BONUS_OPTIONS.map((opt) => (
               <View key={opt.id} style={styles.bonusOption}>
-                <ZoneText variant="label" color={colors.text.primary}>
-                  {opt.title}
-                </ZoneText>
-                <ZoneText variant="caption" color={colors.text.secondary} style={styles.bonusOptDesc}>
-                  {opt.description}
-                </ZoneText>
-                <ZoneText variant="caption" color={colors.text.muted}>
-                  {opt.detail}
-                </ZoneText>
-                <TouchableOpacity
-                  onPress={() => onStartBonus(opt.id)}
-                  disabled={busy === 'bonus'}
-                  activeOpacity={0.85}
-                  style={styles.bonusOptBtn}
-                >
-                  <ZoneText variant="label" size={13} color={colors.bg.primary}>
-                    Commencer
-                  </ZoneText>
+                <ZoneText variant="label" color={colors.text.primary}>{opt.title}</ZoneText>
+                <ZoneText variant="caption" color={colors.text.secondary} style={styles.bonusOptDesc}>{opt.description}</ZoneText>
+                <ZoneText variant="caption" color={colors.text.muted}>{opt.detail}</ZoneText>
+                <TouchableOpacity onPress={() => onStartBonus(opt.id)} disabled={busy === 'bonus'} activeOpacity={0.85} style={styles.bonusOptBtn}>
+                  <ZoneText variant="label" size={13} color={colors.bg.primary}>Commencer</ZoneText>
                 </TouchableOpacity>
               </View>
             ))}
@@ -936,26 +825,17 @@ export default function AujourdhuiScreen(): React.ReactElement {
         <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setAddSportVisible(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.sheet}>
             <View style={styles.sheetHandle} />
-            <ZoneText variant="title" size={20} style={styles.sheetTitle}>
-              AJOUTER UN SPORT
-            </ZoneText>
+            <ZoneText variant="title" size={20} style={styles.sheetTitle}>AJOUTER UN SPORT</ZoneText>
             {unconfiguredSports.map((sport) => (
               <TouchableOpacity
                 key={sport}
                 activeOpacity={0.8}
-                onPress={() => {
-                  setAddSportVisible(false);
-                  router.push(ADD_SPORT_ROUTE[sport]);
-                }}
+                onPress={() => { setAddSportVisible(false); router.push(ADD_SPORT_ROUTE[sport]); }}
                 style={styles.sheetSportRow}
               >
                 <ZoneText style={styles.sheetSportIcon}>{SPORT_ICON[sport]}</ZoneText>
-                <ZoneText variant="label" color={colors.text.primary} style={styles.sheetSportName}>
-                  {SPORT_LABEL[sport]}
-                </ZoneText>
-                <ZoneText variant="caption" color={colors.accent.gold}>
-                  Configurer
-                </ZoneText>
+                <ZoneText variant="label" color={colors.text.primary} style={styles.sheetSportName}>{SPORT_LABEL[sport]}</ZoneText>
+                <ZoneText variant="caption" color={colors.accent.gold}>Configurer</ZoneText>
               </TouchableOpacity>
             ))}
           </TouchableOpacity>
@@ -966,10 +846,7 @@ export default function AujourdhuiScreen(): React.ReactElement {
 }
 
 function DeloadCard({
-  deload,
-  active,
-  onActivate,
-  onExit,
+  deload, active, onActivate, onExit,
 }: {
   deload: DeloadRecommendation | null;
   active: boolean;
@@ -979,9 +856,7 @@ function DeloadCard({
   if (active) {
     return (
       <View style={[styles.deloadCard, { borderColor: colors.orbe.blue }]}>
-        <ZoneText variant="caption" color={colors.orbe.blue} style={styles.deloadEyebrow}>
-          MODE DÉCHARGE ACTIF
-        </ZoneText>
+        <ZoneText variant="caption" color={colors.orbe.blue} style={styles.deloadEyebrow}>MODE DÉCHARGE ACTIF</ZoneText>
         <ZoneText variant="body" size={13} color={colors.text.secondary} style={styles.deloadBody}>
           Volume réduit à 50 %, charges maintenues. Tes prochaines séances muscu sont allégées.
         </ZoneText>
@@ -994,9 +869,7 @@ function DeloadCard({
   if (!deload || !deload.recommended || !deload.protocol) return null;
   return (
     <View style={[styles.deloadCard, { borderColor: colors.orbe.amber }]}>
-      <ZoneText variant="caption" color={colors.orbe.amber} style={styles.deloadEyebrow}>
-        DÉCHARGE RECOMMANDÉE CETTE SEMAINE
-      </ZoneText>
+      <ZoneText variant="caption" color={colors.orbe.amber} style={styles.deloadEyebrow}>DÉCHARGE RECOMMANDÉE CETTE SEMAINE</ZoneText>
       <ZoneText variant="body" size={13} color={colors.text.primary} style={styles.deloadBody}>
         {deload.reason} {deload.protocol.description}
       </ZoneText>
@@ -1009,13 +882,7 @@ function DeloadCard({
 
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 8,
-    paddingBottom: 8,
-  },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, paddingBottom: 8 },
   title: { fontSize: 24, letterSpacing: 0.5 },
   blockBadge: { backgroundColor: colors.accent.gold, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
   blockBadgeText: { fontFamily: 'Inter-Bold', letterSpacing: 0.3 },
@@ -1023,24 +890,10 @@ const styles = StyleSheet.create({
   zoneStripOrb: { width: 22, height: 22, borderRadius: 11 },
   zoneStripScore: { color: colors.text.primary },
   zoneStripStatus: { flex: 1 },
-  section: { fontFamily: 'Syne-Bold', fontSize: 13, letterSpacing: 1.5, color: colors.text.muted, marginTop: 8, marginBottom: 12 },
-  calendarCard: {
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 16,
-    padding: 16,
-  },
+  section: { fontFamily: 'Syne-Bold', fontSize: 13, letterSpacing: 1.5, color: colors.text.muted, marginTop: 24, marginBottom: 12 },
+  calendarCard: { backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 16 },
   weekNavRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  weekNavBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  weekNavBtn: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   weekRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 },
   dayCol: { flex: 1, alignItems: 'center', paddingVertical: 6, borderRadius: 12 },
   dayColToday: { backgroundColor: 'rgba(201,168,76,0.12)' },
@@ -1050,124 +903,49 @@ const styles = StyleSheet.create({
   restDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.border },
   futureDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'transparent' },
   raceLine: { marginTop: 14, lineHeight: 16 },
-  emptyCard: {
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-  },
+  queueWeek: { marginBottom: 8 },
+  queueWeekLabel: { fontFamily: 'Inter-Bold', letterSpacing: 1, marginBottom: 8, marginTop: 4 },
+  queueCard: { backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 16, marginBottom: 10 },
+  queueCardIdle: { opacity: 0.5 },
+  queueCardMain: {},
+  queueCardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  queueSummary: { marginTop: 4 },
+  queueStartBtn: { marginTop: 14, backgroundColor: colors.accent.gold, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   sportStart: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderLeftWidth: 3,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    marginBottom: 10,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.bg.card,
+    borderWidth: 1, borderColor: colors.border, borderLeftWidth: 3, borderRadius: 16,
+    paddingHorizontal: 16, paddingVertical: 16, marginBottom: 10,
   },
   sportStartIcon: { fontSize: 24, marginRight: 14 },
   sportStartMain: { flex: 1 },
-  deloadCard: {
-    marginTop: 6,
-    marginBottom: 10,
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 16,
-  },
+  deloadCard: { marginTop: 16, marginBottom: 4, backgroundColor: colors.bg.card, borderWidth: 1, borderRadius: 16, padding: 16 },
   deloadEyebrow: { letterSpacing: 1, fontSize: 11, fontFamily: 'Inter-Bold' },
   deloadBody: { marginTop: 8, lineHeight: 19 },
   deloadCta: { marginTop: 14 },
-  bonusCard: {
-    marginTop: 6,
-    backgroundColor: colors.bg.elevated,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 16,
-    padding: 16,
-  },
+  bonusCard: { marginTop: 16, backgroundColor: colors.bg.elevated, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 16 },
   bonusSub: { marginTop: 4, lineHeight: 16 },
-  bonusBtn: {
-    marginTop: 12,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: colors.accent.gold,
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-  },
+  bonusBtn: { marginTop: 12, alignSelf: 'flex-start', borderWidth: 1, borderColor: colors.accent.gold, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9 },
+  emptyCard: { backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 20, alignItems: 'center', marginTop: 16 },
   addSportBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    alignSelf: 'center',
-    marginTop: 24,
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, alignSelf: 'center',
+    marginTop: 24, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 999, borderWidth: 1, borderColor: colors.border,
   },
   addSportText: { fontFamily: 'Inter-Medium' },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  modalCard: {
-    width: '100%',
-    backgroundColor: colors.bg.elevated,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 20,
-    overflow: 'hidden',
-  },
-  warnBar: { position: 'absolute', top: 0, left: 0, right: 0, height: 4 },
-  modalTitle: { marginTop: 4, marginBottom: 8 },
-  modalBody: { lineHeight: 20, marginBottom: 18 },
-  modalCancel: { alignSelf: 'center', marginTop: 12, paddingVertical: 8 },
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: colors.bg.elevated,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 36,
-  },
+  sheet: { backgroundColor: colors.bg.elevated, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 36, overflow: 'hidden' },
   sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 14 },
-  sheetTitle: { letterSpacing: 1, marginBottom: 14, color: colors.text.primary },
+  warnBar: { position: 'absolute', top: 0, left: 0, right: 0, height: 4 },
+  sheetTitle: { letterSpacing: 1, marginBottom: 12, color: colors.text.primary },
+  sheetBody: { lineHeight: 21, marginBottom: 18 },
+  ghostBtn: { alignSelf: 'center', marginTop: 12, paddingVertical: 8 },
   sheetSportRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    marginBottom: 8,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border,
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14, marginBottom: 8,
   },
   sheetSportIcon: { fontSize: 22, marginRight: 12 },
   sheetSportName: { flex: 1 },
   bonusWarn: { backgroundColor: 'rgba(255,183,77,0.10)', borderRadius: 10, padding: 10, marginBottom: 12 },
-  bonusOption: {
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-  },
+  bonusOption: { backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 14, marginBottom: 10 },
   bonusOptDesc: { marginTop: 4, lineHeight: 16 },
   bonusOptBtn: { marginTop: 12, backgroundColor: colors.accent.gold, borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
 });
