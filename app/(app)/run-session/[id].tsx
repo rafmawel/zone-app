@@ -36,6 +36,7 @@ import {
   type RunningSessionType,
 } from '@/lib/runningEngine';
 import { computeAndSaveWorkloadEntry } from '@/lib/pro';
+import { readCurrentWeek, readProgrammeQueue, recordSessionComplete, startWeek } from '@/lib/weekTracking';
 import { usePro } from '@/hooks/usePro';
 import { ZoneOrbe } from '@/components/ZoneOrbe';
 import { getZoneLevel } from '@/lib/zoneScore';
@@ -359,6 +360,18 @@ export default function RunSessionScreen(): React.ReactElement {
         });
       } catch {
         // workload save is best-effort
+      }
+      try {
+        const profile = await getRunningProfile(user.uid);
+        const queue = await readProgrammeQueue(user.uid);
+        const week = readCurrentWeek(queue, 'running');
+        const sessionsPerWeek = profile?.sessions_per_week ?? 3;
+        await startWeek(user.uid, 'running', week, { sessions: sessionsPerWeek });
+        await recordSessionComplete(user.uid, 'running', week, {
+          km: Math.round(finalDistance * 100) / 100,
+        });
+      } catch {
+        // tracking is best effort
       }
       endSession();
       router.replace('/(app)/');

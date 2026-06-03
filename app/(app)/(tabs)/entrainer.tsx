@@ -131,34 +131,63 @@ export default function EntrainerScreen(): React.ReactElement {
           {SPORTS.map((s) => {
             const isOn = configured.has(s.key);
             return (
-              <TouchableOpacity
+              <View
                 key={s.key}
-                activeOpacity={0.85}
-                onPress={() => onSport(s.key)}
                 style={[styles.sportBtn, isOn ? styles.sportBtnOn : null]}
               >
-                <View style={styles.sportTop}>
-                  <ZoneText style={styles.sportIcon}>{s.icon}</ZoneText>
-                  {isOn ? (
-                    <ChevronRight size={18} color={colors.accent.gold} />
-                  ) : (
-                    <Lock size={14} color={colors.text.muted} />
-                  )}
-                </View>
-                <ZoneText
-                  variant="titleSm"
-                  color={isOn ? colors.text.primary : colors.text.secondary}
-                  style={styles.sportName}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => onSport(s.key)}
+                  style={styles.sportBtnInner}
                 >
-                  {s.label}
-                </ZoneText>
-                <ZoneText variant="caption" color={colors.text.muted}>
-                  {isOn ? 'Configuré' : 'À configurer'}
-                </ZoneText>
-              </TouchableOpacity>
+                  <View style={styles.sportTop}>
+                    <ZoneText style={styles.sportIcon}>{s.icon}</ZoneText>
+                    {isOn ? (
+                      <ChevronRight size={18} color={colors.accent.gold} />
+                    ) : (
+                      <Lock size={14} color={colors.text.muted} />
+                    )}
+                  </View>
+                  <ZoneText
+                    variant="titleSm"
+                    color={isOn ? colors.text.primary : colors.text.secondary}
+                    style={styles.sportName}
+                  >
+                    {s.label}
+                  </ZoneText>
+                  <ZoneText variant="caption" color={colors.text.muted}>
+                    {isOn ? 'Configuré' : 'À configurer'}
+                  </ZoneText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(app)/programme-overview',
+                      params: { sport: s.key },
+                    })
+                  }
+                  hitSlop={6}
+                  activeOpacity={0.7}
+                  style={styles.learnMore}
+                >
+                  <ZoneText variant="caption" color={colors.accent.gold} style={styles.learnMoreText}>
+                    En savoir plus →
+                  </ZoneText>
+                </TouchableOpacity>
+              </View>
             );
           })}
         </View>
+
+        <TouchableOpacity
+          onPress={() => router.push('/(app)/skip-week')}
+          activeOpacity={0.7}
+          style={styles.skipWeekLink}
+        >
+          <ZoneText variant="caption" color={colors.accent.gold}>
+            Passer à la semaine suivante →
+          </ZoneText>
+        </TouchableOpacity>
 
         <View style={styles.sectionRow}>
           <ZoneText variant="caption" style={styles.section}>
@@ -305,9 +334,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sportBtnOn: { borderColor: colors.accent.gold },
+  sportBtnInner: {},
   sportTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sportIcon: { fontSize: 26 },
   sportName: { marginTop: 10 },
+  learnMore: { marginTop: 8, alignItems: 'flex-end' },
+  learnMoreText: { fontSize: 11, fontFamily: 'Inter-Medium' },
+  skipWeekLink: { alignItems: 'flex-end', marginTop: 4, marginBottom: 8 },
   emptyCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,

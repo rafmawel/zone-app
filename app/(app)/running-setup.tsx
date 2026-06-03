@@ -165,7 +165,10 @@ export default function RunningSetupScreen(): React.ReactElement {
         target_race_date: state.raceDate || null,
         long_run_pref: state.longRunPref,
       });
-      router.replace('/(app)/(tabs)/aujourd-hui');
+      router.replace({
+        pathname: '/(app)/programme-overview',
+        params: { sport: 'running' },
+      });
     } catch {
       setError('Enregistrement impossible. Réessaie.');
     } finally {

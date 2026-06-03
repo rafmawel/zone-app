@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Info } from 'lucide-react-native';
 import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import {
@@ -9,16 +10,24 @@ import {
   todayDateString,
   type AllTimeStats,
   type DailyCheckin,
+  type HyroxProfile,
+  type MuscleProfile,
+  type RunningProfile,
   type TrainingSession,
   type UserProfile,
+  type UserProgram,
 } from '@/lib/firestore';
 import { getZoneLevel } from '@/lib/zoneScore';
+import { useWeekBilans } from '@/hooks/useWeekBilans';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ZoneOrbe } from '@/components/ZoneOrbe';
+import { BilanCard } from '@/components/BilanCard';
+import { ProgrammeCompleteCard } from '@/components/ProgrammeCompleteCard';
+import type { ProSport } from '@/lib/weekProgression';
 
 function frenchDate(): string {
   try {
@@ -41,6 +50,12 @@ function sportOf(s: TrainingSession): { label: string; icon: string; color: stri
   return { label: 'Haltérophilie', icon: '🏋️', color: colors.accent.gold };
 }
 
+function proSportFromSession(session: TrainingSession): ProSport {
+  if (session.discipline === 'musculation') return 'musculation';
+  if (session.sport_key === 'running') return 'running';
+  return 'weightlifting';
+}
+
 function sessionMeta(s: TrainingSession): string {
   const sets = (s.planned_exercises ?? []).reduce((a, e) => a + e.sets.length, 0);
   const ex = s.planned_exercises?.length ?? 0;
@@ -56,6 +71,48 @@ export default function DashboardScreen(): React.ReactElement {
   const [profileName, setProfileName] = useState<string | null>(null);
   const [stats, setStats] = useState<AllTimeStats | null>(null);
   const [weekCount, setWeekCount] = useState<number>(0);
+  const [program, setProgram] = useState<UserProgram | null>(null);
+  const [runningProfile, setRunningProfile] = useState<RunningProfile | null>(null);
+  const [muscleProfile, setMuscleProfile] = useState<MuscleProfile | null>(null);
+  const [hyroxProfile, setHyroxProfile] = useState<HyroxProfile | null>(null);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const unsubProg = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'program'),
+      (snap) => setProgram(snap.exists() ? (snap.data() as UserProgram) : null),
+      () => setProgram(null),
+    );
+    const unsubRun = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'running_profile'),
+      (snap) => setRunningProfile(snap.exists() ? (snap.data() as RunningProfile) : null),
+      () => setRunningProfile(null),
+    );
+    const unsubMuscle = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'muscle_profile'),
+      (snap) => setMuscleProfile(snap.exists() ? (snap.data() as MuscleProfile) : null),
+      () => setMuscleProfile(null),
+    );
+    const unsubHyrox = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'hyrox_profile'),
+      (snap) => setHyroxProfile(snap.exists() ? (snap.data() as HyroxProfile) : null),
+      () => setHyroxProfile(null),
+    );
+    return () => {
+      unsubProg();
+      unsubRun();
+      unsubMuscle();
+      unsubHyrox();
+    };
+  }, []);
+
+  const { bilans, advance, repeat, startNewCycle } = useWeekBilans({
+    program,
+    runningProfile,
+    muscleProfile,
+    hyroxProfile,
+  });
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -185,13 +242,72 @@ export default function DashboardScreen(): React.ReactElement {
           )}
         </TouchableOpacity>
 
+        {/* Bilans hebdomadaires par sport */}
+        {bilans.length > 0 ? (
+          <View style={styles.bilansBlock}>
+            {bilans.map((b) =>
+              b.isComplete ? (
+                <ProgrammeCompleteCard
+                  key={b.sport}
+                  sport={b.sport}
+                  totalSessions={b.summary.completedSessions}
+                  totalVolume={b.summary.actualKm ?? 0}
+                  volumeUnit={b.sport === 'running' ? 'km' : 'séances'}
+                  onNewCycle={() => {
+                    void startNewCycle(b.sport).then(() => router.push('/(app)/maxes'));
+                  }}
+                  onMaintenance={() => {
+                    void startNewCycle(b.sport);
+                  }}
+                />
+              ) : (
+                <BilanCard
+                  key={b.sport}
+                  summary={b.summary}
+                  onAdvance={() => {
+                    void advance(b.sport);
+                  }}
+                  onRepeat={
+                    b.summary.result.shouldRepeat
+                      ? () => {
+                          void repeat(b.sport);
+                        }
+                      : undefined
+                  }
+                  onInfoPress={() =>
+                    router.push({
+                      pathname: '/(app)/programme-overview',
+                      params: { sport: b.sport },
+                    })
+                  }
+                />
+              ),
+            )}
+          </View>
+        ) : null}
+
         {/* Today's session */}
         {todaySession ? (
           <View style={styles.sessionCard}>
-            <View style={[styles.sportPill, { backgroundColor: `${sportOf(todaySession).color}22`, borderColor: sportOf(todaySession).color }]}>
-              <ZoneText variant="caption" color={sportOf(todaySession).color} style={styles.sportPillText}>
-                {sportOf(todaySession).icon} {sportOf(todaySession).label.toUpperCase()}
-              </ZoneText>
+            <View style={styles.sessionHeaderRow}>
+              <View style={[styles.sportPill, { backgroundColor: `${sportOf(todaySession).color}22`, borderColor: sportOf(todaySession).color }]}>
+                <ZoneText variant="caption" color={sportOf(todaySession).color} style={styles.sportPillText}>
+                  {sportOf(todaySession).icon} {sportOf(todaySession).label.toUpperCase()}
+                </ZoneText>
+              </View>
+              <TouchableOpacity
+                hitSlop={12}
+                onPress={() =>
+                  router.push({
+                    pathname: '/(app)/programme-overview',
+                    params: { sport: proSportFromSession(todaySession) },
+                  })
+                }
+                accessibilityLabel="Voir le programme en détail"
+                style={styles.sessionInfoBtn}
+              >
+                <Info size={16} color={colors.text.muted} />
+              </TouchableOpacity>
             </View>
             <ZoneText variant="title" size={18} color={colors.text.primary} style={styles.sessionName}>
               Séance du jour
@@ -288,6 +404,7 @@ const styles = StyleSheet.create({
   heroPromptText: { marginTop: 16 },
   score: { fontSize: 80, lineHeight: 86, marginTop: 16 },
   heroMsg: { marginTop: 6, textAlign: 'center', lineHeight: 17, paddingHorizontal: 12 },
+  bilansBlock: { marginTop: 16, marginHorizontal: -20 },
   sessionCard: {
     marginTop: 16,
     backgroundColor: colors.bg.card,
@@ -296,15 +413,21 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
   },
+  sessionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
   sportPill: {
     alignSelf: 'flex-start',
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    marginBottom: 10,
   },
   sportPillText: { fontFamily: 'Inter-Bold', letterSpacing: 0.5 },
+  sessionInfoBtn: { padding: 4 },
   sessionName: { marginTop: 2 },
   sessionMeta: { marginTop: 4 },
   sessionBtn: { marginTop: 16 },

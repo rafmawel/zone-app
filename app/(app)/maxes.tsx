@@ -182,7 +182,10 @@ export default function MaxesScreen(): React.ReactElement {
       } catch {
         // non-blocking: dashboard will show "no session" until next manual generate
       }
-      router.replace('/(app)/program-intro');
+      router.replace({
+        pathname: '/(app)/programme-overview',
+        params: { sport: 'weightlifting' },
+      });
     } catch {
       setError('Enregistrement impossible. Réessaie.');
     } finally {

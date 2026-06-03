@@ -84,7 +84,10 @@ export default function HyroxSetupScreen(): React.ReactElement {
         sessions_per_week: sessions,
       });
       if (level === 'debutant') {
-        router.replace('/(app)/(tabs)/aujourd-hui');
+        router.replace({
+          pathname: '/(app)/programme-overview',
+          params: { sport: 'hyrox' },
+        });
       } else {
         router.replace('/(app)/hyrox-baseline');
       }
