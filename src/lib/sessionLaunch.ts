@@ -14,6 +14,8 @@ export interface CreateWeightliftingOptions {
   recentRir: number[];
   /** 1-based session of the week (A/B/C). Defaults to the programme's day. */
   dayOfWeek?: number;
+  /** Programme-queue item key, stored on the session for unlock-on-complete. */
+  queueKey?: string;
 }
 
 /**
@@ -40,5 +42,6 @@ export async function createWeightliftingSession(
     planned_exercises: generated.exercises,
     zone_score_at_start: zoneScore,
     zone_message: autoNote + generated.message,
+    queue_key: opts.queueKey,
   });
 }

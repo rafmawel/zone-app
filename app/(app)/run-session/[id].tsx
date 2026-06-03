@@ -16,6 +16,7 @@ import { X } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
 import {
   completeRunSession,
+  updateQueueItem,
   getRunningProfile,
   getRunSession,
   type RunSession,
@@ -341,6 +342,9 @@ export default function RunSessionScreen(): React.ReactElement {
         positions: gps.positions.length ? gps.positions : undefined,
         ...(rpe !== null ? { rpe } : {}),
       });
+      if (run?.queue_key) {
+        await updateQueueItem(user.uid, run.queue_key, 'completed').catch(() => undefined);
+      }
       try {
         const profile = await getRunningProfile(user.uid);
         const thresholdPace =

@@ -9,6 +9,7 @@ import {
   getTodayCheckin,
   getUserProfile,
   saveHyroxSession,
+  updateQueueItem,
   todayDateString,
   updateWeakStations,
   type Gender,
@@ -69,7 +70,7 @@ function mmss(sec: number): string {
 export default function HyroxSessionScreen(): React.ReactElement {
   const router = useRouter();
   const { isPro } = usePro();
-  const params = useLocalSearchParams<{ id: string; type?: string; block?: string }>();
+  const params = useLocalSearchParams<{ id: string; type?: string; block?: string; queueKey?: string }>();
   const sessionType = (params.type ?? 'station_work') as HyroxSessionTypeKey;
   const blockPhase = Math.max(1, Math.min(4, parseInt(params.block ?? '2', 10) || 2));
 
@@ -230,6 +231,9 @@ export default function HyroxSessionScreen(): React.ReactElement {
         zone_score_at_start: zoneScore,
       });
       if (weakest.length > 0) await updateWeakStations(user.uid, weakest.slice(0, 4));
+      if (params.queueKey) {
+        await updateQueueItem(user.uid, params.queueKey, 'completed').catch(() => undefined);
+      }
     } catch {
       // surfaced in summary
     }
