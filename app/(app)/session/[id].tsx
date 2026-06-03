@@ -15,6 +15,7 @@ import { Info, Minus, Plus, X } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
 import {
   completeSession,
+  updateQueueItem,
   countCompletedSessionsSince,
   getExerciseMaxes,
   getSession,
@@ -282,6 +283,9 @@ export default function SessionScreen(): React.ReactElement {
         duration_minutes: duration,
         total_volume_kg: volume,
       });
+      if (state.session.queue_key) {
+        await updateQueueItem(user.uid, state.session.queue_key, 'completed').catch(() => undefined);
+      }
       const avgIntensity = computeAverageIntensityPercent(allSets, maxes);
       await computeAndSaveWorkloadEntry(user.uid, {
         sport: 'weightlifting',

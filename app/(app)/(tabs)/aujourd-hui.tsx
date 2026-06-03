@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -11,14 +11,17 @@ import {
   getCompletedSessions,
   getExerciseMaxes,
   getHyroxSessionHistory,
+  getProgrammeQueue,
   getWorkloadHistory,
   setMuscleDeloadActive,
+  updateQueueItem,
   todayDateString,
   type DailyCheckin,
   type ExerciseMax,
   type HyroxProfile,
   type HyroxSessionRecord,
   type MuscleProfile,
+  type QueueState,
   type RunSession,
   type RunningProfile,
   type ScheduleSport,
@@ -26,12 +29,13 @@ import {
   type TrainingSession,
   type UserProgram,
 } from '@/lib/firestore';
-import {
-  getBlockName,
-  previewWeightliftingSession,
-  projectProgram,
-} from '@/lib/programEngine';
+import { getBlockName, projectProgram } from '@/lib/programEngine';
 import { createWeightliftingSession } from '@/lib/sessionLaunch';
+import {
+  buildProgrammeQueue,
+  type QueueItem,
+  type QueueStatus,
+} from '@/lib/programmeQueue';
 import {
   buildRecoveryWarning,
   loadRecoveryContext,
@@ -43,18 +47,9 @@ import {
 import { calculateACWR, type WorkloadDataPoint, type WorkloadSport } from '@/lib/pro';
 import { generateMuscleSession } from '@/lib/muscleEngine';
 import { evaluateDeloadNeed, type DeloadRecommendation } from '@/lib/muscleSessionScience';
-import { blockFromWeeksToRace, hyroxWeeklyPlan, type HyroxBlockPhase } from '@/lib/hyroxScience';
+import { blockFromWeeksToRace, type HyroxBlockPhase } from '@/lib/hyroxScience';
 import type { MuscleGroup } from '@/data/exercises';
-import { getExerciseById } from '@/data/exercises';
-import {
-  buildSessionPlan,
-  calculateVDOTPaces,
-  getWeeklyDistribution,
-  runningPaceFactor,
-  type ProgramBlockRunning,
-  type RunningSessionType,
-  type WeekIndexRunning,
-} from '@/lib/runningEngine';
+import { buildSessionPlan, calculateVDOTPaces, runningPaceFactor } from '@/lib/runningEngine';
 import { sportColor, type SchedulerSport } from '@/lib/multiSportScheduler';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { colors } from '@/theme/colors';
@@ -87,8 +82,6 @@ const ADD_SPORT_ROUTE: Record<
 };
 
 const ALL_SPORTS: ScheduleSport[] = ['weightlifting', 'running', 'musculation', 'hyrox'];
-// On-demand sports: the weightlifting programme is shown as a queue instead.
-const ON_DEMAND_SPORTS: ScheduleSport[] = ['running', 'musculation', 'hyrox'];
 
 type BonusOption = 'recovery' | 'technique' | 'cardio';
 
@@ -100,7 +93,6 @@ const BONUS_OPTIONS: { id: BonusOption; title: string; description: string; deta
 
 const FR_DAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 const WEEK_RANGE = 4;
-const SESSION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
 const QUEUE_WEEKS = 3;
 
 function weekMondayDate(weekOffset: number): Date {
@@ -142,23 +134,6 @@ interface CompletedSessionLite {
   date: string;
 }
 
-interface QueueSession {
-  day: number;
-  letter: string;
-  title: string;
-  summary: string;
-  durationMin: number;
-}
-
-interface QueueWeek {
-  weekOffset: number;
-  block: number;
-  week: number;
-  label: string;
-  active: boolean;
-  sessions: QueueSession[];
-}
-
 function sessionSport(s: TrainingSession): ScheduleSport {
   if (s.discipline === 'musculation') return 'musculation';
   if (s.sport_key === 'running') return 'running';
@@ -176,12 +151,8 @@ function toWorkloadPoints(
   for (const e of entries) {
     if (!VALID_WORKLOAD_SPORTS.has(e.sport as WorkloadSport)) continue;
     out.push({
-      date: e.date,
-      tss: e.tss,
-      sport: e.sport as WorkloadSport,
-      sessionType: e.sessionType,
-      durationMinutes: e.durationMinutes,
-      intensityFactor: e.intensityFactor,
+      date: e.date, tss: e.tss, sport: e.sport as WorkloadSport,
+      sessionType: e.sessionType, durationMinutes: e.durationMinutes, intensityFactor: e.intensityFactor,
     });
   }
   return out;
@@ -191,6 +162,15 @@ function warnColor(level: WarnLevel): string {
   if (level === 'danger') return colors.orbe.red;
   if (level === 'warn') return colors.orbe.amber;
   return colors.orbe.blue;
+}
+
+function statusMeta(status: QueueStatus): { icon: string; label: string } {
+  switch (status) {
+    case 'completed': return { icon: '✅', label: 'FAIT' };
+    case 'skipped': return { icon: '⏭️', label: 'PASSÉE' };
+    case 'available': return { icon: '▶️', label: '' };
+    default: return { icon: '🔒', label: 'ATTEND' };
+  }
 }
 
 export default function AujourdhuiScreen(): React.ReactElement {
@@ -209,11 +189,11 @@ export default function AujourdhuiScreen(): React.ReactElement {
   const [deload, setDeload] = useState<DeloadRecommendation | null>(null);
   const [recovery, setRecovery] = useState<RecoveryContext>(EMPTY_RECOVERY_CONTEXT);
   const [sessionIdByDate, setSessionIdByDate] = useState<Record<string, string>>({});
+  const [queueState, setQueueState] = useState<QueueState>({});
 
   const [weekOffset, setWeekOffset] = useState<number>(0);
-  const [pending, setPending] = useState<{ sport: ScheduleSport; day: number | null; warning: RecoveryWarning } | null>(null);
+  const [pending, setPending] = useState<{ item: QueueItem; warning: RecoveryWarning } | null>(null);
   const [bonusVisible, setBonusVisible] = useState<boolean>(false);
-  const [addSportVisible, setAddSportVisible] = useState<boolean>(false);
   const [busy, setBusy] = useState<ScheduleSport | 'bonus' | null>(null);
 
   useEffect(() => {
@@ -230,6 +210,8 @@ export default function AujourdhuiScreen(): React.ReactElement {
         setMuscleProfile(s.exists() ? (s.data() as MuscleProfile) : null), () => undefined),
       onSnapshot(doc(db, 'users', user.uid, 'state', 'hyrox_profile'), (s) =>
         setHyroxProfile(s.exists() ? (s.data() as HyroxProfile) : null), () => undefined),
+      onSnapshot(doc(db, 'users', user.uid, 'state', 'programme_queue'), (s) =>
+        setQueueState(s.exists() ? ((s.data() as { items?: QueueState }).items ?? {}) : {}), () => undefined),
     ];
     return () => subs.forEach((u) => u());
   }, []);
@@ -237,13 +219,14 @@ export default function AujourdhuiScreen(): React.ReactElement {
   const loadHistory = useCallback(async (): Promise<void> => {
     const user = auth.currentUser;
     if (!user) return;
-    const [sessions, runs, hyrox, exMaxes, workload, ctx] = await Promise.all([
+    const [sessions, runs, hyrox, exMaxes, workload, ctx, qstate] = await Promise.all([
       getCompletedSessions(user.uid).catch(() => [] as TrainingSession[]),
       getCompletedRuns(user.uid, 60).catch(() => [] as RunSession[]),
       getHyroxSessionHistory(user.uid, 60).catch(() => [] as HyroxSessionRecord[]),
       getExerciseMaxes(user.uid).catch(() => [] as ExerciseMax[]),
       getWorkloadHistory(user.uid, 35).catch(() => []),
       loadRecoveryContext(user.uid).catch(() => EMPTY_RECOVERY_CONTEXT),
+      getProgrammeQueue(user.uid).catch(() => ({}) as QueueState),
     ]);
     setCompleted([
       ...sessions.map((s) => ({ sport: sessionSport(s), date: s.date })),
@@ -268,120 +251,112 @@ export default function AujourdhuiScreen(): React.ReactElement {
     for (const s of sessions) if (!byDate[s.date]) byDate[s.date] = s.id;
     setSessionIdByDate(byDate);
     setRecovery(ctx);
+    setQueueState(qstate);
     setDeload(evaluateDeloadNeed(sessions.filter((s) => s.discipline === 'musculation'), 'intermediaire'));
   }, []);
 
   useFocusEffect(useCallback(() => { void loadHistory(); }, [loadHistory]));
 
-  // ── Launchers ─────────────────────────────────────────────────────────────
-  const onLaunchWeightlifting = async (day: number): Promise<void> => {
-    const user = auth.currentUser;
-    if (!user || !program) return;
-    setBusy('weightlifting');
-    try {
-      const id = await createWeightliftingSession({
-        uid: user.uid, program, maxes, zoneScore: score, recentRir, dayOfWeek: day,
-      });
-      router.push(`/(app)/session/${id}`);
-    } catch {
-      // no-op
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const onStartRun = async (): Promise<void> => {
-    const user = auth.currentUser;
-    if (!user || !runningProfile) return;
-    setBusy('running');
-    try {
-      const paces = calculateVDOTPaces(runningProfile.vdot);
-      const block: ProgramBlockRunning = 1;
-      const week: WeekIndexRunning = 1;
-      const dayIdx = (new Date().getDay() + 6) % 7;
-      const weeklyPlan = getWeeklyDistribution(runningProfile.sessions_per_week, block, week);
-      const todayItem = weeklyPlan.items.find((i) => i.dayIndex === dayIdx);
-      let type: RunningSessionType = todayItem && todayItem.type !== 'REST' ? todayItem.type : 'EF';
-      if (score !== null && score <= 30) type = 'RA';
-      const level = runningProfile.vdot < 35 ? 'beginner' : runningProfile.vdot < 55 ? 'intermediate' : 'advanced';
-      const plan = buildSessionPlan({ type, paces, level, block, week, paceFactor: runningPaceFactor(recentRunRir) });
-      const id = await createRunSession(user.uid, {
-        date: todayDateString(),
-        session_type: plan.type,
-        steps: plan.steps.map((s) => ({
-          kind: s.kind, label: s.label, duration_seconds: s.durationSeconds,
-          target_pace_sec_per_km: s.targetPaceSecPerKm, distance_meters: s.distanceMeters,
-        })),
-        estimated_duration_min: plan.estimatedDurationMin,
-        estimated_distance_km: plan.estimatedDistanceKm,
-        zone_score_at_start: score,
-        zone_message: plan.message,
-      });
-      router.push(`/(app)/run-session/${id}`);
-    } catch {
-      // no-op
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const onStartMuscle = async (): Promise<void> => {
-    const user = auth.currentUser;
-    if (!user || !muscleProfile) return;
-    setBusy('musculation');
-    try {
-      const weekday = ((new Date().getDay() + 6) % 7) + 1;
-      const generated = generateMuscleSession({
-        sessionsPerWeek: muscleProfile.sessions_per_week,
-        dayOfWeek: weekday,
-        goal: muscleProfile.goal,
-        weakPoints: (muscleProfile.weak_points ?? []) as MuscleGroup[],
-        zoneScore: score,
-        recentRir: recentMuscleRir,
-      });
-      const deloadActive = muscleProfile.deload_active === true;
-      const planned: SessionExercise[] = generated.exercises.map((ex) => ({
-        exercise_id: ex.exercise_id,
-        sets: deloadActive ? ex.sets.slice(0, Math.max(1, Math.ceil(ex.sets.length / 2))) : ex.sets,
-      }));
-      const id = await createPlannedSession(user.uid, {
-        date: todayDateString(),
-        sport_key: 'weightlifting',
-        discipline: 'musculation',
-        planned_exercises: planned,
-        zone_score_at_start: score,
-        zone_message: deloadActive ? 'Semaine de décharge · volume réduit, charges maintenues.' : generated.message,
-      });
-      router.push(`/(app)/muscle-session/${id}`);
-    } catch {
-      // no-op
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const hyroxBlock: HyroxBlockPhase = blockFromWeeksToRace(weeksUntil(hyroxProfile?.target_race_date ?? null));
 
-  const onStartHyrox = (): void => {
-    if (!hyroxProfile) return;
-    const plan = hyroxWeeklyPlan(hyroxProfile.sessions_per_week, hyroxBlock);
-    const weekday = (new Date().getDay() + 6) % 7;
-    const today = plan[weekday];
-    const type = today === 'rest' ? 'station_work' : today;
-    router.push(`/(app)/hyrox-session/new?type=${type}&block=${hyroxBlock}`);
+  const queueWeeks = useMemo(
+    () => buildProgrammeQueue({
+      program, maxes, runningProfile, muscleProfile, hyroxProfile, hyroxBlock, state: queueState, weeks: QUEUE_WEEKS,
+    }),
+    [program, maxes, runningProfile, muscleProfile, hyroxProfile, hyroxBlock, queueState],
+  );
+
+  const launchQueueItem = async (item: QueueItem): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user || busy) return;
+    setBusy(item.sport);
+    try {
+      if (item.sport === 'weightlifting' && program) {
+        const projected: UserProgram = {
+          ...program,
+          current_block: item.block as UserProgram['current_block'],
+          current_week: item.week,
+        };
+        const id = await createWeightliftingSession({
+          uid: user.uid, program: projected, maxes, zoneScore: score, recentRir, dayOfWeek: item.day, queueKey: item.key,
+        });
+        router.push(`/(app)/session/${id}`);
+      } else if (item.sport === 'running' && runningProfile && item.runningType) {
+        const paces = calculateVDOTPaces(runningProfile.vdot);
+        const level = runningProfile.vdot < 35 ? 'beginner' : runningProfile.vdot < 55 ? 'intermediate' : 'advanced';
+        const plan = buildSessionPlan({ type: item.runningType, paces, level, block: 1, week: 1, paceFactor: runningPaceFactor(recentRunRir) });
+        const id = await createRunSession(user.uid, {
+          date: todayDateString(),
+          session_type: plan.type,
+          steps: plan.steps.map((s) => ({
+            kind: s.kind, label: s.label, duration_seconds: s.durationSeconds,
+            target_pace_sec_per_km: s.targetPaceSecPerKm, distance_meters: s.distanceMeters,
+          })),
+          estimated_duration_min: plan.estimatedDurationMin,
+          estimated_distance_km: plan.estimatedDistanceKm,
+          zone_score_at_start: score,
+          zone_message: plan.message,
+          queue_key: item.key,
+        });
+        router.push(`/(app)/run-session/${id}`);
+      } else if (item.sport === 'musculation' && muscleProfile) {
+        const generated = generateMuscleSession({
+          sessionsPerWeek: muscleProfile.sessions_per_week,
+          dayOfWeek: item.day,
+          goal: muscleProfile.goal,
+          weakPoints: (muscleProfile.weak_points ?? []) as MuscleGroup[],
+          zoneScore: score,
+          recentRir: recentMuscleRir,
+        });
+        const deloadActive = muscleProfile.deload_active === true;
+        const planned: SessionExercise[] = generated.exercises.map((ex) => ({
+          exercise_id: ex.exercise_id,
+          sets: deloadActive ? ex.sets.slice(0, Math.max(1, Math.ceil(ex.sets.length / 2))) : ex.sets,
+        }));
+        const id = await createPlannedSession(user.uid, {
+          date: todayDateString(),
+          sport_key: 'weightlifting',
+          discipline: 'musculation',
+          planned_exercises: planned,
+          zone_score_at_start: score,
+          zone_message: deloadActive ? 'Semaine de décharge · volume réduit, charges maintenues.' : generated.message,
+          queue_key: item.key,
+        });
+        router.push(`/(app)/muscle-session/${id}`);
+      } else if (item.sport === 'hyrox' && hyroxProfile && item.hyroxType) {
+        router.push(`/(app)/hyrox-session/new?type=${item.hyroxType}&block=${item.block}&queueKey=${encodeURIComponent(item.key)}`);
+      }
+    } catch {
+      // no-op
+    } finally {
+      setBusy(null);
+    }
   };
 
-  const launch = (sport: ScheduleSport, day: number | null): void => {
-    if (sport === 'weightlifting') void onLaunchWeightlifting(day ?? program?.current_day ?? 1);
-    else if (sport === 'running') void onStartRun();
-    else if (sport === 'musculation') void onStartMuscle();
-    else if (sport === 'hyrox') onStartHyrox();
+  const pickItem = (item: QueueItem): void => {
+    const warning = buildRecoveryWarning(item.sport, recovery, new Date());
+    if (warning) setPending({ item, warning });
+    else void launchQueueItem(item);
   };
 
-  const pickSport = (sport: ScheduleSport, day: number | null): void => {
-    const warning = buildRecoveryWarning(sport, recovery, new Date());
-    if (warning) setPending({ sport, day, warning });
-    else launch(sport, day);
+  const onSkip = (item: QueueItem): void => {
+    Alert.alert(
+      'Passer cette séance ?',
+      'Cette séance sera marquée comme passée. La suivante se débloquera.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Passer la séance',
+          style: 'destructive',
+          onPress: async () => {
+            const user = auth.currentUser;
+            if (!user) return;
+            await updateQueueItem(user.uid, item.key, 'skipped').catch(() => undefined);
+            await loadHistory();
+          },
+        },
+      ],
+    );
   };
 
   const onToggleDeload = async (active: boolean): Promise<void> => {
@@ -400,8 +375,7 @@ export default function AujourdhuiScreen(): React.ReactElement {
       if (runningProfile && (option === 'cardio' || option === 'recovery')) {
         const paces = calculateVDOTPaces(runningProfile.vdot);
         const level = runningProfile.vdot < 35 ? 'beginner' : runningProfile.vdot < 55 ? 'intermediate' : 'advanced';
-        const type: RunningSessionType = option === 'recovery' ? 'RA' : 'EF';
-        const plan = buildSessionPlan({ type, paces, level, block: 1, week: 1, paceFactor: runningPaceFactor(recentRunRir) });
+        const plan = buildSessionPlan({ type: option === 'recovery' ? 'RA' : 'EF', paces, level, block: 1, week: 1, paceFactor: runningPaceFactor(recentRunRir) });
         const id = await createRunSession(user.uid, {
           date: todayDateString(),
           session_type: plan.type,
@@ -419,32 +393,22 @@ export default function AujourdhuiScreen(): React.ReactElement {
       }
       if (program) {
         const id = await createWeightliftingSession({
-          uid: user.uid,
-          program: { ...program, current_block: 1, current_week: 4 },
-          maxes,
-          zoneScore: 60,
-          recentRir,
+          uid: user.uid, program: { ...program, current_block: 1, current_week: 4 }, maxes, zoneScore: 60, recentRir,
         });
         router.push(`/(app)/session/${id}`);
         return;
       }
       if (muscleProfile) {
-        const weekday = ((new Date().getDay() + 6) % 7) + 1;
         const generated = generateMuscleSession({
           sessionsPerWeek: muscleProfile.sessions_per_week,
-          dayOfWeek: weekday,
-          goal: muscleProfile.goal,
+          dayOfWeek: 1, goal: muscleProfile.goal,
           weakPoints: (muscleProfile.weak_points ?? []) as MuscleGroup[],
-          zoneScore: 30,
-          recentRir: recentMuscleRir,
+          zoneScore: 30, recentRir: recentMuscleRir,
         });
         const id = await createPlannedSession(user.uid, {
-          date: todayDateString(),
-          sport_key: 'weightlifting',
-          discipline: 'musculation',
+          date: todayDateString(), sport_key: 'weightlifting', discipline: 'musculation',
           planned_exercises: generated.exercises.map((ex) => ({ exercise_id: ex.exercise_id, sets: ex.sets })),
-          zone_score_at_start: score,
-          zone_message: 'Séance bonus · travail léger.',
+          zone_score_at_start: score, zone_message: 'Séance bonus · travail léger.',
         });
         router.push(`/(app)/muscle-session/${id}`);
       }
@@ -460,68 +424,8 @@ export default function AujourdhuiScreen(): React.ReactElement {
     s === 'weightlifting' ? !!program : s === 'running' ? !!runningProfile : s === 'musculation' ? !!muscleProfile : !!hyroxProfile,
   );
   const unconfiguredSports = ALL_SPORTS.filter((s) => !configuredSports.includes(s));
-  const onDemandSports = ON_DEMAND_SPORTS.filter((s) => configuredSports.includes(s));
   const bonusAvailable = Boolean(program || runningProfile || muscleProfile);
   const zoneLevel = score !== null ? getZoneLevel(score) : null;
-
-  const onDemandDurations = useMemo<Partial<Record<ScheduleSport, number>>>(() => {
-    const d: Partial<Record<ScheduleSport, number>> = {};
-    if (muscleProfile) {
-      try {
-        d.musculation = generateMuscleSession({
-          sessionsPerWeek: muscleProfile.sessions_per_week,
-          dayOfWeek: ((new Date().getDay() + 6) % 7) + 1,
-          goal: muscleProfile.goal,
-          weakPoints: (muscleProfile.weak_points ?? []) as MuscleGroup[],
-          zoneScore: null,
-          recentRir: recentMuscleRir,
-        }).estimated_duration_min;
-      } catch {
-        d.musculation = undefined;
-      }
-    }
-    if (runningProfile) d.running = 50;
-    if (hyroxProfile) d.hyrox = 45;
-    return d;
-  }, [muscleProfile, runningProfile, hyroxProfile, recentMuscleRir]);
-
-  // The weightlifting programme as a queue: weeks of sessions A/B/C.
-  const queue = useMemo<QueueWeek[]>(() => {
-    if (!program || program.sport_key !== 'weightlifting') return [];
-    const perWeek = Math.max(1, Math.min(SESSION_LETTERS.length, program.sessions_per_week));
-    const weeks: QueueWeek[] = [];
-    for (let w = 0; w < QUEUE_WEEKS; w += 1) {
-      const projected = projectProgram(program, w);
-      const sessions: QueueSession[] = [];
-      for (let day = 1; day <= perWeek; day += 1) {
-        try {
-          const p = previewWeightliftingSession(projected, maxes, day);
-          const names = p.exercises
-            .slice(0, 3)
-            .map((ex) => getExerciseById(ex.exerciseId)?.name ?? ex.exerciseId)
-            .join(' · ');
-          sessions.push({
-            day,
-            letter: SESSION_LETTERS[day - 1],
-            title: p.title,
-            summary: names,
-            durationMin: p.durationMin,
-          });
-        } catch {
-          // skip a malformed session
-        }
-      }
-      weeks.push({
-        weekOffset: w,
-        block: projected.current_block,
-        week: projected.current_week,
-        label: `SEMAINE ${projected.current_week} · ${getBlockName(projected.current_block)}`,
-        active: w === 0,
-        sessions,
-      });
-    }
-    return weeks;
-  }, [program, maxes]);
 
   const completedByDate = useMemo(() => {
     const map: Record<string, ScheduleSport[]> = {};
@@ -529,17 +433,20 @@ export default function AujourdhuiScreen(): React.ReactElement {
     return map;
   }, [completed]);
 
+  const weekBlockLabel = useCallback(
+    (weekNumber: number): string => {
+      if (!program) return `SEMAINE ${weekNumber}`;
+      const projected = projectProgram(program, weekNumber - 1);
+      return `SEMAINE ${weekNumber} · ${getBlockName(projected.current_block)}`;
+    },
+    [program],
+  );
+
   const weekDates = useMemo(() => weekDateStrings(weekOffset), [weekOffset]);
   const todayStr = todayDateString();
   const isCurrentWeek = weekOffset === 0;
   const weekLabel = frenchDayMonth(weekMondayDate(weekOffset));
   const raceWeeks = weeksUntil(hyroxProfile?.target_race_date ?? null);
-
-  const openPreview = (week: QueueWeek, s: QueueSession): void => {
-    router.push(
-      `/(app)/session-preview?block=${week.block}&week=${week.week}&day=${s.day}&launchable=${week.active ? 'true' : 'false'}`,
-    );
-  };
 
   return (
     <SafeScreen>
@@ -625,84 +532,78 @@ export default function AujourdhuiScreen(): React.ReactElement {
           ) : null}
         </View>
 
-        {/* Programme queue */}
-        {queue.length > 0 ? (
-          <>
-            <ZoneText variant="caption" style={styles.section}>PROCHAINES SÉANCES</ZoneText>
-            {queue.map((wk) => (
-              <View key={wk.weekOffset} style={styles.queueWeek}>
-                <ZoneText
-                  variant="caption"
-                  color={wk.active ? colors.accent.gold : colors.text.muted}
-                  style={styles.queueWeekLabel}
-                >
-                  {wk.label}
+        {/* Unified multi-sport queue */}
+        {configuredSports.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <ZoneText variant="caption" color={colors.text.muted}>
+              Configure un sport pour commencer à t'entraîner.
+            </ZoneText>
+          </View>
+        ) : (
+          queueWeeks.map((items, wi) =>
+            items.length === 0 ? null : (
+              <View key={wi}>
+                <ZoneText variant="caption" style={styles.weekHeader}>
+                  {weekBlockLabel(wi + 1)}
                 </ZoneText>
-                {wk.sessions.map((s) => (
-                  <View key={s.day} style={[styles.queueCard, wk.active ? null : styles.queueCardIdle]}>
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      onPress={() => openPreview(wk, s)}
-                      style={styles.queueCardMain}
+                {items.map((item) => {
+                  const meta = statusMeta(item.status);
+                  const done = item.status === 'completed' || item.status === 'skipped';
+                  const available = item.status === 'available';
+                  return (
+                    <View
+                      key={item.key}
+                      style={[
+                        styles.qCard,
+                        available ? styles.qCardAvailable : null,
+                        done ? styles.qCardDone : null,
+                        { borderLeftColor: sportColor(item.sport as SchedulerSport) },
+                      ]}
                     >
-                      <View style={styles.queueCardHead}>
-                        <ZoneText variant="titleSm" color={colors.text.primary}>
-                          Session {s.letter}
-                        </ZoneText>
-                        <ChevronRight size={16} color={colors.text.muted} />
+                      <View style={styles.qCardHead}>
+                        <ZoneText style={styles.qIcon}>{meta.icon}</ZoneText>
+                        <View style={styles.qMain}>
+                          <ZoneText variant="titleSm" color={done ? colors.text.muted : colors.text.primary}>
+                            {SPORT_ICON[item.sport]} {item.name}
+                          </ZoneText>
+                          <ZoneText variant="caption" color={colors.text.muted}>
+                            ~{item.estimatedMinutes} min{item.exercises.length ? ` · ${item.exercises.join(' · ')}` : ''}
+                          </ZoneText>
+                        </View>
+                        {meta.label ? (
+                          <ZoneText
+                            variant="caption"
+                            color={item.status === 'completed' ? colors.success : colors.text.muted}
+                            style={styles.qStatusLabel}
+                          >
+                            {meta.label}
+                          </ZoneText>
+                        ) : null}
                       </View>
-                      <ZoneText variant="caption" color={colors.text.secondary} style={styles.queueSummary} numberOfLines={1}>
-                        {s.summary}
-                      </ZoneText>
-                      <ZoneText variant="caption" color={colors.text.muted}>~{s.durationMin} min</ZoneText>
-                    </TouchableOpacity>
-                    {wk.active ? (
-                      <TouchableOpacity
-                        onPress={() => pickSport('weightlifting', s.day)}
-                        disabled={busy === 'weightlifting'}
-                        activeOpacity={0.85}
-                        style={styles.queueStartBtn}
-                      >
-                        <ZoneText variant="label" size={13} color={colors.bg.primary}>
-                          {busy === 'weightlifting' ? '...' : 'COMMENCER CETTE SÉANCE'}
-                        </ZoneText>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-                ))}
+                      {available ? (
+                        <View style={styles.qActions}>
+                          <TouchableOpacity
+                            onPress={() => pickItem(item)}
+                            disabled={busy === item.sport}
+                            activeOpacity={0.85}
+                            style={styles.qStartBtn}
+                          >
+                            <ZoneText variant="label" size={13} color={colors.bg.primary}>
+                              {busy === item.sport ? '...' : 'COMMENCER'}
+                            </ZoneText>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => onSkip(item)} activeOpacity={0.7} style={styles.qSkipBtn}>
+                            <ZoneText variant="caption" color={colors.text.muted}>Passer</ZoneText>
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
               </View>
-            ))}
-          </>
-        ) : null}
-
-        {/* On-demand sports (running / musculation / hyrox) */}
-        {onDemandSports.length > 0 ? (
-          <>
-            <ZoneText variant="caption" style={styles.section}>À LA DEMANDE</ZoneText>
-            {onDemandSports.map((sport) => {
-              const isBusy = busy === sport;
-              const min = onDemandDurations[sport];
-              return (
-                <TouchableOpacity
-                  key={sport}
-                  activeOpacity={0.85}
-                  disabled={isBusy}
-                  onPress={() => pickSport(sport, null)}
-                  style={[styles.sportStart, { borderLeftColor: sportColor(sport as SchedulerSport) }]}
-                >
-                  <ZoneText style={styles.sportStartIcon}>{SPORT_ICON[sport]}</ZoneText>
-                  <View style={styles.sportStartMain}>
-                    <ZoneText variant="titleSm" color={colors.text.primary}>{SPORT_LABEL[sport]}</ZoneText>
-                    <ZoneText variant="caption" color={colors.text.muted}>
-                      {isBusy ? 'Génération…' : `Prêt${min ? ` · ~${min} min` : ''}`}
-                    </ZoneText>
-                  </View>
-                  <ChevronRight size={20} color={colors.accent.gold} />
-                </TouchableOpacity>
-              );
-            })}
-          </>
-        ) : null}
+            ),
+          )
+        )}
 
         {muscleProfile ? (
           <DeloadCard
@@ -725,19 +626,22 @@ export default function AujourdhuiScreen(): React.ReactElement {
           </View>
         ) : null}
 
-        {configuredSports.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <ZoneText variant="caption" color={colors.text.muted}>
-              Configure un sport pour commencer à t'entraîner.
-            </ZoneText>
-          </View>
-        ) : null}
-
         {unconfiguredSports.length > 0 ? (
-          <TouchableOpacity onPress={() => setAddSportVisible(true)} activeOpacity={0.7} style={styles.addSportBtn}>
-            <Plus size={16} color={colors.text.secondary} />
-            <ZoneText variant="caption" color={colors.text.secondary} style={styles.addSportText}>Ajouter un sport</ZoneText>
-          </TouchableOpacity>
+          <View style={styles.addLinks}>
+            {unconfiguredSports.map((sport) => (
+              <TouchableOpacity
+                key={sport}
+                onPress={() => router.push(ADD_SPORT_ROUTE[sport])}
+                activeOpacity={0.7}
+                style={styles.addLink}
+              >
+                <Plus size={14} color={colors.text.secondary} />
+                <ZoneText variant="caption" color={colors.text.secondary} style={styles.addLinkText}>
+                  Ajouter {SPORT_LABEL[sport]}
+                </ZoneText>
+              </TouchableOpacity>
+            ))}
+          </View>
         ) : null}
       </ScrollView>
 
@@ -750,40 +654,24 @@ export default function AujourdhuiScreen(): React.ReactElement {
               <>
                 <View style={[styles.warnBar, { backgroundColor: warnColor(pending.warning.level) }]} />
                 <ZoneText variant="title" size={20} style={styles.sheetTitle}>
-                  {SPORT_LABEL[pending.sport].toUpperCase()}
+                  {SPORT_LABEL[pending.item.sport].toUpperCase()}
                 </ZoneText>
                 <ZoneText variant="body" size={14} color={colors.text.primary} style={styles.sheetBody}>
                   {pending.warning.message}
                 </ZoneText>
-                {pending.warning.canContinue ? (
-                  pending.warning.level === 'info' ? (
-                    <Button
-                      title="CONTINUER"
-                      onPress={() => {
-                        const p = pending;
-                        setPending(null);
-                        launch(p.sport, p.day);
-                      }}
-                    />
-                  ) : (
-                    <>
-                      <Button
-                        title="REPORTER"
-                        onPress={() => setPending(null)}
-                      />
-                      <TouchableOpacity
-                        onPress={() => {
-                          const p = pending;
-                          setPending(null);
-                          launch(p.sport, p.day);
-                        }}
-                        style={styles.ghostBtn}
-                        activeOpacity={0.7}
-                      >
-                        <ZoneText variant="label" color={colors.text.muted}>Continuer quand même</ZoneText>
-                      </TouchableOpacity>
-                    </>
-                  )
+                {pending.warning.canContinue && pending.warning.level === 'info' ? (
+                  <Button title="CONTINUER" onPress={() => { const p = pending; setPending(null); void launchQueueItem(p.item); }} />
+                ) : pending.warning.canContinue ? (
+                  <>
+                    <Button title="REPORTER" onPress={() => setPending(null)} />
+                    <TouchableOpacity
+                      onPress={() => { const p = pending; setPending(null); void launchQueueItem(p.item); }}
+                      style={styles.ghostBtn}
+                      activeOpacity={0.7}
+                    >
+                      <ZoneText variant="label" color={colors.text.muted}>Continuer quand même</ZoneText>
+                    </TouchableOpacity>
+                  </>
                 ) : (
                   <Button title="REPORTER" onPress={() => setPending(null)} />
                 )}
@@ -815,28 +703,6 @@ export default function AujourdhuiScreen(): React.ReactElement {
                   <ZoneText variant="label" size={13} color={colors.bg.primary}>Commencer</ZoneText>
                 </TouchableOpacity>
               </View>
-            ))}
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Add a sport */}
-      <Modal visible={addSportVisible} transparent animationType="slide" onRequestClose={() => setAddSportVisible(false)}>
-        <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setAddSportVisible(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            <ZoneText variant="title" size={20} style={styles.sheetTitle}>AJOUTER UN SPORT</ZoneText>
-            {unconfiguredSports.map((sport) => (
-              <TouchableOpacity
-                key={sport}
-                activeOpacity={0.8}
-                onPress={() => { setAddSportVisible(false); router.push(ADD_SPORT_ROUTE[sport]); }}
-                style={styles.sheetSportRow}
-              >
-                <ZoneText style={styles.sheetSportIcon}>{SPORT_ICON[sport]}</ZoneText>
-                <ZoneText variant="label" color={colors.text.primary} style={styles.sheetSportName}>{SPORT_LABEL[sport]}</ZoneText>
-                <ZoneText variant="caption" color={colors.accent.gold}>Configurer</ZoneText>
-              </TouchableOpacity>
             ))}
           </TouchableOpacity>
         </TouchableOpacity>
@@ -890,7 +756,6 @@ const styles = StyleSheet.create({
   zoneStripOrb: { width: 22, height: 22, borderRadius: 11 },
   zoneStripScore: { color: colors.text.primary },
   zoneStripStatus: { flex: 1 },
-  section: { fontFamily: 'Syne-Bold', fontSize: 13, letterSpacing: 1.5, color: colors.text.muted, marginTop: 24, marginBottom: 12 },
   calendarCard: { backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 16 },
   weekNavRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   weekNavBtn: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
@@ -903,21 +768,20 @@ const styles = StyleSheet.create({
   restDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.border },
   futureDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'transparent' },
   raceLine: { marginTop: 14, lineHeight: 16 },
-  queueWeek: { marginBottom: 8 },
-  queueWeekLabel: { fontFamily: 'Inter-Bold', letterSpacing: 1, marginBottom: 8, marginTop: 4 },
-  queueCard: { backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 16, marginBottom: 10 },
-  queueCardIdle: { opacity: 0.5 },
-  queueCardMain: {},
-  queueCardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  queueSummary: { marginTop: 4 },
-  queueStartBtn: { marginTop: 14, backgroundColor: colors.accent.gold, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  sportStart: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.bg.card,
-    borderWidth: 1, borderColor: colors.border, borderLeftWidth: 3, borderRadius: 16,
-    paddingHorizontal: 16, paddingVertical: 16, marginBottom: 10,
+  weekHeader: { fontFamily: 'Syne-Bold', fontSize: 13, letterSpacing: 1.5, color: colors.text.muted, marginTop: 24, marginBottom: 12 },
+  qCard: {
+    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 3,
+    borderRadius: 16, padding: 16, marginBottom: 10,
   },
-  sportStartIcon: { fontSize: 24, marginRight: 14 },
-  sportStartMain: { flex: 1 },
+  qCardAvailable: { borderColor: colors.accent.gold },
+  qCardDone: { opacity: 0.55 },
+  qCardHead: { flexDirection: 'row', alignItems: 'center' },
+  qIcon: { fontSize: 16, marginRight: 10 },
+  qMain: { flex: 1 },
+  qStatusLabel: { fontFamily: 'Inter-Bold', letterSpacing: 0.5, marginLeft: 8 },
+  qActions: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
+  qStartBtn: { flex: 1, backgroundColor: colors.accent.gold, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
+  qSkipBtn: { paddingHorizontal: 14, paddingVertical: 10 },
   deloadCard: { marginTop: 16, marginBottom: 4, backgroundColor: colors.bg.card, borderWidth: 1, borderRadius: 16, padding: 16 },
   deloadEyebrow: { letterSpacing: 1, fontSize: 11, fontFamily: 'Inter-Bold' },
   deloadBody: { marginTop: 8, lineHeight: 19 },
@@ -926,11 +790,9 @@ const styles = StyleSheet.create({
   bonusSub: { marginTop: 4, lineHeight: 16 },
   bonusBtn: { marginTop: 12, alignSelf: 'flex-start', borderWidth: 1, borderColor: colors.accent.gold, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9 },
   emptyCard: { backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 20, alignItems: 'center', marginTop: 16 },
-  addSportBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, alignSelf: 'center',
-    marginTop: 24, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 999, borderWidth: 1, borderColor: colors.border,
-  },
-  addSportText: { fontFamily: 'Inter-Medium' },
+  addLinks: { marginTop: 24, gap: 4, alignItems: 'center' },
+  addLink: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8 },
+  addLinkText: { fontFamily: 'Inter-Medium' },
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: colors.bg.elevated, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 36, overflow: 'hidden' },
   sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 14 },
@@ -938,12 +800,6 @@ const styles = StyleSheet.create({
   sheetTitle: { letterSpacing: 1, marginBottom: 12, color: colors.text.primary },
   sheetBody: { lineHeight: 21, marginBottom: 18 },
   ghostBtn: { alignSelf: 'center', marginTop: 12, paddingVertical: 8 },
-  sheetSportRow: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border,
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14, marginBottom: 8,
-  },
-  sheetSportIcon: { fontSize: 22, marginRight: 12 },
-  sheetSportName: { flex: 1 },
   bonusWarn: { backgroundColor: 'rgba(255,183,77,0.10)', borderRadius: 10, padding: 10, marginBottom: 12 },
   bonusOption: { backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 14, marginBottom: 10 },
   bonusOptDesc: { marginTop: 4, lineHeight: 16 },

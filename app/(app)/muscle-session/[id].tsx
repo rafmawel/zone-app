@@ -16,6 +16,7 @@ import {
   getCompletedSessions,
   getExerciseMaxes,
   getSession,
+  updateQueueItem,
   getUserProfile,
   saveCompletedSet,
   saveExerciseMax,
@@ -386,6 +387,9 @@ export default function MuscleSessionScreen(): React.ReactElement {
         duration_minutes: duration,
         total_volume_kg: Math.round(volume),
       });
+      if (state.session?.queue_key) {
+        await updateQueueItem(user.uid, state.session.queue_key, 'completed').catch(() => undefined);
+      }
       await reconcileMaxes(user.uid, allSets, maxes);
     } catch {
       // surfaced via summary

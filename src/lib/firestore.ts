@@ -131,6 +131,8 @@ export interface TrainingSession {
   zone_message?: string | null;
   completed_at?: Timestamp | null;
   total_volume_kg?: number;
+  /** Links a session to a programme-queue item so completion unlocks the next. */
+  queue_key?: string;
 }
 
 export type ProgramBlock = 1 | 2 | 3;
@@ -263,6 +265,7 @@ export interface RunSession {
   positions?: RunningSessionGPSPoint[];
   created_at: Timestamp | null;
   completed_at?: Timestamp | null;
+  queue_key?: string;
 }
 
 export function todayDateString(d: Date = new Date()): string {
@@ -388,6 +391,7 @@ export interface SavePlannedSessionInput {
   planned_exercises: SessionExercise[];
   zone_score_at_start: number | null;
   zone_message: string | null;
+  queue_key?: string;
 }
 
 export async function createPlannedSession(
@@ -406,6 +410,7 @@ export async function createPlannedSession(
     completed_sets: [],
     zone_score_at_start: input.zone_score_at_start,
     zone_message: input.zone_message,
+    ...(input.queue_key ? { queue_key: input.queue_key } : {}),
     created_at: serverTimestamp(),
   };
   await setDoc(ref, { ...payload, id: ref.id });
@@ -600,6 +605,7 @@ export interface CreateRunSessionInput {
   estimated_distance_km: number;
   zone_score_at_start: number | null;
   zone_message: string | null;
+  queue_key?: string;
 }
 
 export async function createRunSession(uid: string, input: CreateRunSessionInput): Promise<string> {
@@ -1271,4 +1277,39 @@ export async function getLastSessionsByDate(
     if (h.date === date) out.push({ sport: 'hyrox', at: timestampToDate(h.created_at) });
   }
   return out;
+}
+
+// ── Programme queue persistence ─────────────────────────────────────────────
+// The unified multi-sport queue: each session of each sport is keyed and its
+// status (completed / skipped) persists so the next session of that sport
+// unlocks. Key format: `${sport}_w${week}_s${sessionIndex}`.
+
+export type QueueItemStatus = 'completed' | 'skipped';
+
+export interface QueueItemState {
+  status: QueueItemStatus;
+  completedAt?: Timestamp | null;
+  skippedAt?: Timestamp | null;
+}
+
+export type QueueState = Record<string, QueueItemState>;
+
+export async function getProgrammeQueue(uid: string): Promise<QueueState> {
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'programme_queue'));
+  if (!snap.exists()) return {};
+  const data = snap.data() as { items?: QueueState };
+  return data.items ?? {};
+}
+
+export async function updateQueueItem(
+  uid: string,
+  key: string,
+  status: QueueItemStatus,
+): Promise<void> {
+  const stamp = status === 'completed' ? { completedAt: serverTimestamp() } : { skippedAt: serverTimestamp() };
+  await setDoc(
+    doc(db, 'users', uid, 'state', 'programme_queue'),
+    { items: { [key]: { status, ...stamp } }, updated_at: serverTimestamp() },
+    { merge: true },
+  );
 }
