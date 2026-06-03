@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Info } from 'lucide-react-native';
 import { colors } from '@/theme/colors';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Button } from '@/components/ui/Button';
@@ -23,6 +24,7 @@ export interface BilanCardProps {
   summary: BilanSummary;
   onAdvance: () => void;
   onRepeat?: () => void;
+  onInfoPress?: () => void;
 }
 
 const STATUS_COLOR: Record<BilanStatus, string> = {
@@ -76,7 +78,12 @@ function buildAdjustmentLine(s: BilanSummary): string | null {
   return null;
 }
 
-export function BilanCard({ summary, onAdvance, onRepeat }: BilanCardProps): React.ReactElement {
+export function BilanCard({
+  summary,
+  onAdvance,
+  onRepeat,
+  onInfoPress,
+}: BilanCardProps): React.ReactElement {
   const statusColor = STATUS_COLOR[summary.status];
   const tag = STATUS_ICON[summary.status];
   const primary = buildPrimaryLine(summary);
@@ -86,9 +93,21 @@ export function BilanCard({ summary, onAdvance, onRepeat }: BilanCardProps): Rea
   return (
     <View style={[styles.card, { borderLeftColor: statusColor }]}>
       <View style={styles.headerRow}>
-        <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
-          BILAN SEMAINE {summary.weekNumber} · {summary.sportLabel.toUpperCase()}
-        </ZoneText>
+        <View style={styles.eyebrowGroup}>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
+            BILAN SEMAINE {summary.weekNumber} · {summary.sportLabel.toUpperCase()}
+          </ZoneText>
+          {onInfoPress ? (
+            <TouchableOpacity
+              onPress={onInfoPress}
+              hitSlop={10}
+              style={styles.infoBtn}
+              accessibilityLabel="Voir les détails du programme"
+            >
+              <Info size={14} color={colors.text.muted} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
         <ZoneText variant="caption" color={statusColor} style={styles.tag}>
           {tag}
         </ZoneText>
@@ -139,6 +158,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   eyebrow: { letterSpacing: 1, fontSize: 11 },
+  eyebrowGroup: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  infoBtn: { marginLeft: 6, padding: 2 },
   tag: { letterSpacing: 1, fontSize: 11, fontFamily: 'Inter-Bold' },
   primary: { fontSize: 16, marginTop: 8 },
   adjustment: { marginTop: 6, lineHeight: 17 },

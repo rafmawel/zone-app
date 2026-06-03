@@ -69,6 +69,7 @@ import { ZoneText } from '@/components/ui/ZoneText';
 import { Button } from '@/components/ui/Button';
 import { BilanCard } from '@/components/BilanCard';
 import { ProgrammeCompleteCard } from '@/components/ProgrammeCompleteCard';
+import type { ProSport } from '@/lib/weekProgression';
 
 interface ZoneBanner {
   border: string;
@@ -511,6 +512,12 @@ export default function ProgramScreen(): React.ReactElement {
                         }
                       : undefined
                   }
+                  onInfoPress={() =>
+                    router.push({
+                      pathname: '/(app)/programme-overview',
+                      params: { sport: b.sport },
+                    })
+                  }
                 />
               ),
             )}
@@ -563,6 +570,7 @@ export default function ProgramScreen(): React.ReactElement {
             <View style={styles.programCta}>
               <Button title="Commencer" onPress={() => router.push('/(app)/maxes')} />
             </View>
+            <LearnMoreLink sport="weightlifting" />
           </View>
         )}
 
@@ -591,6 +599,7 @@ export default function ProgramScreen(): React.ReactElement {
                 onPress={() => router.push('/(app)/running-setup')}
               />
             </View>
+            <LearnMoreLink sport="running" />
           </View>
         ) : null}
 
@@ -769,6 +778,7 @@ function MuscleCard({
           </View>
         </>
       )}
+      <LearnMoreLink sport="musculation" />
     </View>
   );
 }
@@ -863,7 +873,29 @@ function HyroxCard({
           </View>
         </>
       )}
+      <LearnMoreLink sport="hyrox" />
     </View>
+  );
+}
+
+function LearnMoreLink({ sport }: { sport: ProSport }): React.ReactElement {
+  const router = useRouter();
+  return (
+    <TouchableOpacity
+      onPress={() =>
+        router.push({
+          pathname: '/(app)/programme-overview',
+          params: { sport },
+        })
+      }
+      hitSlop={8}
+      activeOpacity={0.7}
+      style={styles.learnMore}
+    >
+      <ZoneText variant="caption" color={colors.accent.gold} style={styles.learnMoreText}>
+        En savoir plus →
+      </ZoneText>
+    </TouchableOpacity>
   );
 }
 
@@ -1238,6 +1270,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
     alignItems: 'flex-end',
   },
+  learnMore: { marginTop: 10, alignItems: 'flex-end' },
+  learnMoreText: { fontSize: 12, fontFamily: 'Inter-Medium' },
   upcomingEmpty: {
     marginHorizontal: 24,
     backgroundColor: colors.bg.card,

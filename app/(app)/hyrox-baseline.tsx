@@ -114,7 +114,10 @@ export default function HyroxBaselineScreen(): React.ReactElement {
         baseline_rowing_500m_sec: drafts.rowing_500m_sec,
         baseline_wall_balls_2min: drafts.wall_balls_2min,
       });
-      router.replace('/(app)/(tabs)/program');
+      router.replace({
+        pathname: '/(app)/programme-overview',
+        params: { sport: 'hyrox' },
+      });
     } catch {
       setError('Enregistrement impossible. Réessaie.');
     } finally {
