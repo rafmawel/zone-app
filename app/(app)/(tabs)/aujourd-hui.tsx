@@ -356,7 +356,17 @@ export default function ProgramScreen(): React.ReactElement {
         const rows = snap.docs
           .map((d) => d.data() as TrainingSession)
           .filter((s) => s.status === 'planned' && s.date >= today);
-        setUpcoming(rows.slice(0, 5));
+        // Deduplicate by date + sport so a day never lists the same
+        // session twice (regeneration can leave stale planned docs).
+        const seen = new Set<string>();
+        const deduped: TrainingSession[] = [];
+        for (const s of rows) {
+          const key = `${s.date}_${s.discipline ?? s.sport_key}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          deduped.push(s);
+        }
+        setUpcoming(deduped.slice(0, 5));
       },
       () => setUpcoming([]),
     );
@@ -733,9 +743,13 @@ export default function ProgramScreen(): React.ReactElement {
           <ZoneText variant="heading" style={styles.title}>
             MON PROGRAMME
           </ZoneText>
-          <ZoneText variant="caption" color={colors.text.muted}>
-            Périodisation en 12 semaines
-          </ZoneText>
+          {program ? (
+            <View style={styles.blockBadge}>
+              <ZoneText variant="caption" color={colors.bg.primary} style={styles.blockBadgeText}>
+                Bloc {program.current_block} · S{Math.min(4, program.current_week)}
+              </ZoneText>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.zoneStrip}>
@@ -1656,8 +1670,22 @@ function formatSessionDate(date: string): string {
 
 const styles = StyleSheet.create({
   content: { paddingBottom: 32 },
-  header: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 8 },
-  title: { fontSize: 28, letterSpacing: 2 },
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  title: { fontSize: 24, letterSpacing: 0.5 },
+  blockBadge: {
+    backgroundColor: colors.accent.gold,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  blockBadgeText: { fontFamily: 'Inter-Bold', letterSpacing: 0.3 },
   banner: {
     marginHorizontal: 24,
     marginTop: 4,

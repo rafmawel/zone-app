@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Dumbbell } from 'lucide-react-native';
 import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import {
-  getUserProfile,
+  countCompletedSessionsSince,
+  getAllTimeStats,
   todayDateString,
+  type AllTimeStats,
   type DailyCheckin,
   type TrainingSession,
   type UserProfile,
@@ -15,69 +16,46 @@ import { getZoneLevel } from '@/lib/zoneScore';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
+import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { CheckinBanner } from '@/components/CheckinBanner';
 import { ZoneOrbe } from '@/components/ZoneOrbe';
 
 function frenchDate(): string {
   try {
-    const formatted = new Intl.DateTimeFormat('fr-FR', {
+    const f = new Intl.DateTimeFormat('fr-FR', {
       weekday: 'long',
       day: 'numeric',
       month: 'long',
     }).format(new Date());
-    return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+    return f.charAt(0).toUpperCase() + f.slice(1);
   } catch {
     return '';
   }
 }
 
-function sessionTitle(session: TrainingSession): string {
-  const exCount = session.planned_exercises?.length ?? 0;
-  const sport =
-    session.discipline === 'musculation'
-      ? 'Musculation'
-      : session.sport_key === 'running'
-        ? 'Course'
-        : 'Haltérophilie';
-  return `${sport} · ${exCount} exercice${exCount > 1 ? 's' : ''}`;
+function sportOf(s: TrainingSession): { label: string; icon: string; color: string } {
+  if (s.discipline === 'musculation')
+    return { label: 'Musculation', icon: '💪', color: colors.orbe.blue };
+  if (s.sport_key === 'running')
+    return { label: 'Course', icon: '🏃', color: colors.orbe.green };
+  return { label: 'Haltérophilie', icon: '🏋️', color: colors.accent.gold };
 }
 
-function sessionMeta(session: TrainingSession): string {
-  const sets = (session.planned_exercises ?? []).reduce(
-    (acc, ex) => acc + ex.sets.length,
-    0,
-  );
-  const minutes = Math.max(20, Math.round(sets * 2.5));
-  return `${sets} séries · environ ${minutes} min`;
+function sessionMeta(s: TrainingSession): string {
+  const sets = (s.planned_exercises ?? []).reduce((a, e) => a + e.sets.length, 0);
+  const ex = s.planned_exercises?.length ?? 0;
+  const minutes = Math.max(20, 10 + Math.round(sets * 3));
+  return `${ex} exercice${ex > 1 ? 's' : ''} · ~${minutes} min`;
 }
 
 export default function DashboardScreen(): React.ReactElement {
   const router = useRouter();
   const [checkin, setCheckin] = useState<DailyCheckin | null>(null);
   const [loaded, setLoaded] = useState<boolean>(false);
-  const [nextSession, setNextSession] = useState<TrainingSession | null>(null);
+  const [todaySession, setTodaySession] = useState<TrainingSession | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
-  const [healthConnected, setHealthConnected] = useState<boolean>(false);
-
-  useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const profile = await getUserProfile(user.uid);
-        if (!cancelled) {
-          setHealthConnected(profile?.health_data_source === 'health_connect');
-        }
-      } catch {
-        // optional
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const [stats, setStats] = useState<AllTimeStats | null>(null);
+  const [weekCount, setWeekCount] = useState<number>(0);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -85,7 +63,7 @@ export default function DashboardScreen(): React.ReactElement {
       setLoaded(true);
       return;
     }
-    const unsubscribe = onSnapshot(
+    const unsub = onSnapshot(
       doc(db, 'users', user.uid, 'checkins', todayDateString()),
       (snap) => {
         setCheckin(snap.exists() ? (snap.data() as DailyCheckin) : null);
@@ -93,7 +71,7 @@ export default function DashboardScreen(): React.ReactElement {
       },
       () => setLoaded(true),
     );
-    return unsubscribe;
+    return unsub;
   }, []);
 
   useEffect(() => {
@@ -104,22 +82,20 @@ export default function DashboardScreen(): React.ReactElement {
       orderBy('date', 'asc'),
       limit(20),
     );
-    const unsubscribe = onSnapshot(
+    const unsub = onSnapshot(
       q,
       (snap) => {
         const today = todayDateString();
-        const upcoming = snap.docs
-          .map((d) => d.data() as TrainingSession)
-          .filter((s) => s.status === 'planned' && s.date >= today);
-        setNextSession(upcoming[0] ?? null);
+        const rows = snap.docs.map((d) => d.data() as TrainingSession);
+        setTodaySession(
+          rows.find((s) => s.status === 'planned' && s.date === today) ?? null,
+        );
       },
-      () => setNextSession(null),
+      () => setTodaySession(null),
     );
-    return unsubscribe;
+    return unsub;
   }, []);
 
-  // Resolve the greeting name from Firestore once; Auth displayName wins
-  // when present (set at registration), then Firestore name / first_name.
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
@@ -127,11 +103,16 @@ export default function DashboardScreen(): React.ReactElement {
     void (async () => {
       try {
         const snap = await getDoc(doc(db, 'users', user.uid));
-        if (cancelled || !snap.exists()) return;
-        const data = snap.data() as Partial<UserProfile>;
-        setProfileName(data.name ?? data.first_name ?? null);
+        if (!cancelled && snap.exists()) {
+          const data = snap.data() as Partial<UserProfile>;
+          setProfileName(data.name ?? data.first_name ?? null);
+        }
+        const all = await getAllTimeStats(user.uid).catch(() => null);
+        if (!cancelled && all) setStats(all);
+        const completed = await countCompletedSessionsSince(user.uid, mondayISO());
+        if (!cancelled) setWeekCount(completed);
       } catch {
-        // keep fallback
+        // best-effort
       }
     })();
     return () => {
@@ -142,136 +123,128 @@ export default function DashboardScreen(): React.ReactElement {
   const score = checkin?.zone_score ?? 50;
   const level = checkin ? getZoneLevel(score) : null;
   const date = frenchDate();
-  const authName = auth.currentUser?.displayName?.trim();
-  const name = authName || profileName || 'Athlète';
+  const name = auth.currentUser?.displayName?.trim() || profileName || 'Athlète';
+  const hasCheckin = Boolean(checkin);
 
   return (
     <SafeScreen>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {loaded && !checkin ? <CheckinBanner /> : null}
-
-        <View style={styles.headerZone}>
-          <ZoneText variant="label" color={colors.text.secondary}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.header}>
+          <ZoneText variant="body" size={16} color={colors.text.secondary}>
             Bonjour, {name}
           </ZoneText>
           {date ? (
-            <ZoneText variant="caption" color={colors.text.muted} style={styles.headerDate}>
+            <ZoneText variant="caption" size={14} color={colors.text.muted} style={styles.headerDate}>
               {date}
             </ZoneText>
           ) : null}
         </View>
 
-        <View style={styles.orbeZone}>
+        {/* HERO — Zone score */}
+        <TouchableOpacity
+          activeOpacity={hasCheckin ? 1 : 0.85}
+          disabled={hasCheckin}
+          onPress={() => router.push('/(app)/checkin')}
+          style={[styles.hero, !hasCheckin ? styles.heroPrompt : null]}
+        >
           {!loaded ? (
-            <>
-              <Skeleton width={160} height={160} borderRadius={80} />
-              <Skeleton width={120} height={56} style={styles.scoreSkeleton} />
-              <Skeleton width={140} height={14} style={styles.labelSkeleton} />
-            </>
+            <Skeleton width={120} height={120} borderRadius={60} />
           ) : (
             <>
               <ZoneOrbe
-                score={checkin ? score : 50}
-                size={160}
+                score={hasCheckin ? score : 50}
+                size={120}
                 animated
-                overlayText={!checkin ? '?' : undefined}
+                overlayText={!hasCheckin ? '?' : undefined}
               />
-              <ZoneText
-                variant="heading"
-                style={[
-                  styles.scoreNumber,
-                  { color: level ? level.color : colors.accent.gold },
-                ]}
-              >
-                {score}
-              </ZoneText>
-              {level ? (
-                <ZoneText variant="label" style={styles.zoneLabel}>
-                  {level.label}
-                </ZoneText>
-              ) : (
-                <TouchableOpacity
-                  onPress={() => router.push('/(app)/checkin')}
-                  activeOpacity={0.7}
-                >
+              {hasCheckin ? (
+                <>
                   <ZoneText
-                    variant="label"
-                    color={colors.accent.gold}
-                    style={styles.evalLink}
+                    variant="number"
+                    style={[styles.score, { color: level ? level.color : colors.accent.gold }]}
                   >
-                    Évalue ton état
+                    {score}
                   </ZoneText>
-                </TouchableOpacity>
+                  {level ? (
+                    <ZoneText variant="title" size={18} style={{ color: level.color }}>
+                      {level.label}
+                    </ZoneText>
+                  ) : null}
+                  {level ? (
+                    <ZoneText variant="caption" color={colors.text.muted} style={styles.heroMsg}>
+                      {level.message ?? ''}
+                    </ZoneText>
+                  ) : null}
+                </>
+              ) : (
+                <ZoneText variant="titleSm" color={colors.accent.gold} style={styles.heroPromptText}>
+                  Fais ton check-in
+                </ZoneText>
               )}
-              {healthConnected ? (
-                <View style={styles.hcBadge}>
-                  <View style={styles.hcDot} />
-                  <ZoneText variant="caption" color={colors.text.muted} style={styles.hcText}>
-                    ❤️ Health Connect
-                  </ZoneText>
-                </View>
-              ) : null}
             </>
           )}
-        </View>
-
-        {loaded && checkin ? (
-          <View style={styles.doneCard}>
-            <ZoneText variant="label" color={colors.success} style={styles.doneText}>
-              ✓ Check-in effectué · {score} pts
-            </ZoneText>
-          </View>
-        ) : null}
-
-        <TouchableOpacity
-          activeOpacity={nextSession ? 0.85 : 1}
-          disabled={!nextSession}
-          onPress={() => {
-            if (nextSession) router.push(`/(app)/session/${nextSession.id}`);
-          }}
-          style={styles.sessionCard}
-        >
-          <ZoneText variant="caption" color={colors.text.muted} style={styles.sessionEyebrow}>
-            PROCHAINE SÉANCE
-          </ZoneText>
-          <View style={styles.sessionRow}>
-            <Dumbbell size={20} color={colors.accent.gold} />
-            <View style={styles.sessionTextCol}>
-              {nextSession ? (
-                <>
-                  <ZoneText variant="label" style={styles.sessionTitle}>
-                    {sessionTitle(nextSession)}
-                  </ZoneText>
-                  <ZoneText variant="caption" color={colors.text.muted}>
-                    {sessionMeta(nextSession)}
-                  </ZoneText>
-                </>
-              ) : (
-                <>
-                  <ZoneText variant="label" style={styles.sessionTitle}>
-                    À planifier
-                  </ZoneText>
-                  <ZoneText variant="caption" color={colors.text.muted}>
-                    Démarre ton programme depuis l’onglet Programme
-                  </ZoneText>
-                </>
-              )}
-            </View>
-            {nextSession ? <ChevronRight size={18} color={colors.text.muted} /> : null}
-          </View>
         </TouchableOpacity>
 
+        {/* Today's session */}
+        {todaySession ? (
+          <View style={styles.sessionCard}>
+            <View style={[styles.sportPill, { backgroundColor: `${sportOf(todaySession).color}22`, borderColor: sportOf(todaySession).color }]}>
+              <ZoneText variant="caption" color={sportOf(todaySession).color} style={styles.sportPillText}>
+                {sportOf(todaySession).icon} {sportOf(todaySession).label.toUpperCase()}
+              </ZoneText>
+            </View>
+            <ZoneText variant="title" size={18} color={colors.text.primary} style={styles.sessionName}>
+              Séance du jour
+            </ZoneText>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.sessionMeta}>
+              {sessionMeta(todaySession)}
+            </ZoneText>
+            <Button
+              title="COMMENCER"
+              onPress={() => router.push(`/(app)/session/${todaySession.id}`)}
+              style={styles.sessionBtn}
+            />
+          </View>
+        ) : (
+          <View style={styles.restCard}>
+            <ZoneText variant="titleSm" color={colors.text.primary}>
+              Repos
+            </ZoneText>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.sessionMeta}>
+              Récupération active possible.
+            </ZoneText>
+            <TouchableOpacity
+              onPress={() => router.push('/(app)/(tabs)/aujourd-hui')}
+              activeOpacity={0.8}
+              style={styles.bonusGhost}
+            >
+              <ZoneText variant="label" color={colors.accent.gold}>
+                Séance bonus
+              </ZoneText>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Weekly stats */}
         <View style={styles.statsRow}>
-          <StatCard label="Cette semaine" value="0" suffix="séances" />
-          <StatCard label="Streak" value="0" suffix="jours" />
-          <StatCard label="Score moyen" value="--" suffix="pts" />
+          <StatCard label="Cette semaine" value={String(weekCount)} suffix="séances" />
+          <StatCard label="Streak" value={stats ? String(stats.bestStreak) : '0'} suffix="jours" />
+          <StatCard
+            label="Score moyen"
+            value={stats && stats.avgZoneScore ? String(stats.avgZoneScore) : '--'}
+            suffix="pts"
+          />
         </View>
       </ScrollView>
     </SafeScreen>
   );
+}
+
+function mondayISO(): string {
+  const d = new Date();
+  const day = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - day);
+  return todayDateString(d);
 }
 
 function StatCard({
@@ -288,7 +261,7 @@ function StatCard({
       <ZoneText variant="caption" color={colors.text.muted} style={styles.statLabel}>
         {label}
       </ZoneText>
-      <ZoneText variant="heading" style={styles.statValue}>
+      <ZoneText variant="number" style={styles.statValue}>
         {value}
       </ZoneText>
       <ZoneText variant="caption" color={colors.text.muted}>
@@ -299,81 +272,70 @@ function StatCard({
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 32 },
-  headerZone: { marginBottom: 16 },
+  content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 },
+  header: { marginBottom: 20 },
   headerDate: { marginTop: 4 },
-  orbeZone: { alignItems: 'center', paddingVertical: 24 },
-  orb: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
+  hero: {
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
-    elevation: 6,
-  },
-  orbQuestion: { fontSize: 48, color: colors.bg.primary },
-  scoreNumber: { fontSize: 72, marginTop: 24, lineHeight: 80 },
-  scoreSkeleton: { marginTop: 24 },
-  labelSkeleton: { marginTop: 12 },
-  zoneLabel: {
-    fontFamily: 'Inter-Bold',
-    fontSize: 14,
-    letterSpacing: 3,
-    marginTop: 4,
-    color: colors.text.primary,
-  },
-  evalLink: { marginTop: 8, fontFamily: 'Inter-Medium' },
-  hcBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 10,
-  },
-  hcDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.success,
-  },
-  hcText: { fontSize: 11 },
-  doneCard: {
-    marginTop: 24,
-    backgroundColor: colors.bg.card,
+    backgroundColor: colors.bg.cardTop,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderRadius: 24,
+    paddingVertical: 32,
+    paddingHorizontal: 20,
   },
-  doneText: { fontSize: 14 },
+  heroPrompt: { borderColor: colors.accent.gold, borderWidth: 1.5 },
+  heroPromptText: { marginTop: 16 },
+  score: { fontSize: 80, lineHeight: 86, marginTop: 16 },
+  heroMsg: { marginTop: 6, textAlign: 'center', lineHeight: 17, paddingHorizontal: 12 },
   sessionCard: {
     marginTop: 16,
     backgroundColor: colors.bg.card,
     borderLeftWidth: 3,
     borderLeftColor: colors.accent.gold,
     borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    padding: 20,
   },
-  sessionEyebrow: { fontFamily: 'BebasNeue', letterSpacing: 1, fontSize: 14 },
-  sessionRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-  sessionTextCol: { marginLeft: 12, flex: 1 },
-  sessionTitle: { color: colors.text.primary, fontSize: 16 },
-  statsRow: { flexDirection: 'row', marginTop: 16, justifyContent: 'space-between' },
-  statCard: {
-    flex: 1,
-    marginHorizontal: 4,
+  sportPill: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 10,
+  },
+  sportPillText: { fontFamily: 'Inter-Bold', letterSpacing: 0.5 },
+  sessionName: { marginTop: 2 },
+  sessionMeta: { marginTop: 4 },
+  sessionBtn: { marginTop: 16 },
+  restCard: {
+    marginTop: 16,
     backgroundColor: colors.bg.card,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 16,
-    paddingVertical: 14,
+    padding: 20,
+  },
+  bonusGhost: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
+  statsRow: { flexDirection: 'row', marginTop: 20, gap: 10 },
+  statCard: {
+    flex: 1,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    paddingVertical: 16,
     paddingHorizontal: 8,
     alignItems: 'center',
   },
   statLabel: { fontSize: 11, textAlign: 'center' },
-  statValue: { fontSize: 32, color: colors.text.primary, marginTop: 4, lineHeight: 36 },
+  statValue: { fontSize: 34, color: colors.text.primary, marginTop: 6, lineHeight: 38 },
 });

@@ -235,7 +235,7 @@ export default function HyroxSessionScreen(): React.ReactElement {
     }
   };
 
-  const onClose = (): void => router.replace('/(app)/(tabs)/program');
+  const onClose = (): void => router.replace('/(app)/(tabs)/aujourd-hui');
 
   if (phase === 'loading') {
     return (

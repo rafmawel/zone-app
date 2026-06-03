@@ -1,12 +1,35 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Tabs } from 'expo-router';
-import { BookOpen, Calendar, Dumbbell, Home, Sparkles, User } from 'lucide-react-native';
+import { BarChart3, CalendarDays, Home, Play, User } from 'lucide-react-native';
 import { colors } from '@/theme/colors';
+import { ZoneText } from '@/components/ui/ZoneText';
 import { SessionMiniBar, SESSION_MINI_BAR_HEIGHT } from '@/components/SessionMiniBar';
 import { useSession } from '@/context/SessionContext';
 
-const TAB_BAR_HEIGHT = 64;
+const TAB_BAR_HEIGHT = 70;
+
+function TabLabel({ label, focused }: { label: string; focused: boolean }): React.ReactElement {
+  return (
+    <ZoneText
+      variant="caption"
+      size={10}
+      color={focused ? colors.accent.gold : colors.text.muted}
+      style={styles.tabLabel}
+    >
+      {label}
+    </ZoneText>
+  );
+}
+
+/** Center action tab: gold circle with a white play glyph. */
+function CenterIcon(): React.ReactElement {
+  return (
+    <View style={styles.centerCircle}>
+      <Play size={26} color={colors.bg.primary} fill={colors.bg.primary} />
+    </View>
+  );
+}
 
 export default function AppLayout(): React.ReactElement {
   const { activeSession } = useSession();
@@ -17,7 +40,6 @@ export default function AppLayout(): React.ReactElement {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarShowLabel: false,
           tabBarActiveTintColor: colors.accent.gold,
           tabBarInactiveTintColor: colors.text.muted,
           tabBarStyle: {
@@ -25,15 +47,10 @@ export default function AppLayout(): React.ReactElement {
             borderTopWidth: 0.5,
             borderTopColor: colors.border,
             height: TAB_BAR_HEIGHT,
-            paddingTop: 8,
-            paddingBottom: 8,
+            paddingTop: 10,
+            paddingBottom: 12,
           },
-          tabBarItemStyle: {
-            flex: 1,
-            minWidth: 0,
-            paddingHorizontal: 0,
-          },
-          tabBarLabelStyle: { display: 'none' },
+          tabBarItemStyle: { flex: 1, minWidth: 0, paddingHorizontal: 0 },
           sceneStyle: {
             paddingBottom: showMini ? SESSION_MINI_BAR_HEIGHT : 0,
             backgroundColor: colors.bg.primary,
@@ -43,43 +60,36 @@ export default function AppLayout(): React.ReactElement {
         <Tabs.Screen
           name="index"
           options={{
-            title: 'Accueil',
             tabBarIcon: ({ color }) => <Home size={22} color={color} />,
+            tabBarLabel: ({ focused }) => <TabLabel label="Accueil" focused={focused} />,
           }}
         />
         <Tabs.Screen
-          name="program"
+          name="aujourd-hui"
           options={{
-            title: 'Programme',
-            tabBarIcon: ({ color }) => <Dumbbell size={22} color={color} />,
+            tabBarIcon: ({ color }) => <CalendarDays size={22} color={color} />,
+            tabBarLabel: ({ focused }) => <TabLabel label="Aujourd'hui" focused={focused} />,
           }}
         />
         <Tabs.Screen
-          name="library"
+          name="entrainer"
           options={{
-            title: 'Bibliothèque',
-            tabBarIcon: ({ color }) => <BookOpen size={22} color={color} />,
+            tabBarIcon: () => <CenterIcon />,
+            tabBarLabel: ({ focused }) => <TabLabel label="Entraîner" focused={focused} />,
           }}
         />
         <Tabs.Screen
-          name="history"
+          name="analyse"
           options={{
-            title: 'Historique',
-            tabBarIcon: ({ color }) => <Calendar size={22} color={color} />,
+            tabBarIcon: ({ color }) => <BarChart3 size={22} color={color} />,
+            tabBarLabel: ({ focused }) => <TabLabel label="Analyse" focused={focused} />,
           }}
         />
         <Tabs.Screen
-          name="analytics"
+          name="moi"
           options={{
-            title: 'Analytics',
-            tabBarIcon: ({ color }) => <Sparkles size={22} color={color} />,
-          }}
-        />
-        <Tabs.Screen
-          name="profile"
-          options={{
-            title: 'Profil',
             tabBarIcon: ({ color }) => <User size={22} color={color} />,
+            tabBarLabel: ({ focused }) => <TabLabel label="Moi" focused={focused} />,
           }}
         />
       </Tabs>
@@ -94,9 +104,20 @@ export default function AppLayout(): React.ReactElement {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg.primary },
-  miniWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
+  tabLabel: { fontFamily: 'Inter-Medium', marginTop: 2, textAlign: 'center' },
+  centerCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.accent.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -14,
+    shadowColor: colors.accent.gold,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
   },
+  miniWrap: { position: 'absolute', left: 0, right: 0 },
 });

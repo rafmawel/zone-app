@@ -556,7 +556,7 @@ export default function ProfileScreen(): React.ReactElement {
                       {frenchShortDate(m.date)}
                     </ZoneText>
                   </View>
-                  <ZoneText variant="heading" style={styles.maxWeight}>
+                  <ZoneText variant="number" style={styles.maxWeight}>
                     {m.weight_kg} kg
                   </ZoneText>
                 </View>
@@ -831,7 +831,7 @@ function StatTile({
       {loading ? (
         <Skeleton width={64} height={22} borderRadius={6} style={styles.statSkeleton} />
       ) : (
-        <ZoneText variant="heading" style={styles.statValue}>
+        <ZoneText variant="number" style={styles.statValue}>
           {value}
         </ZoneText>
       )}
@@ -894,7 +894,7 @@ function TimeStepper({
       <TouchableOpacity onPress={onDown} hitSlop={10} style={styles.stepperBtn} activeOpacity={0.7}>
         <ZoneText style={styles.stepperSign}>−</ZoneText>
       </TouchableOpacity>
-      <ZoneText variant="heading" style={styles.stepperValue}>
+      <ZoneText variant="number" style={styles.stepperValue}>
         {String(value).padStart(2, '0')}
       </ZoneText>
       <TouchableOpacity onPress={onUp} hitSlop={10} style={styles.stepperBtn} activeOpacity={0.7}>

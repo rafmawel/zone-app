@@ -165,7 +165,7 @@ export default function RunningSetupScreen(): React.ReactElement {
         target_race_date: state.raceDate || null,
         long_run_pref: state.longRunPref,
       });
-      router.replace('/(app)/(tabs)/program');
+      router.replace('/(app)/(tabs)/aujourd-hui');
     } catch {
       setError('Enregistrement impossible. Réessaie.');
     } finally {

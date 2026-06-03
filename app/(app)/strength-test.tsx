@@ -471,7 +471,7 @@ export default function StrengthTestScreen(): React.ReactElement {
             rationale={activeLift?.rationale ?? ''}
             isBeginner={isBeginner}
             onStart={beginTest}
-            onOpenLibrary={() => router.push('/(app)/(tabs)/library')}
+            onOpenLibrary={() => router.push('/(app)/library')}
             onOpenDetail={() =>
               exercise ? router.push(`/(app)/exercise/${exercise.id}`) : undefined
             }

@@ -192,7 +192,7 @@ export default function ProgramIntroScreen(): React.ReactElement {
         <View style={styles.cta}>
           <Button
             title="COMMENCER MON PROGRAMME"
-            onPress={() => router.replace('/(app)/(tabs)/program')}
+            onPress={() => router.replace('/(app)/(tabs)/aujourd-hui')}
           />
         </View>
       </ScrollView>

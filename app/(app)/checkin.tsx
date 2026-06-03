@@ -342,7 +342,7 @@ function SleepDurationStep({
           <Minus size={28} color={colors.accent.gold} />
         </TouchableOpacity>
         <View style={styles.pickerValueWrap}>
-          <ZoneText variant="heading" style={styles.pickerValue}>
+          <ZoneText variant="number" style={styles.pickerValue}>
             {formatHours(value)}
           </ZoneText>
         </View>
@@ -438,7 +438,7 @@ function FeelingStep({
       <ZoneText variant="heading" style={styles.stepTitle}>
         Comment tu te sens ?
       </ZoneText>
-      <ZoneText variant="heading" style={styles.feelingValue}>
+      <ZoneText variant="number" style={styles.feelingValue}>
         {value}
       </ZoneText>
       <View style={styles.feelingRow}>
