@@ -32,6 +32,7 @@ import {
 } from '@/lib/firestore';
 import { checkAndAdvanceProgram, computeRestSeconds, estimateOneRepMax } from '@/lib/programEngine';
 import { computeAndSaveWorkloadEntry } from '@/lib/pro';
+import { recordSessionComplete, readProgrammeQueue, readCurrentWeek, startWeek } from '@/lib/weekTracking';
 import { usePro } from '@/hooks/usePro';
 import { ZoneOrbe } from '@/components/ZoneOrbe';
 import { getZoneLevel } from '@/lib/zoneScore';
@@ -301,6 +302,15 @@ export default function SessionScreen(): React.ReactElement {
         );
         const advanced = checkAndAdvanceProgram(program, sortedSessions);
         await saveUserProgram(user.uid, advanced);
+      }
+      try {
+        const queue = await readProgrammeQueue(user.uid);
+        const week = readCurrentWeek(queue, 'weightlifting');
+        const sessionsPerWeek = program?.sessions_per_week ?? 3;
+        await startWeek(user.uid, 'weightlifting', week, { sessions: sessionsPerWeek });
+        await recordSessionComplete(user.uid, 'weightlifting', week, {});
+      } catch {
+        // tracking is best effort
       }
     } catch {
       // surfaced via summary; user can retry navigating

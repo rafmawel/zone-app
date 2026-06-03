@@ -62,10 +62,13 @@ import {
   type SchedulerSport,
 } from '@/lib/multiSportScheduler';
 import { getZoneLevel } from '@/lib/zoneScore';
+import { useWeekBilans } from '@/hooks/useWeekBilans';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Button } from '@/components/ui/Button';
+import { BilanCard } from '@/components/BilanCard';
+import { ProgrammeCompleteCard } from '@/components/ProgrammeCompleteCard';
 
 interface ZoneBanner {
   border: string;
@@ -433,6 +436,12 @@ export default function ProgramScreen(): React.ReactElement {
     ...(hyroxProfile ? (['hyrox'] as const) : []),
   ];
   const zoneLevel = score !== null ? getZoneLevel(score) : null;
+  const { bilans, advance, repeat, startNewCycle } = useWeekBilans({
+    program,
+    runningProfile,
+    muscleProfile,
+    hyroxProfile,
+  });
 
   return (
     <SafeScreen>
@@ -463,6 +472,50 @@ export default function ProgramScreen(): React.ReactElement {
             {zoneLevel ? zoneLevel.label : 'Pas de check-in aujourd’hui'}
           </ZoneText>
         </View>
+
+        {bilans.length > 0 ? (
+          <View style={styles.bilanSection}>
+            <ZoneText
+              variant="caption"
+              color={colors.text.muted}
+              style={styles.bilanEyebrow}
+            >
+              BILAN DE LA SEMAINE
+            </ZoneText>
+            {bilans.map((b) =>
+              b.isComplete ? (
+                <ProgrammeCompleteCard
+                  key={b.sport}
+                  sport={b.sport}
+                  totalSessions={b.summary.completedSessions}
+                  totalVolume={b.summary.actualKm ?? 0}
+                  volumeUnit={b.sport === 'running' ? 'km' : 'séances'}
+                  onNewCycle={() => {
+                    void startNewCycle(b.sport).then(() => router.push('/(app)/maxes'));
+                  }}
+                  onMaintenance={() => {
+                    void startNewCycle(b.sport);
+                  }}
+                />
+              ) : (
+                <BilanCard
+                  key={b.sport}
+                  summary={b.summary}
+                  onAdvance={() => {
+                    void advance(b.sport);
+                  }}
+                  onRepeat={
+                    b.summary.result.shouldRepeat
+                      ? () => {
+                          void repeat(b.sport);
+                        }
+                      : undefined
+                  }
+                />
+              ),
+            )}
+          </View>
+        ) : null}
 
         {configuredSports.length > 0 ? (
           <MaSemaineSection
@@ -566,6 +619,18 @@ export default function ProgramScreen(): React.ReactElement {
             onSetup={() => router.push('/(app)/hyrox-setup')}
             onStart={onStartHyrox}
           />
+        ) : null}
+
+        {configuredSports.length > 0 && bilans.length === 0 ? (
+          <TouchableOpacity
+            onPress={() => router.push('/(app)/skip-week')}
+            activeOpacity={0.7}
+            style={styles.skipWeekLink}
+          >
+            <ZoneText variant="caption" color={colors.accent.gold}>
+              Passer à la semaine suivante →
+            </ZoneText>
+          </TouchableOpacity>
         ) : null}
 
         <View style={styles.upcomingHeader}>
@@ -1161,6 +1226,18 @@ const styles = StyleSheet.create({
   },
   upcomingHeader: { paddingHorizontal: 24, marginTop: 20, marginBottom: 8 },
   upcomingEyebrow: { letterSpacing: 2, fontSize: 11 },
+  bilanSection: { marginTop: 16 },
+  bilanEyebrow: {
+    letterSpacing: 2,
+    fontSize: 11,
+    paddingHorizontal: 24,
+    marginBottom: 4,
+  },
+  skipWeekLink: {
+    paddingHorizontal: 24,
+    marginTop: 12,
+    alignItems: 'flex-end',
+  },
   upcomingEmpty: {
     marginHorizontal: 24,
     backgroundColor: colors.bg.card,
