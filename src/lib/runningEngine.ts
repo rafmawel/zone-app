@@ -205,7 +205,7 @@ function warmup(paces: VDOTPaces): RunningSessionStep {
   return {
     kind: 'warmup',
     label: 'Échauffement',
-    durationSeconds: 15 * 60,
+    durationSeconds: 12 * 60,
     targetPaceSecPerKm: paces.E_slow,
     distanceMeters: null,
   };
@@ -215,7 +215,7 @@ function cooldown(paces: VDOTPaces): RunningSessionStep {
   return {
     kind: 'cooldown',
     label: 'Retour au calme',
-    durationSeconds: 10 * 60,
+    durationSeconds: 8 * 60,
     targetPaceSecPerKm: paces.E_slow,
     distanceMeters: null,
   };
@@ -327,7 +327,7 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
       break;
     }
     case 'IV': {
-      const reps = level === 'beginner' ? 4 : level === 'intermediate' ? 6 : 8;
+      const reps = level === 'beginner' ? 4 : level === 'intermediate' ? 5 : 6;
       const workMin = level === 'beginner' ? 2 : 3;
       steps = [warmup(paces)];
       for (let i = 1; i <= reps; i += 1) {
