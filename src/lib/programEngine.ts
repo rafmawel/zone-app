@@ -471,17 +471,22 @@ function restForRole(role: MovementRole): number {
 }
 
 /**
- * Estimate a session's wall-clock duration in minutes:
- * warm-up + Σ(45 s work) + Σ(rest) across every set.
+ * Estimate a session's wall-clock duration in minutes.
+ *
+ * Warm-up + 45 s of work per set + rest only *between* sets of an exercise
+ * (no rest after the final set before moving on). Counting a rest after every
+ * set inflated high-volume sessions well past their target windows.
  *
  * @param exercises planned exercises with their sets
  */
 export function estimateSessionDurationMin(exercises: SessionExercise[]): number {
   let seconds = WARMUP_SEC;
   for (const ex of exercises) {
-    for (const s of ex.sets) {
-      seconds += WORK_PER_SET_SEC + (s.rest_seconds ?? 0);
-    }
+    const n = ex.sets.length;
+    if (n === 0) continue;
+    seconds += n * WORK_PER_SET_SEC;
+    const rest = ex.sets[0].rest_seconds ?? 0;
+    seconds += Math.max(0, n - 1) * rest;
   }
   return Math.round(seconds / 60);
 }

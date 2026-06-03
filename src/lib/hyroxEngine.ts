@@ -241,6 +241,7 @@ export function generateHyroxSession(params: GenerateHyroxSessionParams): Planne
       estimated += effortPace + station.duration_avg_min * 60;
     }
   } else if (params.type === 'station_work') {
+    estimated = 600; // 10 min d'échauffement
     const targets = (params.weakStations.length > 0 ? params.weakStations : HYROX_STATIONS.map((s) => s.id))
       .slice(0, 3);
     for (let i = 0; i < targets.length; i += 1) {
@@ -253,10 +254,11 @@ export function generateHyroxSession(params: GenerateHyroxSessionParams): Planne
         target_pace_sec_per_km: effortPace + 20,
         target_duration_sec: Math.round(station.duration_avg_min * 60 * 0.6),
       });
-      estimated += (effortPace + 20) * 0.6 + station.duration_avg_min * 60 * 0.6 * 3;
+      // 600 m run + 3 working series + ~2 min of rest between series.
+      estimated += (effortPace + 20) * 0.6 + station.duration_avg_min * 60 * 0.6 * 3 + 120;
     }
   } else if (params.type === 'running_base') {
-    const minutes = params.level === 'debutant' ? 45 : params.level === 'regulier' ? 55 : 70;
+    const minutes = params.level === 'debutant' ? 45 : params.level === 'regulier' ? 55 : 60;
     rounds.push({
       round_number: 1,
       run_distance_m: 0,
