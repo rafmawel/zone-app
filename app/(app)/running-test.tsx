@@ -16,6 +16,7 @@ import {
   Alert,
   ScrollView,
   StyleSheet,
+  Switch,
   TextInput,
   TouchableOpacity,
   View,
@@ -437,11 +438,18 @@ function TimeTrialStep({
   const [running, setRunning] = useState<boolean>(false);
   const [done, setDone] = useState<boolean>(false);
   const [distanceM, setDistanceM] = useState<number>(0);
+  const [useGps, setUseGps] = useState<boolean>(true);
   const [permission, setPermission] = useState<'granted' | 'denied' | 'unknown'>('unknown');
   const [manualTimeText, setManualTimeText] = useState<string>('');
+  const [confirming, setConfirming] = useState<boolean>(false);
   const startedAtRef = useRef<number>(0);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
   const lastPosRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  const targetKm = (targetMeters / 1000).toFixed(0);
+  // Treadmill / indoor mode: no GPS, manual stop, then a one-tap
+  // confirmation of the distance the athlete actually covered.
+  const treadmillMode = !useGps;
 
   useEffect(() => {
     if (!running) return;
@@ -461,11 +469,11 @@ function TimeTrialStep({
   }, []);
 
   useEffect(() => {
-    if (running && distanceM >= targetMeters) {
-      finishWithGps();
+    if (running && useGps && distanceM >= targetMeters) {
+      finishRun();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [distanceM, running, targetMeters]);
+  }, [distanceM, running, targetMeters, useGps]);
 
   const startGps = async (): Promise<boolean> => {
     try {
@@ -499,36 +507,51 @@ function TimeTrialStep({
   };
 
   const start = async (): Promise<void> => {
-    const ok = await startGps();
     startedAtRef.current = Date.now();
     setElapsed(0);
     setDistanceM(0);
     setRunning(true);
-    if (!ok) {
-      Alert.alert(
-        'GPS indisponible',
-        'Le test se lance quand même. Tu pourras renseigner ton temps manuellement à l\'arrivée.',
-      );
+    if (useGps) {
+      const ok = await startGps();
+      if (!ok) {
+        Alert.alert(
+          'GPS indisponible',
+          "Le test se lance quand même. Tu pourras renseigner ton temps manuellement à l'arrivée.",
+        );
+      }
     }
   };
 
-  const finishWithGps = (): void => {
+  const finishRun = (): void => {
     if (watchRef.current) {
       watchRef.current.remove();
       watchRef.current = null;
     }
     setRunning(false);
-    setDone(true);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (treadmillMode) {
+      // Ask the athlete to confirm the distance actually covered before
+      // we commit the result.
+      setConfirming(true);
+    } else {
+      setDone(true);
+    }
   };
 
   const onStop = (): void => {
-    finishWithGps();
+    finishRun();
+  };
+
+  const onConfirmTreadmillDistance = (): void => {
+    setConfirming(false);
+    setDone(true);
   };
 
   const onSubmit = (): void => {
     let timeSec = elapsed;
-    if (permission !== 'granted') {
+    // Manual time entry is only needed when GPS was requested but
+    // denied. In treadmill mode the timer drives the time directly.
+    if (useGps && permission !== 'granted') {
       timeSec = parseTimeToSeconds(manualTimeText);
       if (timeSec <= 0) {
         Alert.alert(
@@ -548,14 +571,35 @@ function TimeTrialStep({
   return (
     <ScrollView contentContainerStyle={styles.body}>
       <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
-        CONTRE-LA-MONTRE · {(targetMeters / 1000).toFixed(0)} KM
+        CONTRE-LA-MONTRE · {targetKm} KM
       </ZoneText>
+
+      {!running && !done && !confirming ? (
+        <View style={styles.gpsToggleRow}>
+          <View style={styles.gpsToggleText}>
+            <ZoneText variant="label" color={colors.text.primary}>
+              Utiliser le GPS
+            </ZoneText>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.gpsToggleHint}>
+              {useGps
+                ? 'Distance mesurée par GPS, arrêt automatique.'
+                : 'Mode tapis / piste indoor : timer manuel.'}
+            </ZoneText>
+          </View>
+          <Switch
+            value={useGps}
+            onValueChange={setUseGps}
+            trackColor={{ false: colors.border, true: colors.accent.gold }}
+            thumbColor={colors.bg.primary}
+          />
+        </View>
+      ) : null}
 
       <View style={styles.timerCard}>
         <ZoneText variant="heading" style={styles.bigTimer}>
           {formatElapsed(elapsed)}
         </ZoneText>
-        {permission === 'granted' && running ? (
+        {useGps && permission === 'granted' && running ? (
           <ZoneText variant="body" color={colors.text.secondary} style={styles.warmupPhase}>
             {Math.round(distanceM)} / {targetMeters} m
           </ZoneText>
@@ -565,24 +609,44 @@ function TimeTrialStep({
             color={done ? colors.orbe.green : colors.accent.gold}
             style={styles.warmupPhase}
           >
-            {done ? 'TERMINÉ' : `Cours ${(targetMeters / 1000).toFixed(0)} km aussi vite que possible`}
+            {done
+              ? 'TERMINÉ'
+              : confirming
+                ? `Distance réalisée : ${targetKm} km ?`
+                : treadmillMode
+                  ? `Cours ${targetKm} km sur ton tapis`
+                  : `Cours ${targetKm} km aussi vite que possible`}
           </ZoneText>
         )}
       </View>
 
-      {!done ? (
+      {!done && !confirming ? (
         <View style={styles.instructions}>
           <Bullet text="Pars sur un rythme tenable, pas de sprint initial." />
-          {permission === 'granted' ? (
+          {useGps && permission === 'granted' ? (
             <Bullet text="Arrêt automatique à l'arrivée." />
+          ) : treadmillMode ? (
+            <Bullet text={`Touche "J'ai terminé mes ${targetKm} km" en arrivant.`} />
           ) : (
-            <Bullet text="Sans GPS: arrête le timer à la ligne d'arrivée." />
+            <Bullet text="Sans GPS : arrête le timer à la ligne d'arrivée." />
           )}
           <Bullet text="Garde-toi un peu pour finir fort sur le dernier 25 %." />
         </View>
       ) : null}
 
-      {done && permission !== 'granted' ? (
+      {confirming ? (
+        <View style={styles.confirmCard}>
+          <ZoneText variant="label" color={colors.text.primary} style={styles.confirmTitle}>
+            Distance réalisée : {targetKm} km ✓
+          </ZoneText>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.confirmHint}>
+            Confirme si tu as bien couvert {targetKm} km au compteur du tapis.
+            Sinon, reprends le test sur une distance plus adaptée.
+          </ZoneText>
+        </View>
+      ) : null}
+
+      {done && useGps && permission !== 'granted' ? (
         <View style={styles.instructions}>
           <ZoneText variant="label" style={styles.label}>
             Ton temps (MM:SS ou HH:MM:SS)
@@ -599,11 +663,17 @@ function TimeTrialStep({
       ) : null}
 
       <View style={styles.cta}>
-        {!running && !done ? (
+        {!running && !done && !confirming ? (
           <Button title="Démarrer le test" onPress={() => void start()} />
         ) : null}
-        {running ? (
+        {running && treadmillMode ? (
+          <Button title={`J'ai terminé mes ${targetKm} km`} onPress={onStop} />
+        ) : null}
+        {running && !treadmillMode ? (
           <Button title="Arrêter" variant="secondary" onPress={onStop} />
+        ) : null}
+        {confirming ? (
+          <Button title={`Oui, j'ai bien fait ${targetKm} km`} onPress={onConfirmTreadmillDistance} />
         ) : null}
         {done ? <Button title="Calculer mon VDOT" onPress={onSubmit} /> : null}
       </View>
@@ -816,6 +886,32 @@ const styles = StyleSheet.create({
   pillActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
   pillText: { fontFamily: 'Inter-Medium', fontSize: 13 },
   cta: { marginTop: 22 },
+  gpsToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 14,
+    gap: 12,
+  },
+  gpsToggleText: { flex: 1 },
+  gpsToggleHint: { marginTop: 2, lineHeight: 16 },
+  confirmCard: {
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+    borderLeftWidth: 3,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 8,
+  },
+  confirmTitle: { fontSize: 15 },
+  confirmHint: { marginTop: 8, lineHeight: 17 },
   timerCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,
