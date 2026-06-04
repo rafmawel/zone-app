@@ -237,15 +237,22 @@ export default function MuscleSessionScreen(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.session, exerciseMeta?.name, lightMode]);
 
-  // Seed inputs when the cursor moves.
+  // Seed inputs when the cursor moves OR when the session first loads
+  // (currentSet becomes defined after Firestore hydration). Prefer the
+  // planned target weight when available; otherwise fall back to the
+  // history/maxes-based seed.
   useEffect(() => {
     if (!currentExercise || !currentSet) return;
     setActualReps(parseTargetReps(currentSet.target_reps));
     setRir(null);
-    const seeded = seedWeight(currentExercise.exercise_id, history, maxes);
+    const planned = currentSet.target_weight_kg;
+    const seeded =
+      planned !== null && planned !== undefined && planned > 0
+        ? planned
+        : seedWeight(currentExercise.exercise_id, history, maxes);
     setActualWeight(lightMode ? roundTo2_5(seeded * 0.6) : seeded);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exerciseIdx, setIdx, lightMode]);
+  }, [exerciseIdx, setIdx, lightMode, currentSet]);
 
   // Rest ring animation.
   useEffect(() => {

@@ -153,18 +153,20 @@ export default function SessionScreen(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.session, exerciseMeta?.name]);
 
-  // Initialize input targets when cursor moves
+  // Initialize input targets when cursor moves OR when the session
+  // first loads (currentSet only becomes defined once state.session is
+  // hydrated, so we depend on its identity to prefill the first set).
   useEffect(() => {
     if (!currentSet) return;
-    setActualWeight((prev) =>
+    setActualWeight(
       currentSet.target_weight_kg !== null && currentSet.target_weight_kg !== undefined
         ? currentSet.target_weight_kg
-        : prev,
+        : 0,
     );
     setActualReps(parseTargetReps(currentSet.target_reps));
     setSetRpe(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exerciseIdx, setIdx]);
+  }, [exerciseIdx, setIdx, currentSet]);
 
   // Animate the rest ring whenever rest state changes
   useEffect(() => {
@@ -412,6 +414,15 @@ export default function SessionScreen(): React.ReactElement {
           total={activeSession?.restTotalSeconds ?? 0}
           ringProgress={ringProgress}
           cue={exerciseMeta?.cues[0] ?? null}
+          nextExerciseName={exerciseMeta?.name ?? currentExercise.exercise_id}
+          nextSet={currentSet}
+          nextSetNumber={setIdx + 1}
+          nextSetTotal={currentExercise.sets.length}
+          isNewExercise={setIdx === 0}
+          totalRemainingSets={
+            currentExercise.sets.length - setIdx +
+            exercises.slice(exerciseIdx + 1).reduce((acc, ex) => acc + ex.sets.length, 0)
+          }
           onSkip={handleSkipRest}
           onAdjust={handleAdjustRest}
         />
@@ -640,6 +651,28 @@ function buildRepOptions(target: number): number[] {
   return [0, 1, 2, 3, 4].map((i) => start + i);
 }
 
+/**
+ * Olympic-lift notations like "2+1" or "3+2" pack multiple movements
+ * into one logged repetition. Surface a short explanation so the user
+ * knows how to count.
+ */
+function explainComplexReps(targetReps: string, exerciseId: string): string | null {
+  if (!targetReps.includes('+')) return null;
+  const parts = targetReps.split('+').map((p) => p.trim());
+  if (parts.length !== 2) return null;
+  const [aRaw, bRaw] = parts;
+  const a = parseInt(aRaw, 10);
+  const b = parseInt(bRaw, 10);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  if (exerciseId === 'clean_and_jerk') {
+    return `${a}+${b} = ${a} épaulé${a > 1 ? 's' : ''} + ${b} jeté${b > 1 ? 's' : ''} · compte comme 1 répétition.`;
+  }
+  if (exerciseId === 'snatch') {
+    return `${a}+${b} = ${a} arraché${a > 1 ? 's' : ''} + ${b} OHS · compte comme 1 répétition.`;
+  }
+  return `${a}+${b} = ${a} mouvement${a > 1 ? 's' : ''} + ${b} enchaîné${b > 1 ? 's' : ''} · compte comme 1 répétition.`;
+}
+
 function formatWeight(v: number): string {
   return Number.isInteger(v) ? `${v}` : v.toFixed(1);
 }
@@ -767,6 +800,15 @@ function WorkView({
           Objectif: {plannedSet.target_reps} reps
           {plannedSet.target_weight_kg ? ` · cible ${plannedSet.target_weight_kg} kg` : ''}
         </ZoneText>
+        {explainComplexReps(plannedSet.target_reps, plannedSet.exercise_id) ? (
+          <ZoneText
+            variant="caption"
+            color={colors.text.secondary}
+            style={styles.notationHint}
+          >
+            {explainComplexReps(plannedSet.target_reps, plannedSet.exercise_id)}
+          </ZoneText>
+        ) : null}
       </View>
 
       {/* Reps tap targets */}
@@ -795,12 +837,12 @@ function WorkView({
         reps réalisées
       </ZoneText>
 
-      {/* RIR (Pro) */}
-      {isProUser ? (
+      {/* RPE / RIR — feeds the autoregulation engine */}
+      <View style={styles.rirBlock}>
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.rirHeader}>
+          COMMENT C&apos;ÉTAIT ?
+        </ZoneText>
         <View style={styles.rirRow}>
-          <ZoneText variant="caption" color={colors.text.muted} style={styles.rirLabel}>
-            RIR:
-          </ZoneText>
           {rirOptions.map((o) => {
             const active = setRpe === o.rpe;
             return (
@@ -821,13 +863,37 @@ function WorkView({
             );
           })}
         </View>
-      ) : null}
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.rirHint}>
+          Reps en réserve · 0 = échec, 3+ = très facile
+        </ZoneText>
+        {isProUser && setRpe !== null ? (
+          <ZoneText
+            variant="caption"
+            color={colors.accent.gold}
+            style={styles.rirProSuggestion}
+          >
+            {weightSuggestionForRpe(setRpe, actualWeight)}
+          </ZoneText>
+        ) : null}
+      </View>
 
       <View style={styles.workFooter}>
         <Button title="SÉRIE TERMINÉE  →" onPress={onDone} />
       </View>
     </View>
   );
+}
+
+/**
+ * Pro-only weight adjustment hint based on the user's RPE for the set
+ * they just completed. Follows a simple RIR-based autoregulation: large
+ * reserve unlocks +2.5 kg, target reserve maintains, no reserve cuts.
+ */
+function weightSuggestionForRpe(rpe: number, weight: number): string {
+  if (rpe <= 7) return `Réserve confortable. Tu peux pousser +2,5 kg la prochaine série (${weight + 2.5} kg).`;
+  if (rpe <= 8) return 'Charge bien calibrée. Maintiens la charge sur la prochaine série.';
+  if (rpe <= 9) return 'Effort élevé. Maintiens ou réduis légèrement (-2,5 kg) selon les sensations.';
+  return `RPE 10 / échec. Réduis de 2,5 kg pour la prochaine série (${Math.max(0, weight - 2.5)} kg).`;
 }
 
 function NumberStepper({
@@ -879,6 +945,12 @@ function RestView({
   total,
   ringProgress,
   cue,
+  nextExerciseName,
+  nextSet,
+  nextSetNumber,
+  nextSetTotal,
+  isNewExercise,
+  totalRemainingSets,
   onSkip,
   onAdjust,
 }: {
@@ -887,6 +959,12 @@ function RestView({
   total: number;
   ringProgress: ReturnType<typeof useSharedValue<number>>;
   cue: string | null;
+  nextExerciseName: string;
+  nextSet: PlannedSet;
+  nextSetNumber: number;
+  nextSetTotal: number;
+  isNewExercise: boolean;
+  totalRemainingSets: number;
   onSkip: () => void;
   onAdjust: (delta: number) => void;
 }): React.ReactElement {
@@ -900,10 +978,14 @@ function RestView({
     strokeDashoffset: circumference * ringProgress.value,
   }));
 
+  const upcomingLine = nextSet.target_weight_kg
+    ? `${nextSet.target_reps} reps @ ${nextSet.target_weight_kg} kg`
+    : `${nextSet.target_reps} reps`;
+
   return (
     <View style={styles.restWrap}>
       <ZoneText variant="caption" color={colors.text.muted} style={styles.restEyebrow}>
-        REPOS
+        REPOS · {formatRestMS(remaining)}
       </ZoneText>
       <View style={styles.ringWrap}>
         <Svg width={size} height={size}>
@@ -930,6 +1012,35 @@ function RestView({
           </ZoneText>
         </Animated.View>
       </View>
+
+      <View style={styles.nextBlock}>
+        <ZoneText
+          variant="caption"
+          color={isNewExercise ? colors.accent.gold : colors.text.muted}
+          style={styles.nextEyebrow}
+        >
+          {isNewExercise ? 'PROCHAIN EXERCICE' : 'PROCHAINE SÉRIE'}
+        </ZoneText>
+        <ZoneText variant="label" color={colors.text.primary} style={styles.nextName}>
+          {nextExerciseName.toUpperCase()}
+        </ZoneText>
+        <ZoneText variant="caption" color={colors.text.secondary} style={styles.nextLine}>
+          Série {nextSetNumber}/{nextSetTotal} · {upcomingLine}
+        </ZoneText>
+        {isNewExercise ? (
+          <ZoneText
+            variant="caption"
+            color={colors.accent.gold}
+            style={styles.nextPrepare}
+          >
+            Prépare-toi
+          </ZoneText>
+        ) : null}
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.nextRemaining}>
+          {totalRemainingSets} série{totalRemainingSets > 1 ? 's' : ''} restante{totalRemainingSets > 1 ? 's' : ''}
+        </ZoneText>
+      </View>
+
       {cue ? (
         <ZoneText variant="body" color={colors.text.secondary} style={styles.cueText}>
           {cue}
@@ -1228,6 +1339,7 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   objective: { textAlign: 'center', marginTop: 16 },
+  notationHint: { textAlign: 'center', marginTop: 6, fontStyle: 'italic', lineHeight: 16 },
   repsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 24, gap: 8 },
   repCell: {
     flex: 1,
@@ -1241,8 +1353,20 @@ const styles = StyleSheet.create({
   },
   repCellActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
   repsCaption: { textAlign: 'center', marginTop: 8 },
-  rirRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 20, justifyContent: 'center' },
+  rirBlock: { marginTop: 24, alignItems: 'center' },
+  rirHeader: { letterSpacing: 2, fontFamily: 'Inter-Bold', fontSize: 11, marginBottom: 10 },
+  rirRow: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center' },
   rirLabel: { letterSpacing: 1 },
+  rirHint: { marginTop: 10, fontSize: 11, fontStyle: 'italic' },
+  rirProSuggestion: {
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: `${colors.accent.gold}15`,
+    borderRadius: 10,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
   rirCell: {
     minWidth: 44,
     height: 36,
@@ -1262,6 +1386,22 @@ const styles = StyleSheet.create({
   ringContent: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   ringValue: { fontSize: 56, lineHeight: 60 },
   cueText: { textAlign: 'center', marginTop: 18, marginHorizontal: 12 },
+  nextBlock: {
+    marginTop: 22,
+    alignItems: 'center',
+    backgroundColor: colors.bg.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    minWidth: 240,
+  },
+  nextEyebrow: { letterSpacing: 2, fontFamily: 'Inter-Bold', fontSize: 11 },
+  nextName: { marginTop: 6, fontSize: 16, letterSpacing: 1 },
+  nextLine: { marginTop: 4, lineHeight: 17 },
+  nextPrepare: { marginTop: 6, fontFamily: 'Inter-Bold', letterSpacing: 1 },
+  nextRemaining: { marginTop: 6, fontSize: 11 },
   restControls: { flexDirection: 'row', alignItems: 'center', marginTop: 28 },
   restAdjust: {
     paddingHorizontal: 14,

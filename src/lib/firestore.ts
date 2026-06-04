@@ -184,6 +184,8 @@ export interface RunningProfile {
   sessions_per_week: number;
   target_race_date: string | null;
   long_run_pref: LongRunPreference;
+  /** Goal finishing time in seconds for the target race. */
+  goal_time_seconds?: number | null;
   updated_at: Timestamp | null;
 }
 

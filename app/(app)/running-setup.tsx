@@ -72,6 +72,7 @@ interface State {
   sessionsPerWeek: number;
   longRunPref: LongRunPreference;
   raceDate: string;
+  goalTimeSeconds: number;
 }
 
 function roundTo10(n: number): number {
@@ -90,6 +91,7 @@ export default function RunningSetupScreen(): React.ReactElement {
     sessionsPerWeek: 3,
     longRunPref: 'dimanche',
     raceDate: '',
+    goalTimeSeconds: 0,
   });
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -164,6 +166,7 @@ export default function RunningSetupScreen(): React.ReactElement {
         sessions_per_week: state.sessionsPerWeek,
         target_race_date: state.raceDate || null,
         long_run_pref: state.longRunPref,
+        goal_time_seconds: state.goalTimeSeconds > 0 ? state.goalTimeSeconds : null,
       });
       router.replace({
         pathname: '/(app)/programme-overview',
@@ -249,6 +252,9 @@ export default function RunningSetupScreen(): React.ReactElement {
                 onLongRunPref={(v) => setState((s) => ({ ...s, longRunPref: v }))}
                 raceDate={state.raceDate}
                 onRaceDate={(v) => setState((s) => ({ ...s, raceDate: v }))}
+                refDistance={state.refDistance}
+                goalTimeSeconds={state.goalTimeSeconds}
+                onGoalTime={(v) => setState((s) => ({ ...s, goalTimeSeconds: v }))}
                 paces={paces}
                 vdot={calibratedVdot}
               />
@@ -403,7 +409,24 @@ function PaceStep({
         <PresetChip label="Inter. (5:30-7:30)" onPress={() => onChange(6 * 60 + 30)} />
         <PresetChip label="Avancé (<5:30)" onPress={() => onChange(5 * 60)} />
       </View>
+
+      <TestNivLink />
     </View>
+  );
+}
+
+function TestNivLink(): React.ReactElement {
+  const router = useRouter();
+  return (
+    <TouchableOpacity
+      onPress={() => router.push('/(app)/running-test')}
+      activeOpacity={0.7}
+      style={styles.testNivLink}
+    >
+      <ZoneText variant="caption" color={colors.accent.gold} style={styles.testNivText}>
+        Je veux faire un test de niveau →
+      </ZoneText>
+    </TouchableOpacity>
   );
 }
 
@@ -596,6 +619,12 @@ function secondsToParts(total: number): [number, number, number] {
   return [h, m, s];
 }
 
+function formatGoalTime(total: number, showHours: boolean): string {
+  const [h, m, s] = secondsToParts(total);
+  if (showHours) return `${h}h${m.toString().padStart(2, '0')}`;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 function TimePiece({
   value,
   onChange,
@@ -644,6 +673,9 @@ function OrganizeStep({
   onLongRunPref,
   raceDate,
   onRaceDate,
+  refDistance,
+  goalTimeSeconds,
+  onGoalTime,
   paces,
   vdot,
 }: {
@@ -653,9 +685,25 @@ function OrganizeStep({
   onLongRunPref: (v: LongRunPreference) => void;
   raceDate: string;
   onRaceDate: (v: string) => void;
+  refDistance: RunningRaceDistance;
+  goalTimeSeconds: number;
+  onGoalTime: (v: number) => void;
   paces: ReturnType<typeof calculateVDOTPaces>;
   vdot: number;
 }): React.ReactElement {
+  const goalVdot = useMemo(
+    () =>
+      goalTimeSeconds > 0
+        ? estimateVDOT(raceMeters(refDistance), goalTimeSeconds)
+        : null,
+    [goalTimeSeconds, refDistance],
+  );
+  const [gh, gm, gs] = secondsToParts(goalTimeSeconds);
+  const setGoal = (h: number, m: number, s: number): void => {
+    const total = Math.max(0, h * 3600 + m * 60 + s);
+    onGoalTime(total);
+  };
+  const showHours = refDistance === 'semi' || refDistance === 'marathon';
   return (
     <View>
       <ZoneText variant="heading" style={styles.title}>
@@ -740,6 +788,63 @@ function OrganizeStep({
         style={styles.raceInput}
         selectionColor={colors.accent.gold}
       />
+
+      <ZoneText variant="caption" color={colors.text.muted} style={styles.sectionLabel}>
+        OBJECTIF DE TEMPS · {raceLabel(refDistance)} (optionnel)
+      </ZoneText>
+      <View style={styles.timeRow}>
+        {showHours ? (
+          <TimePiece
+            value={gh}
+            onChange={(h) => setGoal(h, gm, gs)}
+            max={9}
+            suffix="h"
+          />
+        ) : null}
+        <TimePiece
+          value={gm}
+          onChange={(m) => setGoal(gh, m, gs)}
+          max={59}
+          suffix="min"
+        />
+        <TimePiece
+          value={gs}
+          onChange={(s) => setGoal(gh, gm, s)}
+          max={59}
+          suffix="sec"
+        />
+        {goalTimeSeconds > 0 ? (
+          <TouchableOpacity
+            onPress={() => onGoalTime(0)}
+            activeOpacity={0.7}
+            hitSlop={8}
+            style={styles.goalClear}
+          >
+            <ZoneText variant="caption" color={colors.text.muted}>
+              Je ne sais pas encore
+            </ZoneText>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      {goalVdot !== null && goalVdot > vdot ? (
+        <ZoneText
+          variant="caption"
+          color={colors.text.secondary}
+          style={styles.goalHint}
+        >
+          Pour courir {raceLabel(refDistance).toLowerCase()} en {formatGoalTime(goalTimeSeconds, showHours)}, il te faudra un VDOT d&apos;environ {goalVdot}. Ton VDOT actuel : {vdot}. Ton programme est calibré pour t&apos;amener à VDOT {goalVdot} en 12 semaines.
+        </ZoneText>
+      ) : null}
+      {goalVdot !== null && goalVdot <= vdot ? (
+        <ZoneText
+          variant="caption"
+          color={colors.text.secondary}
+          style={styles.goalHint}
+        >
+          Cet objectif est déjà à portée (VDOT cible {goalVdot}, ton VDOT actuel {vdot}). Le programme va te permettre de le confirmer en course.
+        </ZoneText>
+      ) : null}
 
       <View style={styles.pacesPreview}>
         <ZoneText variant="caption" color={colors.text.muted} style={styles.refLabel}>
@@ -860,6 +965,8 @@ const styles = StyleSheet.create({
   },
   vdotLine: { marginTop: 6, fontSize: 12 },
   presetsRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 16 },
+  testNivLink: { marginTop: 20, alignItems: 'center' },
+  testNivText: { fontSize: 13, fontFamily: 'Inter-Medium' },
   presetChip: {
     borderWidth: 1,
     borderColor: colors.border,
@@ -945,6 +1052,14 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
     fontFamily: 'Inter-Regular',
     fontSize: 14,
+  },
+  goalClear: { marginLeft: 12, paddingVertical: 8 },
+  goalHint: {
+    marginTop: 12,
+    backgroundColor: `${colors.accent.gold}10`,
+    borderRadius: 10,
+    padding: 12,
+    lineHeight: 18,
   },
   pacesPreview: {
     marginTop: 18,

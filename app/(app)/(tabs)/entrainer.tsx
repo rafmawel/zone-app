@@ -174,6 +174,22 @@ export default function EntrainerScreen(): React.ReactElement {
                     En savoir plus →
                   </ZoneText>
                 </TouchableOpacity>
+                {s.key === 'running' && isOn ? (
+                  <TouchableOpacity
+                    onPress={() => router.push('/(app)/running-test')}
+                    hitSlop={6}
+                    activeOpacity={0.7}
+                    style={styles.testBanner}
+                  >
+                    <ZoneText
+                      variant="caption"
+                      color={colors.accent.gold}
+                      style={styles.testBannerText}
+                    >
+                      Calibre ton niveau avec un test →
+                    </ZoneText>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             );
           })}
@@ -341,6 +357,14 @@ const styles = StyleSheet.create({
   learnMore: { marginTop: 8, alignItems: 'flex-end' },
   learnMoreText: { fontSize: 11, fontFamily: 'Inter-Medium' },
   skipWeekLink: { alignItems: 'flex-end', marginTop: 4, marginBottom: 8 },
+  testBanner: {
+    marginTop: 6,
+    backgroundColor: `${colors.accent.gold}1A`,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  testBannerText: { fontSize: 11, fontFamily: 'Inter-Medium', textAlign: 'center' },
   emptyCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,

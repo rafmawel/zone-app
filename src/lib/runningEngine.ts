@@ -77,14 +77,36 @@ export function vdotFromEasyPace(easyPaceSecPerKm: number): number {
 
 export function calculateVDOTPaces(vdot: number): VDOTPaces {
   const safe = Math.max(20, Math.min(90, vdot));
-  const E_fastPer400 = 29.54 + 5.000663 * safe - 0.007546 * safe * safe;
-  const E_fast = Math.max(180, Math.round(E_fastPer400 * 2.5));
-  const E_slow = Math.round(E_fast + safe * 0.3 + 25);
-  const T = Math.max(150, Math.round(E_fast - safe * 2.1));
-  const I = Math.max(140, Math.round(T - safe * 1.8));
-  const R = Math.max(120, Math.round(I - safe * 1.2));
-  const M = Math.round(T + 25);
+  // Daniels VDOT paces: invert the Daniels-Gilbert VO2 polynomial
+  //   VO2 = -4.6 + 0.182258 v + 0.000104 v^2
+  // to get the velocity v (m/min) for a target oxygen uptake. Pace at
+  // each training zone is expressed as a percentage of VDOT.
+  const E_fast = paceForVdotFraction(safe, 0.7);
+  const E_slow = paceForVdotFraction(safe, 0.65);
+  const M = paceForVdotFraction(safe, 0.84);
+  const T = paceForVdotFraction(safe, 0.88);
+  const I = paceForVdotFraction(safe, 0.98);
+  const R = paceForVdotFraction(safe, 1.05);
   return { E_slow, E_fast, M, T, I, R };
+}
+
+/**
+ * Solve the Daniels-Gilbert VO2 polynomial for velocity and return the
+ * pace per kilometre in seconds. `fraction` is the share of the
+ * athlete's VDOT used as the target VO2 (0.7 for easy, 0.88 for
+ * threshold, etc.).
+ */
+function paceForVdotFraction(vdot: number, fraction: number): number {
+  const targetVO2 = vdot * fraction;
+  // 0.000104 v^2 + 0.182258 v - (4.6 + VO2) = 0
+  const a = 0.000104;
+  const b = 0.182258;
+  const c = -(4.6 + targetVO2);
+  const disc = b * b - 4 * a * c;
+  if (disc <= 0) return 0;
+  const v = (-b + Math.sqrt(disc)) / (2 * a); // m/min
+  if (v <= 0) return 0;
+  return Math.round((1000 / v) * 60); // sec per km
 }
 
 export function vdotLevelLabel(vdot: number): string {

@@ -93,7 +93,7 @@ const BONUS_OPTIONS: { id: BonusOption; title: string; description: string; deta
 
 const FR_DAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 const WEEK_RANGE = 4;
-const QUEUE_WEEKS = 3;
+const QUEUE_WEEKS = 2;
 
 function weekMondayDate(weekOffset: number): Date {
   const now = new Date();
@@ -188,6 +188,7 @@ export default function AujourdhuiScreen(): React.ReactElement {
   const [acwrHigh, setAcwrHigh] = useState<boolean>(false);
   const [deload, setDeload] = useState<DeloadRecommendation | null>(null);
   const [recovery, setRecovery] = useState<RecoveryContext>(EMPTY_RECOVERY_CONTEXT);
+  const [nextWeekExpanded, setNextWeekExpanded] = useState<boolean>(false);
   const [sessionIdByDate, setSessionIdByDate] = useState<Record<string, string>>({});
   const [queueState, setQueueState] = useState<QueueState>({});
 
@@ -540,13 +541,23 @@ export default function AujourdhuiScreen(): React.ReactElement {
             </ZoneText>
           </View>
         ) : (
-          queueWeeks.map((items, wi) =>
-            items.length === 0 ? null : (
-              <View key={wi}>
-                <ZoneText variant="caption" style={styles.weekHeader}>
-                  {weekBlockLabel(wi + 1)}
-                </ZoneText>
-                {items.map((item) => {
+          <>
+            {/* Semaine en cours (semaine 1) */}
+            {queueWeeks[0] && queueWeeks[0].length > 0 ? (
+              <View>
+                <View style={styles.weekHeaderRow}>
+                  <ZoneText variant="caption" style={styles.weekHeader}>
+                    {weekBlockLabel(1)}
+                  </ZoneText>
+                  <ZoneText
+                    variant="caption"
+                    color={colors.accent.gold}
+                    style={styles.weekBadge}
+                  >
+                    EN COURS
+                  </ZoneText>
+                </View>
+                {queueWeeks[0].map((item) => {
                   const meta = statusMeta(item.status);
                   const done = item.status === 'completed' || item.status === 'skipped';
                   const available = item.status === 'available';
@@ -601,8 +612,79 @@ export default function AujourdhuiScreen(): React.ReactElement {
                   );
                 })}
               </View>
-            ),
-          )
+            ) : null}
+
+            {/* Aperçu semaine 2 (repliée par défaut) */}
+            {queueWeeks[1] && queueWeeks[1].length > 0 ? (
+              <View style={styles.nextWeekWrap}>
+                <View style={styles.weekSeparator} />
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => setNextWeekExpanded((e) => !e)}
+                  style={styles.weekHeaderRow}
+                >
+                  <ZoneText variant="caption" style={styles.weekHeader}>
+                    {weekBlockLabel(2)}
+                  </ZoneText>
+                  <ZoneText
+                    variant="caption"
+                    color={colors.text.muted}
+                    style={styles.weekBadge}
+                  >
+                    PROCHAINE · {nextWeekExpanded ? 'Réduire' : 'Aperçu'}
+                  </ZoneText>
+                </TouchableOpacity>
+                {nextWeekExpanded ? (
+                  queueWeeks[1].map((item) => (
+                    <View
+                      key={item.key}
+                      style={[
+                        styles.qCardPreview,
+                        { borderLeftColor: sportColor(item.sport as SchedulerSport) },
+                      ]}
+                    >
+                      <ZoneText variant="label" color={colors.text.secondary} style={styles.qPreviewTitle}>
+                        {SPORT_ICON[item.sport]} {item.name}
+                      </ZoneText>
+                      <ZoneText variant="caption" color={colors.text.muted}>
+                        ~{item.estimatedMinutes} min · démarre après la semaine 1
+                      </ZoneText>
+                    </View>
+                  ))
+                ) : (
+                  <ZoneText variant="caption" color={colors.text.muted} style={styles.nextWeekHint}>
+                    Touche pour voir les séances prévues.
+                  </ZoneText>
+                )}
+              </View>
+            ) : null}
+
+            {/* Lien vers le reste du programme */}
+            {program || runningProfile || muscleProfile || hyroxProfile ? (
+              <TouchableOpacity
+                onPress={() =>
+                  router.push({
+                    pathname: '/(app)/programme-overview',
+                    params: {
+                      sport: program
+                        ? 'weightlifting'
+                        : runningProfile
+                          ? 'running'
+                          : muscleProfile
+                            ? 'musculation'
+                            : 'hyrox',
+                    },
+                  })
+                }
+                activeOpacity={0.7}
+                style={styles.programLink}
+              >
+                <ZoneText variant="caption" color={colors.accent.gold} style={styles.programLinkText}>
+                  Voir la suite du programme →
+                </ZoneText>
+              </TouchableOpacity>
+            ) : null}
+          </>
         )}
 
         {muscleProfile ? (
@@ -769,6 +851,25 @@ const styles = StyleSheet.create({
   futureDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'transparent' },
   raceLine: { marginTop: 14, lineHeight: 16 },
   weekHeader: { fontFamily: 'Syne-Bold', fontSize: 13, letterSpacing: 1.5, color: colors.text.muted, marginTop: 24, marginBottom: 12 },
+  weekHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  weekBadge: { fontFamily: 'Inter-Bold', fontSize: 11, letterSpacing: 1, marginTop: 24, marginBottom: 12 },
+  weekSeparator: { height: 1, backgroundColor: colors.border, marginTop: 8 },
+  nextWeekWrap: { marginTop: 4 },
+  nextWeekHint: { marginTop: 2, marginBottom: 12, fontStyle: 'italic' },
+  qCardPreview: {
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderLeftWidth: 3,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 8,
+    opacity: 0.75,
+  },
+  qPreviewTitle: { fontSize: 13, marginBottom: 2 },
+  programLink: { alignSelf: 'center', marginTop: 16, marginBottom: 12, paddingVertical: 6 },
+  programLinkText: { fontFamily: 'Inter-Medium', fontSize: 13 },
   qCard: {
     backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 3,
     borderRadius: 16, padding: 16, marginBottom: 10,
