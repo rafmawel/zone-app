@@ -21,6 +21,7 @@ export interface WeekState {
   startedAt: Date | null;
   plannedSessions: number;
   completedSessions: number;
+  skippedSessions: number;
   plannedKm: number | null;
   actualKm: number;
   muscleSets: Record<string, number>;
@@ -33,6 +34,7 @@ const EMPTY_STATE: WeekState = {
   startedAt: null,
   plannedSessions: 0,
   completedSessions: 0,
+  skippedSessions: 0,
   plannedKm: null,
   actualKm: 0,
   muscleSets: {},
@@ -79,6 +81,7 @@ function parseWeekState(
     startedAt: asDate(raw[key(sport, week, 'started_at')]),
     plannedSessions: asNumber(raw[key(sport, week, 'planned_sessions')], 0),
     completedSessions: asNumber(raw[key(sport, week, 'completed_sessions')], 0),
+    skippedSessions: asNumber(raw[key(sport, week, 'skipped_sessions')], 0),
     plannedKm:
       typeof raw[key(sport, week, 'planned_km')] === 'number'
         ? (raw[key(sport, week, 'planned_km')] as number)
@@ -192,6 +195,36 @@ export async function recordSessionComplete(
       payload.km !== undefined
         ? Math.round((current.actualKm + payload.km) * 100) / 100
         : current.actualKm,
+    startedAt: current.startedAt ?? new Date(),
+  };
+}
+
+/**
+ * Increment the skipped-session counter for `sport`/`week`. Counts
+ * toward the "all planned sessions handled" gate alongside completed
+ * sessions, so a skip can finish a week when it's the last slot.
+ */
+export async function recordSessionSkip(
+  uid: string,
+  sport: ProSport,
+  week: number,
+): Promise<WeekState> {
+  const current = await getWeekState(uid, sport, week);
+  const skippedSessions = current.skippedSessions + 1;
+  const update: Record<string, unknown> = {
+    [key(sport, week, 'skipped_sessions')]: skippedSessions,
+  };
+  if (!current.startedAt) {
+    update[key(sport, week, 'started_at')] = serverTimestamp();
+  }
+  await setDoc(
+    doc(db, 'users', uid, 'state', 'programme_queue'),
+    update,
+    { merge: true },
+  );
+  return {
+    ...current,
+    skippedSessions,
     startedAt: current.startedAt ?? new Date(),
   };
 }

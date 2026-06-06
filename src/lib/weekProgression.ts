@@ -68,12 +68,16 @@ export interface WeekData {
   weekNumber: number;
   plannedSessions: number;
   completedSessions: number;
+  /** Sessions the athlete deliberately skipped this week. */
+  skippedSessions?: number;
   plannedKm?: number;
   actualKm?: number;
   muscleSets?: Record<string, number>;
   stationsWorked?: string[];
   startedAt: Date;
 }
+
+export type ProgressionTrigger = 'session_complete' | 'skip' | 'timeout' | 'manual';
 
 const DEFAULT_THRESHOLDS: CompletionThresholds = {
   optimal: 1.0,
@@ -145,7 +149,10 @@ export function daysSince(start: Date, now: Date = new Date()): number {
 
 function completionRate(week: WeekData): number {
   if (week.plannedSessions <= 0) return 0;
-  return week.completedSessions / week.plannedSessions;
+  // Skipped sessions count as "handled": once every planned slot is
+  // either completed or skipped, the week is done.
+  const done = week.completedSessions + (week.skippedSessions ?? 0);
+  return done / week.plannedSessions;
 }
 
 function calendarProgression(
@@ -439,12 +446,29 @@ export function checkWeekProgression(
   weekData: WeekData,
   profile: SportProfile,
   gender: Gender,
+  trigger: ProgressionTrigger = 'manual',
 ): WeekProgressionResult {
   void gender;
   const config = getSportConfig(sport);
   const days = daysSince(weekData.startedAt);
-  const forceAdvance = days >= config.daysBeforeForceAdvance;
-  const sevenDayAuto = days >= 7;
+  const forceAdvance = days >= config.daysBeforeForceAdvance || trigger === 'timeout';
+  const rate = completionRate(weekData);
+  const allDone = rate >= 1;
+
+  // The primary advance trigger is "all planned sessions are either
+  // completed or skipped". The 7-day calendar rule is no longer the
+  // gate; the only fallback is a 10-day safety timeout.
+  if (!allDone && !forceAdvance) {
+    const done =
+      weekData.completedSessions + (weekData.skippedSessions ?? 0);
+    return {
+      canAdvance: false,
+      shouldRepeat: false,
+      advanceWithWarning: false,
+      note: `Semaine ${weekData.weekNumber} en cours. ${done}/${weekData.plannedSessions} séances faites.`,
+      adjustments: {},
+    };
+  }
 
   let result: WeekProgressionResult;
   switch (config.progressionType) {
@@ -463,24 +487,14 @@ export function checkWeekProgression(
       break;
   }
 
-  if (config.progressionType === 'calendar' && !sevenDayAuto && !forceAdvance) {
-    const rate = completionRate(weekData);
-    if (rate < 1) {
-      return {
-        canAdvance: false,
-        shouldRepeat: false,
-        advanceWithWarning: false,
-        note: `Semaine ${weekData.weekNumber} en cours. Encore ${7 - days} jour${7 - days > 1 ? 's' : ''} avant le bilan automatique.`,
-        adjustments: {},
-      };
-    }
-  }
-
-  if (forceAdvance && !result.canAdvance) {
-    return {
+  // Timeout fallback gets a dedicated user-facing note so it's clear
+  // why the bilan surfaced without the week being completed.
+  if (forceAdvance && !allDone) {
+    result = {
       ...result,
       canAdvance: true,
       advanceWithWarning: true,
+      note: `Semaine ${weekData.weekNumber} expirée. ${weekData.completedSessions + (weekData.skippedSessions ?? 0)}/${weekData.plannedSessions} séances faites. ${result.note}`,
     };
   }
   return result;

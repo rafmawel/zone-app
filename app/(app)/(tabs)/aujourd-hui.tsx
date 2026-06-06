@@ -45,6 +45,13 @@ import {
   type WarnLevel,
 } from '@/lib/recovery';
 import { calculateACWR, type WorkloadDataPoint, type WorkloadSport } from '@/lib/pro';
+import {
+  readCurrentWeek,
+  readProgrammeQueue,
+  recordSessionSkip,
+  startWeek,
+} from '@/lib/weekTracking';
+import type { ProSport } from '@/lib/weekProgression';
 import { generateMuscleSession } from '@/lib/muscleEngine';
 import { evaluateDeloadNeed, type DeloadRecommendation } from '@/lib/muscleSessionScience';
 import { blockFromWeeksToRace, type HyroxBlockPhase } from '@/lib/hyroxScience';
@@ -88,7 +95,7 @@ type BonusOption = 'recovery' | 'technique' | 'cardio';
 const BONUS_OPTIONS: { id: BonusOption; title: string; description: string; detail: string }[] = [
   { id: 'recovery', title: 'RÉCUPÉRATION ACTIVE · 20 min', description: 'Mobilité + étirements dynamiques', detail: "N'impacte pas ta récupération" },
   { id: 'technique', title: 'TRAVAIL TECHNIQUE · 25 min', description: 'Répétitions légères pour graver les patterns', detail: 'Charge: 50-60% de ton max' },
-  { id: 'cardio', title: 'CARDIO LÉGER · 30 min', description: 'Zone 2 uniquement, préserve ta récupération', detail: 'FC max 130-140 bpm' },
+  { id: 'cardio', title: 'CARDIO LÉGER · 25 min', description: 'Zone 2 uniquement, hors programme', detail: 'FC max 130-140 bpm' },
 ];
 
 const FR_DAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
@@ -194,6 +201,7 @@ export default function AujourdhuiScreen(): React.ReactElement {
 
   const [weekOffset, setWeekOffset] = useState<number>(0);
   const [pending, setPending] = useState<{ item: QueueItem; warning: RecoveryWarning } | null>(null);
+  const [previewItem, setPreviewItem] = useState<QueueItem | null>(null);
   const [bonusVisible, setBonusVisible] = useState<boolean>(false);
   const [busy, setBusy] = useState<ScheduleSport | 'bonus' | null>(null);
 
@@ -353,6 +361,25 @@ export default function AujourdhuiScreen(): React.ReactElement {
             const user = auth.currentUser;
             if (!user) return;
             await updateQueueItem(user.uid, item.key, 'skipped').catch(() => undefined);
+            // Also book-keep the skip in week tracking so the bilan
+            // can advance once every planned slot is accounted for.
+            try {
+              const sport = item.sport as ProSport;
+              const queue = await readProgrammeQueue(user.uid);
+              const week = readCurrentWeek(queue, sport);
+              const sessionsPerWeek =
+                sport === 'weightlifting'
+                  ? (program?.sessions_per_week ?? 3)
+                  : sport === 'running'
+                    ? (runningProfile?.sessions_per_week ?? 3)
+                    : sport === 'musculation'
+                      ? (muscleProfile?.sessions_per_week ?? 3)
+                      : (hyroxProfile?.sessions_per_week ?? 3);
+              await startWeek(user.uid, sport, week, { sessions: sessionsPerWeek });
+              await recordSessionSkip(user.uid, sport, week);
+            } catch {
+              // tracking is best effort
+            }
             await loadHistory();
           },
         },
@@ -373,10 +400,17 @@ export default function AujourdhuiScreen(): React.ReactElement {
     setBusy('bonus');
     setBonusVisible(false);
     try {
-      if (runningProfile && (option === 'cardio' || option === 'recovery')) {
+      if (option === 'cardio') {
+        // Bonus cardio is a standalone Zone 2 timer that must NEVER
+        // touch the programme queue. Send the user to the lightweight
+        // bonus-cardio screen instead of creating a planned run.
+        router.push('/(app)/bonus-cardio?duration=25');
+        return;
+      }
+      if (runningProfile && option === 'recovery') {
         const paces = calculateVDOTPaces(runningProfile.vdot);
         const level = runningProfile.vdot < 35 ? 'beginner' : runningProfile.vdot < 55 ? 'intermediate' : 'advanced';
-        const plan = buildSessionPlan({ type: option === 'recovery' ? 'RA' : 'EF', paces, level, block: 1, week: 1, paceFactor: runningPaceFactor(recentRunRir) });
+        const plan = buildSessionPlan({ type: 'RA', paces, level, block: 1, week: 1, paceFactor: runningPaceFactor(recentRunRir) });
         const id = await createRunSession(user.uid, {
           date: todayDateString(),
           session_type: plan.type,
@@ -571,26 +605,32 @@ export default function AujourdhuiScreen(): React.ReactElement {
                         { borderLeftColor: sportColor(item.sport as SchedulerSport) },
                       ]}
                     >
-                      <View style={styles.qCardHead}>
-                        <ZoneText style={styles.qIcon}>{meta.icon}</ZoneText>
-                        <View style={styles.qMain}>
-                          <ZoneText variant="titleSm" color={done ? colors.text.muted : colors.text.primary}>
-                            {SPORT_ICON[item.sport]} {item.name}
-                          </ZoneText>
-                          <ZoneText variant="caption" color={colors.text.muted}>
-                            ~{item.estimatedMinutes} min{item.exercises.length ? ` · ${item.exercises.join(' · ')}` : ''}
-                          </ZoneText>
+                      <TouchableOpacity
+                        activeOpacity={available ? 0.7 : 1}
+                        disabled={!available}
+                        onPress={() => available && setPreviewItem(item)}
+                      >
+                        <View style={styles.qCardHead}>
+                          <ZoneText style={styles.qIcon}>{meta.icon}</ZoneText>
+                          <View style={styles.qMain}>
+                            <ZoneText variant="titleSm" color={done ? colors.text.muted : colors.text.primary}>
+                              {SPORT_ICON[item.sport]} {item.name}
+                            </ZoneText>
+                            <ZoneText variant="caption" color={colors.text.muted}>
+                              ~{item.estimatedMinutes} min{item.exercises.length ? ` · ${item.exercises.join(' · ')}` : ''}
+                            </ZoneText>
+                          </View>
+                          {meta.label ? (
+                            <ZoneText
+                              variant="caption"
+                              color={item.status === 'completed' ? colors.success : colors.text.muted}
+                              style={styles.qStatusLabel}
+                            >
+                              {meta.label}
+                            </ZoneText>
+                          ) : null}
                         </View>
-                        {meta.label ? (
-                          <ZoneText
-                            variant="caption"
-                            color={item.status === 'completed' ? colors.success : colors.text.muted}
-                            style={styles.qStatusLabel}
-                          >
-                            {meta.label}
-                          </ZoneText>
-                        ) : null}
-                      </View>
+                      </TouchableOpacity>
                       {available ? (
                         <View style={styles.qActions}>
                           <TouchableOpacity
@@ -763,6 +803,71 @@ export default function AujourdhuiScreen(): React.ReactElement {
         </View>
       </Modal>
 
+      {/* Session preview sheet — tap on a queue card opens this
+          so the user can review the session before committing. */}
+      <Modal
+        visible={previewItem !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPreviewItem(null)}
+      >
+        <TouchableOpacity
+          style={styles.sheetBackdrop}
+          activeOpacity={1}
+          onPress={() => setPreviewItem(null)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            {previewItem ? (
+              <>
+                <ZoneText variant="caption" color={colors.accent.gold} style={styles.previewEyebrow}>
+                  APERÇU · {SPORT_LABEL[previewItem.sport].toUpperCase()}
+                </ZoneText>
+                <ZoneText variant="title" size={20} style={styles.sheetTitle}>
+                  {previewItem.name}
+                </ZoneText>
+                <ZoneText variant="body" color={colors.text.muted} style={styles.previewMeta}>
+                  ~{previewItem.estimatedMinutes} min · semaine {previewItem.weekNumber}
+                </ZoneText>
+                {previewItem.exercises.length > 0 ? (
+                  <View style={styles.previewExList}>
+                    {previewItem.exercises.map((ex, i) => (
+                      <View key={`${ex}-${i}`} style={styles.previewExRow}>
+                        <ZoneText variant="label" color={colors.text.muted} style={styles.previewExBullet}>
+                          {i + 1}.
+                        </ZoneText>
+                        <ZoneText variant="body" color={colors.text.primary} style={styles.previewExText}>
+                          {ex}
+                        </ZoneText>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+                <View style={styles.previewActions}>
+                  <Button
+                    title="LANCER LA SÉANCE  →"
+                    onPress={() => {
+                      const it = previewItem;
+                      setPreviewItem(null);
+                      void pickItem(it);
+                    }}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setPreviewItem(null)}
+                    activeOpacity={0.7}
+                    style={styles.previewBack}
+                  >
+                    <ZoneText variant="label" color={colors.text.muted}>
+                      ← Retour
+                    </ZoneText>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : null}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Bonus sheet */}
       <Modal visible={bonusVisible} transparent animationType="slide" onRequestClose={() => setBonusVisible(false)}>
         <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setBonusVisible(false)}>
@@ -905,4 +1010,18 @@ const styles = StyleSheet.create({
   bonusOption: { backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 14, marginBottom: 10 },
   bonusOptDesc: { marginTop: 4, lineHeight: 16 },
   bonusOptBtn: { marginTop: 12, backgroundColor: colors.accent.gold, borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
+  previewEyebrow: { letterSpacing: 2, fontFamily: 'Inter-Bold', fontSize: 11, marginBottom: 6 },
+  previewMeta: { marginBottom: 14, fontSize: 13 },
+  previewExList: {
+    backgroundColor: colors.bg.elevated,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  previewExRow: { flexDirection: 'row', paddingVertical: 6 },
+  previewExBullet: { width: 22, fontSize: 13 },
+  previewExText: { flex: 1, fontSize: 14, lineHeight: 18 },
+  previewActions: { marginTop: 4 },
+  previewBack: { alignSelf: 'center', marginTop: 12, paddingVertical: 8 },
 });

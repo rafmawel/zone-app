@@ -62,6 +62,7 @@ function parseStateFromRaw(
     startedAt: date(raw[k('started_at')]),
     plannedSessions: num(raw[k('planned_sessions')], 0),
     completedSessions: num(raw[k('completed_sessions')], 0),
+    skippedSessions: num(raw[k('skipped_sessions')], 0),
     plannedKm:
       typeof raw[k('planned_km')] === 'number' ? (raw[k('planned_km')] as number) : null,
     actualKm: num(raw[k('actual_km')], 0),
@@ -228,6 +229,7 @@ export function useWeekBilans(inputs: UseWeekBilansInputs): UseWeekBilansResult 
     // the seven-day timer has elapsed.
     const hasActivity =
       state.completedSessions > 0 ||
+      state.skippedSessions > 0 ||
       state.actualKm > 0 ||
       state.stationsWorked.length > 0;
     const elapsed = state.startedAt ? daysSince(state.startedAt) : 0;

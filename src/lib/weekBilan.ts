@@ -64,6 +64,7 @@ export function buildWeekData(
     weekNumber,
     plannedSessions: state.plannedSessions,
     completedSessions: state.completedSessions,
+    skippedSessions: state.skippedSessions,
     plannedKm: state.plannedKm ?? undefined,
     actualKm: state.actualKm,
     muscleSets: state.muscleSets,
