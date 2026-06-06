@@ -133,7 +133,19 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
   if (runningProfile) {
     const paces = calculateVDOTPaces(runningProfile.vdot);
     const level = runningLevel(runningProfile.vdot);
-    const dist = getWeeklyDistribution(runningProfile.sessions_per_week, 1, 1);
+    // Honour the athlete's chosen weekly frequency. The engine clamps
+    // to 2..6 internally, but we re-clamp here so an undefined or
+    // out-of-range value never silently collapses to the default 3.
+    const runPerWeek = Math.max(
+      2,
+      Math.min(
+        6,
+        Number.isFinite(runningProfile.sessions_per_week)
+          ? Math.round(runningProfile.sessions_per_week)
+          : 3,
+      ),
+    );
+    const dist = getWeeklyDistribution(runPerWeek, 1, 1);
     const types = dist.items
       .filter((i) => i.type !== 'REST')
       .map((i) => i.type as RunningSessionType);

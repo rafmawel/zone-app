@@ -48,6 +48,8 @@ import {
   type UserSport,
 } from '@/lib/firestore';
 import { getBlockName } from '@/lib/programEngine';
+import { readCurrentWeek, readProgrammeQueue } from '@/lib/weekTracking';
+import type { ProSport as ProSportKey } from '@/lib/weekProgression';
 import { MUSCLE_GOAL_LABELS } from '@/lib/muscleEngine';
 import { HYROX_LEVEL_LABELS } from '@/lib/hyroxEngine';
 import { vdotLevelLabel } from '@/lib/runningEngine';
@@ -80,6 +82,40 @@ const VALID_PROMO_CODES: string[] = ['ZONE-DEV', 'ZONE-BETA', 'ZONE-PRO-2026', '
 function formatVolume(kg: number): string {
   if (!Number.isFinite(kg)) return '0 kg';
   return `${Math.round(kg).toLocaleString('fr-FR')} kg`;
+}
+
+const TOTAL_WEEKS_PER_BLOCK = 4;
+const TOTAL_BLOCKS = 3;
+
+function blockFromWeek(week: number): number {
+  const safe = Math.max(1, Math.min(TOTAL_WEEKS_PER_BLOCK * TOTAL_BLOCKS, week));
+  return Math.min(TOTAL_BLOCKS, Math.ceil(safe / TOTAL_WEEKS_PER_BLOCK));
+}
+
+function weekInBlock(week: number): number {
+  const safe = Math.max(1, Math.min(TOTAL_WEEKS_PER_BLOCK * TOTAL_BLOCKS, week));
+  return ((safe - 1) % TOTAL_WEEKS_PER_BLOCK) + 1;
+}
+
+function runningBlockName(week: number): string {
+  const b = blockFromWeek(week);
+  if (b === 1) return 'BASE AÉROBIE';
+  if (b === 2) return 'DÉVELOPPEMENT';
+  return 'SPÉCIFICITÉ';
+}
+
+function muscleBlockName(week: number): string {
+  const b = blockFromWeek(week);
+  if (b === 1) return 'CONSTRUCTION';
+  if (b === 2) return 'CROISSANCE';
+  return 'ACCUMULATION';
+}
+
+function hyroxBlockName(week: number): string {
+  const b = blockFromWeek(week);
+  if (b === 1) return 'BASE ET STATIONS';
+  if (b === 2) return 'ENDURANCE-FORCE';
+  return 'SPÉCIFICITÉ COURSE';
 }
 
 function healthConnectErrorMessage(status: HealthConnectStatus): string {
@@ -120,6 +156,12 @@ export default function ProfileScreen(): React.ReactElement {
   const [runningProfile, setRunningProfile] = useState<RunningProfile | null>(null);
   const [muscleProfile, setMuscleProfile] = useState<MuscleProfile | null>(null);
   const [hyroxProfile, setHyroxProfile] = useState<HyroxProfile | null>(null);
+  const [currentWeeks, setCurrentWeeks] = useState<Record<ProSportKey, number>>({
+    weightlifting: 1,
+    running: 1,
+    musculation: 1,
+    hyrox: 1,
+  });
   const [loading, setLoading] = useState<boolean>(true);
   const [resettingSport, setResettingSport] = useState<ResettableSport | null>(null);
   const [zoneInfoVisible, setZoneInfoVisible] = useState<boolean>(false);
@@ -152,6 +194,17 @@ export default function ProfileScreen(): React.ReactElement {
       setRunningProfile(rp);
       setMuscleProfile(mp);
       setHyroxProfile(hp);
+      try {
+        const queue = await readProgrammeQueue(user.uid);
+        setCurrentWeeks({
+          weightlifting: readCurrentWeek(queue, 'weightlifting'),
+          running: readCurrentWeek(queue, 'running'),
+          musculation: readCurrentWeek(queue, 'musculation'),
+          hyrox: readCurrentWeek(queue, 'hyrox'),
+        });
+      } catch {
+        // keep defaults
+      }
     } catch {
       // keep nulls
     } finally {
@@ -475,34 +528,48 @@ export default function ProfileScreen(): React.ReactElement {
           </ZoneText>
           {loading ? (
             <Skeleton width="100%" height={110} borderRadius={12} />
-          ) : program ? (
-            <View style={styles.programCard}>
-              <ZoneText variant="heading" style={styles.programBlock}>
-                BLOC {program.current_block} · {getBlockName(program.current_block)}
-              </ZoneText>
-              <View style={styles.weekRow}>
-                <ZoneText variant="caption" color={colors.text.muted}>
-                  Semaine {Math.min(4, program.current_week)}/4
-                </ZoneText>
-                <View style={styles.weekDots}>
-                  {[1, 2, 3, 4].map((w) => (
-                    <View
-                      key={w}
-                      style={[
-                        styles.weekDot,
-                        {
-                          backgroundColor:
-                            w <= program.current_week ? colors.accent.gold : colors.border,
-                        },
-                      ]}
-                    />
-                  ))}
-                </View>
-              </View>
-              <ZoneText variant="caption" color={colors.text.muted} style={styles.programMeta}>
-                {program.sport_key === 'running' ? 'Course' : 'Haltérophilie'} ·{' '}
-                {program.sessions_per_week}× / semaine
-              </ZoneText>
+          ) : program || runningProfile || muscleProfile || hyroxProfile ? (
+            <View style={styles.programList}>
+              {program ? (
+                <SportProgressRow
+                  icon="🏋️"
+                  label="Haltérophilie"
+                  block={program.current_block}
+                  blockName={getBlockName(program.current_block)}
+                  weekInBlock={Math.min(4, Math.max(1, program.current_week))}
+                  totalWeek={currentWeeks.weightlifting}
+                />
+              ) : null}
+              {runningProfile ? (
+                <SportProgressRow
+                  icon="🏃"
+                  label="Course"
+                  block={blockFromWeek(currentWeeks.running)}
+                  blockName={runningBlockName(currentWeeks.running)}
+                  weekInBlock={weekInBlock(currentWeeks.running)}
+                  totalWeek={currentWeeks.running}
+                />
+              ) : null}
+              {muscleProfile ? (
+                <SportProgressRow
+                  icon="💪"
+                  label="Musculation"
+                  block={blockFromWeek(currentWeeks.musculation)}
+                  blockName={muscleBlockName(currentWeeks.musculation)}
+                  weekInBlock={weekInBlock(currentWeeks.musculation)}
+                  totalWeek={currentWeeks.musculation}
+                />
+              ) : null}
+              {hyroxProfile ? (
+                <SportProgressRow
+                  icon="🔥"
+                  label="Hyrox"
+                  block={blockFromWeek(currentWeeks.hyrox)}
+                  blockName={hyroxBlockName(currentWeeks.hyrox)}
+                  weekInBlock={weekInBlock(currentWeeks.hyrox)}
+                  totalWeek={currentWeeks.hyrox}
+                />
+              ) : null}
             </View>
           ) : (
             <EmptyHint text="Pas de programme actif." />
@@ -918,6 +985,54 @@ function InfoRow({ label, value }: { label: string; value: string }): React.Reac
   );
 }
 
+function SportProgressRow({
+  icon,
+  label,
+  block,
+  blockName,
+  weekInBlock,
+  totalWeek,
+}: {
+  icon: string;
+  label: string;
+  block: number;
+  blockName: string;
+  weekInBlock: number;
+  totalWeek: number;
+}): React.ReactElement {
+  // 12 segments total — 4 weeks per block × 3 blocks.
+  const TOTAL = 12;
+  return (
+    <View style={styles.sportProg}>
+      <View style={styles.sportProgMain}>
+        <ZoneText variant="label" color={colors.text.primary} style={styles.sportProgTitle}>
+          {icon} {label.toUpperCase()} · Bloc {block} · {blockName} · S{weekInBlock}/4
+        </ZoneText>
+      </View>
+      <View style={styles.sportProgBar}>
+        {Array.from({ length: TOTAL }).map((_, i) => {
+          const idx = i + 1;
+          return (
+            <View
+              key={i}
+              style={[
+                styles.sportProgSeg,
+                {
+                  backgroundColor:
+                    idx <= totalWeek ? colors.accent.gold : colors.border,
+                },
+              ]}
+            />
+          );
+        })}
+      </View>
+      <ZoneText variant="caption" color={colors.text.muted} style={styles.sportProgMeta}>
+        Semaine {Math.min(TOTAL, totalWeek)}/{TOTAL}
+      </ZoneText>
+    </View>
+  );
+}
+
 function EmptyHint({ text }: { text: string }): React.ReactElement {
   return (
     <View style={styles.empty}>
@@ -1090,6 +1205,21 @@ const styles = StyleSheet.create({
   weekDots: { flexDirection: 'row' },
   weekDot: { width: 18, height: 4, borderRadius: 2, marginLeft: 4 },
   programMeta: { marginTop: 8, fontSize: 12 },
+  programList: { gap: 10 },
+  sportProg: {
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent.gold,
+    borderRadius: 12,
+    padding: 12,
+  },
+  sportProgMain: { marginBottom: 8 },
+  sportProgTitle: { fontSize: 13, letterSpacing: 0.5 },
+  sportProgBar: { flexDirection: 'row', gap: 2 },
+  sportProgSeg: { flex: 1, height: 6, borderRadius: 2 },
+  sportProgMeta: { marginTop: 6, fontSize: 11 },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   statTile: {
     width: '48%',

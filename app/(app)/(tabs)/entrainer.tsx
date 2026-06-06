@@ -58,6 +58,7 @@ export default function EntrainerScreen(): React.ReactElement {
   const [configured, setConfigured] = useState<Set<Sport>>(new Set());
   const [recent, setRecent] = useState<TrainingSession[]>([]);
   const [search, setSearch] = useState<string>('');
+  const [runningCalibrated, setRunningCalibrated] = useState<boolean>(false);
 
   const load = useCallback(async (): Promise<void> => {
     const user = auth.currentUser;
@@ -75,6 +76,16 @@ export default function EntrainerScreen(): React.ReactElement {
     if (muscle) set.add('musculation');
     if (hyrox) set.add('hyrox');
     setConfigured(set);
+    // VDOT > 0 means the athlete already calibrated (either through
+    // setup or a running test). Hide the test banner in that case.
+    setRunningCalibrated(
+      Boolean(
+        running &&
+          typeof running.vdot === 'number' &&
+          Number.isFinite(running.vdot) &&
+          running.vdot > 0,
+      ),
+    );
     setRecent(completed.slice(0, 5));
   }, []);
 
@@ -174,7 +185,7 @@ export default function EntrainerScreen(): React.ReactElement {
                     En savoir plus →
                   </ZoneText>
                 </TouchableOpacity>
-                {s.key === 'running' && isOn ? (
+                {s.key === 'running' && isOn && !runningCalibrated ? (
                   <TouchableOpacity
                     onPress={() => router.push('/(app)/running-test')}
                     hitSlop={6}

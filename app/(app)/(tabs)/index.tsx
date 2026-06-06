@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Info } from 'lucide-react-native';
@@ -7,16 +7,21 @@ import { auth, db } from '@/lib/firebase';
 import {
   countCompletedSessionsSince,
   getAllTimeStats,
+  getExerciseMaxes,
   todayDateString,
   type AllTimeStats,
   type DailyCheckin,
+  type ExerciseMax,
   type HyroxProfile,
   type MuscleProfile,
+  type QueueState,
   type RunningProfile,
   type TrainingSession,
   type UserProfile,
   type UserProgram,
 } from '@/lib/firestore';
+import { buildProgrammeQueue, type QueueItem } from '@/lib/programmeQueue';
+import { blockFromWeeksToRace, type HyroxBlockPhase } from '@/lib/hyroxScience';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { useWeekBilans } from '@/hooks/useWeekBilans';
 import { colors } from '@/theme/colors';
@@ -50,6 +55,13 @@ function sportOf(s: TrainingSession): { label: string; icon: string; color: stri
   return { label: 'Haltérophilie', icon: '🏋️', color: colors.accent.gold };
 }
 
+function sportLabel(sport: ProSport): { label: string; icon: string; color: string } {
+  if (sport === 'musculation') return { label: 'Musculation', icon: '💪', color: colors.orbe.blue };
+  if (sport === 'running') return { label: 'Course', icon: '🏃', color: colors.orbe.green };
+  if (sport === 'hyrox') return { label: 'Hyrox', icon: '🔥', color: colors.orbe.amber };
+  return { label: 'Haltérophilie', icon: '🏋️', color: colors.accent.gold };
+}
+
 function proSportFromSession(session: TrainingSession): ProSport {
   if (session.discipline === 'musculation') return 'musculation';
   if (session.sport_key === 'running') return 'running';
@@ -75,6 +87,8 @@ export default function DashboardScreen(): React.ReactElement {
   const [runningProfile, setRunningProfile] = useState<RunningProfile | null>(null);
   const [muscleProfile, setMuscleProfile] = useState<MuscleProfile | null>(null);
   const [hyroxProfile, setHyroxProfile] = useState<HyroxProfile | null>(null);
+  const [maxes, setMaxes] = useState<ExerciseMax[]>([]);
+  const [queueState, setQueueState] = useState<QueueState>({});
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -99,13 +113,60 @@ export default function DashboardScreen(): React.ReactElement {
       (snap) => setHyroxProfile(snap.exists() ? (snap.data() as HyroxProfile) : null),
       () => setHyroxProfile(null),
     );
+    const unsubQueue = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'programme_queue'),
+      (snap) => {
+        const data = snap.exists() ? (snap.data() as { items?: QueueState }) : null;
+        setQueueState(data?.items ?? {});
+      },
+      () => setQueueState({}),
+    );
+    void getExerciseMaxes(user.uid)
+      .then((m) => setMaxes(m))
+      .catch(() => setMaxes([]));
     return () => {
       unsubProg();
       unsubRun();
       unsubMuscle();
       unsubHyrox();
+      unsubQueue();
     };
   }, []);
+
+  // First "available" item in the programme queue across every
+  // configured sport plus the count of any additional available
+  // sessions still queued for this week.
+  const { nextQueueItem, additionalAvailable } = useMemo<{
+    nextQueueItem: QueueItem | null;
+    additionalAvailable: number;
+  }>(() => {
+    if (!program && !runningProfile && !muscleProfile && !hyroxProfile) {
+      return { nextQueueItem: null, additionalAvailable: 0 };
+    }
+    const iso = hyroxProfile?.target_race_date ?? null;
+    const weeksToRace = (() => {
+      if (!iso) return null;
+      const target = new Date(iso);
+      if (Number.isNaN(target.getTime())) return null;
+      return Math.max(0, Math.round((target.getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)));
+    })();
+    const hyroxBlock: HyroxBlockPhase = blockFromWeeksToRace(weeksToRace);
+    const queueWeeks = buildProgrammeQueue({
+      program,
+      maxes,
+      runningProfile,
+      muscleProfile,
+      hyroxProfile,
+      hyroxBlock,
+      state: queueState,
+      weeks: 1,
+    });
+    const available = (queueWeeks[0] ?? []).filter((i) => i.status === 'available');
+    return {
+      nextQueueItem: available[0] ?? null,
+      additionalAvailable: Math.max(0, available.length - 1),
+    };
+  }, [program, runningProfile, muscleProfile, hyroxProfile, maxes, queueState]);
 
   const { bilans, advance, repeat, startNewCycle } = useWeekBilans({
     program,
@@ -291,8 +352,56 @@ export default function DashboardScreen(): React.ReactElement {
           </View>
         ) : null}
 
-        {/* Today's session */}
-        {todaySession ? (
+        {/* Next session (any sport from the programme queue). When the
+            queue has nothing available we fall back to the planned
+            TrainingSession doc (legacy weightlifting/musculation
+            sessions), and finally to a Rest / Bonus card. */}
+        {nextQueueItem ? (
+          (() => {
+            const sport = sportLabel(nextQueueItem.sport as ProSport);
+            return (
+              <View style={styles.sessionCard}>
+                <View style={styles.sessionHeaderRow}>
+                  <View style={[styles.sportPill, { backgroundColor: `${sport.color}22`, borderColor: sport.color }]}>
+                    <ZoneText variant="caption" color={sport.color} style={styles.sportPillText}>
+                      {sport.icon} {sport.label.toUpperCase()}
+                    </ZoneText>
+                  </View>
+                  <TouchableOpacity
+                    hitSlop={12}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/(app)/programme-overview',
+                        params: { sport: nextQueueItem.sport },
+                      })
+                    }
+                    accessibilityLabel="Voir le programme en détail"
+                    style={styles.sessionInfoBtn}
+                  >
+                    <Info size={16} color={colors.text.muted} />
+                  </TouchableOpacity>
+                </View>
+                <ZoneText variant="title" size={18} color={colors.text.primary} style={styles.sessionName}>
+                  {nextQueueItem.name}
+                </ZoneText>
+                <ZoneText variant="caption" color={colors.text.muted} style={styles.sessionMeta}>
+                  ~{nextQueueItem.estimatedMinutes} min
+                  {nextQueueItem.exercises.length > 0 ? ` · ${nextQueueItem.exercises.join(' · ')}` : ''}
+                </ZoneText>
+                {additionalAvailable > 0 ? (
+                  <ZoneText variant="caption" color={colors.text.muted} style={styles.sessionExtra}>
+                    ET {additionalAvailable} AUTRE SÉANCE{additionalAvailable > 1 ? 'S' : ''} CETTE SEMAINE
+                  </ZoneText>
+                ) : null}
+                <Button
+                  title="COMMENCER"
+                  onPress={() => router.push('/(app)/(tabs)/aujourd-hui')}
+                  style={styles.sessionBtn}
+                />
+              </View>
+            );
+          })()
+        ) : todaySession ? (
           <View style={styles.sessionCard}>
             <View style={styles.sessionHeaderRow}>
               <View style={[styles.sportPill, { backgroundColor: `${sportOf(todaySession).color}22`, borderColor: sportOf(todaySession).color }]}>
@@ -435,6 +544,12 @@ const styles = StyleSheet.create({
   sessionInfoBtn: { padding: 4 },
   sessionName: { marginTop: 2 },
   sessionMeta: { marginTop: 4 },
+  sessionExtra: {
+    marginTop: 6,
+    fontFamily: 'Inter-Bold',
+    letterSpacing: 1,
+    fontSize: 10,
+  },
   sessionBtn: { marginTop: 16 },
   restCard: {
     marginTop: 16,
