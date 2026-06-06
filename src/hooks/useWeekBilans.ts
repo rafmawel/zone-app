@@ -19,7 +19,7 @@ import {
   isProgrammeComplete,
   isWeekBilanReady,
 } from '@/lib/weekBilan';
-import type { ProSport, SportProfile, MuscleVolumeTarget } from '@/lib/weekProgression';
+import { daysSince, type ProSport, type SportProfile, type MuscleVolumeTarget } from '@/lib/weekProgression';
 import {
   recordWeekAdvance,
   setCurrentWeek,
@@ -110,6 +110,13 @@ export interface WeekBilanEntry {
   weekNumber: number;
   summary: BilanSummary;
   isComplete: boolean;
+  /**
+   * True when the week has elapsed (7+ days) without any logged
+   * activity (no completed session, no km, no station). Callers
+   * render BilanCard with `notStartedOnStart` set so the user gets
+   * a "Commencer la semaine" CTA instead of the standard bilan.
+   */
+  notStarted: boolean;
 }
 
 export interface UseWeekBilansResult {
@@ -215,12 +222,31 @@ export function useWeekBilans(inputs: UseWeekBilansInputs): UseWeekBilansResult 
           : (profile.plannedKmPerWeek ?? null),
     };
     const summary = buildBilanSummary({ sport, weekNumber, state, profile, gender });
-    if (!isWeekBilanReady(summary)) continue;
+
+    // "Activity" = at least one logged signal. Without it, the week
+    // is considered untouched and the bilan should only surface once
+    // the seven-day timer has elapsed.
+    const hasActivity =
+      state.completedSessions > 0 ||
+      state.actualKm > 0 ||
+      state.stationsWorked.length > 0;
+    const elapsed = state.startedAt ? daysSince(state.startedAt) : 0;
+
+    if (!hasActivity && elapsed < 7) {
+      // Brand new week, nothing logged: keep the queue visible
+      // instead of preempting it with a "bilan insuffisant" card.
+      continue;
+    }
+
+    const notStarted = !hasActivity && elapsed >= 7;
+    if (!notStarted && !isWeekBilanReady(summary)) continue;
+
     bilans.push({
       sport,
       weekNumber,
       summary,
       isComplete: isProgrammeComplete(weekNumber),
+      notStarted,
     });
   }
 

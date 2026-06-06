@@ -98,6 +98,13 @@ export default function SkipWeekScreen(): React.ReactElement {
                     }
                   : undefined
               }
+              notStartedOnStart={
+                b.notStarted
+                  ? () => {
+                      router.replace('/(app)/(tabs)/aujourd-hui');
+                    }
+                  : undefined
+              }
             />
           ))
         )}

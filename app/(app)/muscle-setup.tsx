@@ -9,6 +9,7 @@ import {
   type MuscleEquipment,
   type MuscleGoal,
 } from '@/lib/firestore';
+import { resetSportWeek } from '@/lib/weekTracking';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { Button } from '@/components/ui/Button';
@@ -101,6 +102,7 @@ export default function MuscleSetupScreen(): React.ReactElement {
         weak_points: weakPoints,
         sessions_per_week: sessions,
       });
+      await resetSportWeek(user.uid, 'musculation').catch(() => undefined);
       router.replace('/(app)/muscle-maxes');
     } catch {
       setError('Enregistrement impossible. Réessaie.');

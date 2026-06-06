@@ -25,6 +25,12 @@ export interface BilanCardProps {
   onAdvance: () => void;
   onRepeat?: () => void;
   onInfoPress?: () => void;
+  /**
+   * When set, the card switches to the "week elapsed but not started"
+   * variant. The advance/repeat buttons are hidden and a single
+   * "Commencer la semaine" CTA invokes this callback instead.
+   */
+  notStartedOnStart?: () => void;
 }
 
 const STATUS_COLOR: Record<BilanStatus, string> = {
@@ -83,7 +89,47 @@ export function BilanCard({
   onAdvance,
   onRepeat,
   onInfoPress,
+  notStartedOnStart,
 }: BilanCardProps): React.ReactElement {
+  // Week-elapsed-but-empty variant: replace the standard "bilan
+  // insuffisant" rendering with a friendlier prompt and a single
+  // start-the-week CTA. The status/result fields are ignored on
+  // purpose here.
+  if (notStartedOnStart) {
+    return (
+      <View style={[styles.card, { borderLeftColor: colors.text.muted }]}>
+        <View style={styles.headerRow}>
+          <View style={styles.eyebrowGroup}>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
+              SEMAINE {summary.weekNumber} · {summary.sportLabel.toUpperCase()}
+            </ZoneText>
+            {onInfoPress ? (
+              <TouchableOpacity
+                onPress={onInfoPress}
+                hitSlop={10}
+                style={styles.infoBtn}
+                accessibilityLabel="Voir les détails du programme"
+              >
+                <Info size={14} color={colors.text.muted} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+        <ZoneText variant="body" color={colors.text.primary} style={styles.primary}>
+          Tu n&apos;as pas encore commencé cette semaine.
+        </ZoneText>
+        <ZoneText variant="caption" color={colors.text.secondary} style={styles.note}>
+          Commence quand tu es prêt.
+        </ZoneText>
+        <View style={styles.actions}>
+          <View style={styles.actionFull}>
+            <Button title="Commencer la semaine" onPress={notStartedOnStart} />
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   const statusColor = STATUS_COLOR[summary.status];
   const tag = STATUS_ICON[summary.status];
   const primary = buildPrimaryLine(summary);

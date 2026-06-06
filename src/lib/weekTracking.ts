@@ -239,3 +239,38 @@ export function readCurrentWeek(
   }
   return 1;
 }
+
+/**
+ * Wipe every week tracking entry for `sport`: the per-week fields and
+ * the `${sport}_current_week` pointer. Used when an athlete reconfigures
+ * a sport from scratch so the queue restarts at week 1 instead of
+ * resuming halfway through the previous cycle.
+ */
+export async function resetSportWeek(uid: string, sport: ProSport): Promise<void> {
+  const ref = doc(db, 'users', uid, 'state', 'programme_queue');
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data() as Record<string, unknown>;
+  const weekKeyPattern = new RegExp(`^${sport}_week_\\d+_`);
+  const currentWeekKey = `${sport}_current_week`;
+  const wipe: Record<string, unknown> = {};
+  let touched = false;
+  for (const k of Object.keys(data)) {
+    if (k === currentWeekKey || weekKeyPattern.test(k)) {
+      wipe[k] = null;
+      touched = true;
+    }
+  }
+  if (!touched) return;
+  // Firestore's setDoc({merge:true}) treats explicit nulls as field
+  // deletions only via FieldValue.delete(); however a flat overwrite of
+  // the document with the remaining keys gives us the same effect with
+  // a single round trip.
+  const remaining: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (k !== currentWeekKey && !weekKeyPattern.test(k)) {
+      remaining[k] = v;
+    }
+  }
+  await setDoc(ref, remaining);
+}

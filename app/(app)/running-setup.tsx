@@ -13,6 +13,7 @@ import Animated, { SlideInRight, SlideOutLeft } from 'react-native-reanimated';
 import { ArrowLeft, Minus, Plus } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
 import {
+  getRunningProfile,
   getUserProfile,
   saveRunningProfile,
   type Gender,
@@ -20,6 +21,7 @@ import {
   type RunningRaceDistance,
 } from '@/lib/firestore';
 import { vdotGenderDelta } from '@/lib/genderProfiles';
+import { resetSportWeek } from '@/lib/weekTracking';
 import {
   calculateVDOTPaces,
   estimateVDOT,
@@ -114,6 +116,38 @@ export default function RunningSetupScreen(): React.ReactElement {
     };
   }, []);
 
+  // Pre-fill the form from any existing running profile so a
+  // reconfiguration doesn't silently reset sessions_per_week, long-run
+  // preference, goal time, etc.
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const existing = await getRunningProfile(user.uid);
+        if (cancelled || !existing) return;
+        setState((s) => ({
+          ...s,
+          goal: existing.goal || s.goal,
+          easyPaceSec: existing.easy_pace_sec_per_km || s.easyPaceSec,
+          hasReference: existing.reference_distance !== null,
+          refDistance: existing.reference_distance ?? s.refDistance,
+          refTimeSeconds: existing.reference_time_seconds ?? s.refTimeSeconds,
+          sessionsPerWeek: existing.sessions_per_week || s.sessionsPerWeek,
+          longRunPref: existing.long_run_pref ?? s.longRunPref,
+          raceDate: existing.target_race_date ?? s.raceDate,
+          goalTimeSeconds: existing.goal_time_seconds ?? 0,
+        }));
+      } catch {
+        // best effort: keep defaults
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const baseVdot = useMemo(
     () => vdotFromEasyPace(state.easyPaceSec),
     [state.easyPaceSec],
@@ -168,6 +202,8 @@ export default function RunningSetupScreen(): React.ReactElement {
         long_run_pref: state.longRunPref,
         goal_time_seconds: state.goalTimeSeconds > 0 ? state.goalTimeSeconds : null,
       });
+      // Reconfiguring the sport restarts the programme queue from week 1.
+      await resetSportWeek(user.uid, 'running').catch(() => undefined);
       router.replace({
         pathname: '/(app)/programme-overview',
         params: { sport: 'running' },

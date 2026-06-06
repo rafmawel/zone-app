@@ -5,6 +5,7 @@ import Animated, { SlideInRight, SlideOutLeft } from 'react-native-reanimated';
 import { ArrowLeft } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
 import { saveHyroxProfile, type HyroxLevel } from '@/lib/firestore';
+import { resetSportWeek } from '@/lib/weekTracking';
 import {
   HYROX_LEVEL_FINISH,
   HYROX_LEVEL_LABELS,
@@ -83,6 +84,7 @@ export default function HyroxSetupScreen(): React.ReactElement {
         target_race_date: hasRace && raceDate ? raceDate : null,
         sessions_per_week: sessions,
       });
+      await resetSportWeek(user.uid, 'hyrox').catch(() => undefined);
       if (level === 'debutant') {
         router.replace({
           pathname: '/(app)/programme-overview',

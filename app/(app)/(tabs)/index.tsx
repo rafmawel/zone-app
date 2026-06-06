@@ -280,6 +280,11 @@ export default function DashboardScreen(): React.ReactElement {
                       params: { sport: b.sport },
                     })
                   }
+                  notStartedOnStart={
+                    b.notStarted
+                      ? () => router.push('/(app)/(tabs)/aujourd-hui')
+                      : undefined
+                  }
                 />
               ),
             )}

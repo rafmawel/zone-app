@@ -22,6 +22,7 @@ import {
 } from '@/lib/firestore';
 import { ensureFirstPlannedSession, initializeUserProgram } from '@/lib/programInit';
 import { estimateOneRepMax } from '@/lib/programEngine';
+import { resetSportWeek } from '@/lib/weekTracking';
 import { olympicLiftGenderFactor } from '@/lib/genderProfiles';
 import { getExerciseById } from '@/data/exercises';
 import { colors } from '@/theme/colors';
@@ -182,6 +183,7 @@ export default function MaxesScreen(): React.ReactElement {
       } catch {
         // non-blocking: dashboard will show "no session" until next manual generate
       }
+      await resetSportWeek(user.uid, 'weightlifting').catch(() => undefined);
       router.replace({
         pathname: '/(app)/programme-overview',
         params: { sport: 'weightlifting' },
