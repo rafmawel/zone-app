@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronDown, ChevronLeft, ChevronUp } from 'lucide-react-native';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+import { getUserProgram, saveUserProgram } from '@/lib/firestore';
+import { resetSportWeek } from '@/lib/weekTracking';
 import type {
   HyroxProfile,
   MuscleProfile,
@@ -70,6 +72,45 @@ export default function ProgrammeOverviewScreen(): React.ReactElement {
     return unsubscribe;
   }, [sport]);
 
+  const onRestartProgramme = (): void => {
+    const user = auth.currentUser;
+    if (!user) return;
+    Alert.alert(
+      `Recommencer le programme ${labelForSport(sport)} ?`,
+      'Tu repartiras de la semaine 1. Tes maxes et ton historique sont conservés.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Recommencer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await resetSportWeek(user.uid, sport);
+              if (sport === 'weightlifting') {
+                const existing = await getUserProgram(user.uid);
+                if (existing) {
+                  await saveUserProgram(user.uid, {
+                    ...existing,
+                    current_block: 1,
+                    current_week: 1,
+                    current_day: 1,
+                    mesocycle_start: new Date().toISOString().slice(0, 10),
+                  });
+                }
+              }
+              Alert.alert(
+                'Programme réinitialisé',
+                `Programme ${labelForSport(sport)} réinitialisé. Bonne reprise !`,
+              );
+            } catch {
+              Alert.alert('Erreur', 'Impossible de réinitialiser le programme.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const onPrimaryAction = (): void => {
     if (profile.hasProfile) {
       router.replace('/(app)/(tabs)');
@@ -117,6 +158,17 @@ export default function ProgrammeOverviewScreen(): React.ReactElement {
         <BenefitsSection items={data.benefits} />
         <WarningsSection items={data.warnings} />
         <FaqSection items={data.faq} />
+        {profile.hasProfile ? (
+          <TouchableOpacity
+            onPress={onRestartProgramme}
+            activeOpacity={0.7}
+            style={styles.restartLink}
+          >
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.restartText}>
+              Recommencer ce programme
+            </ZoneText>
+          </TouchableOpacity>
+        ) : null}
       </ScrollView>
 
       <View style={styles.footer}>
@@ -582,6 +634,8 @@ const styles = StyleSheet.create({
   faqHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   faqQuestion: { flex: 1, fontSize: 14, lineHeight: 18 },
   faqAnswer: { marginTop: 10, lineHeight: 20, fontSize: 14 },
+  restartLink: { alignSelf: 'center', marginTop: 28, paddingVertical: 12 },
+  restartText: { fontSize: 12, fontFamily: 'Inter-Medium', textDecorationLine: 'underline' },
   footer: {
     paddingHorizontal: 24,
     paddingTop: 8,

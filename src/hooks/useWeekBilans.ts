@@ -137,6 +137,7 @@ export interface UseWeekBilansInputs {
 export function useWeekBilans(inputs: UseWeekBilansInputs): UseWeekBilansResult {
   const [raw, setRaw] = useState<RawState>({});
   const [gender, setGender] = useState<Gender>('non_precise');
+  const [onVacation, setOnVacation] = useState<boolean>(false);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -145,6 +146,35 @@ export function useWeekBilans(inputs: UseWeekBilansInputs): UseWeekBilansResult 
       doc(db, 'users', user.uid, 'state', 'programme_queue'),
       (snap) => setRaw(snap.exists() ? (snap.data() as RawState) : {}),
       () => setRaw({}),
+    );
+    return unsubscribe;
+  }, []);
+
+  // Watch vacation state so the bilans freeze in real time when the
+  // athlete activates / cancels vacances.
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const unsubscribe = onSnapshot(
+      doc(db, 'users', user.uid, 'state', 'vacances'),
+      (snap) => {
+        if (!snap.exists()) {
+          setOnVacation(false);
+          return;
+        }
+        const data = snap.data() as { active?: boolean; returnDate?: { toDate?: () => Date } };
+        if (!data.active) {
+          setOnVacation(false);
+          return;
+        }
+        const ret = data.returnDate?.toDate?.();
+        if (!ret) {
+          setOnVacation(false);
+          return;
+        }
+        setOnVacation(ret.getTime() > Date.now());
+      },
+      () => setOnVacation(false),
     );
     return unsubscribe;
   }, []);
@@ -222,7 +252,13 @@ export function useWeekBilans(inputs: UseWeekBilansInputs): UseWeekBilansResult 
           ? stateBase.plannedKm
           : (profile.plannedKmPerWeek ?? null),
     };
-    const summary = buildBilanSummary({ sport, weekNumber, state, profile, gender });
+    const summary = buildBilanSummary({ sport, weekNumber, state, profile, gender, onVacation });
+
+    // Vacation freezes the bilan entirely. No "in progress", no
+    // "not started", no "expired" notes surface during an absence;
+    // the dedicated MODE VACANCES card on the home tab owns that
+    // communication instead.
+    if (onVacation) continue;
 
     // "Activity" = at least one logged signal. Without it, the week
     // is considered untouched and the bilan should only surface once

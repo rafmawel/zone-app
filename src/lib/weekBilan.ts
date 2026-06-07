@@ -30,6 +30,7 @@ export interface BilanInputs {
   state: WeekState;
   profile: SportProfile;
   gender: Gender;
+  onVacation?: boolean;
 }
 
 function statusFor(
@@ -75,7 +76,14 @@ export function buildWeekData(
 
 export function buildBilanSummary(inputs: BilanInputs): BilanSummary {
   const weekData = buildWeekData(inputs.sport, inputs.weekNumber, inputs.state);
-  const result = checkWeekProgression(inputs.sport, weekData, inputs.profile, inputs.gender);
+  const result = checkWeekProgression(
+    inputs.sport,
+    weekData,
+    inputs.profile,
+    inputs.gender,
+    'manual',
+    inputs.onVacation === true,
+  );
   return {
     sport: inputs.sport,
     sportLabel: labelForSport(inputs.sport),

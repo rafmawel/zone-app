@@ -26,8 +26,6 @@ import {
 } from '@/types/subscription';
 import {
   deleteAllUserData,
-  updateUserProfile,
-  saveSubscription,
   getAllTimeStats,
   getExerciseMaxes,
   getHyroxProfile,
@@ -36,7 +34,11 @@ import {
   getUserProfile,
   getUserProgram,
   getUserSports,
+  getVacationState,
   resetSportProfile,
+  saveSubscription,
+  saveUserProgram,
+  updateUserProfile,
   type AllTimeStats,
   type ExerciseMax,
   type HyroxProfile,
@@ -46,10 +48,20 @@ import {
   type UserProfile,
   type UserProgram,
   type UserSport,
+  type VacationState,
 } from '@/lib/firestore';
 import { getBlockName } from '@/lib/programEngine';
-import { readCurrentWeek, readProgrammeQueue } from '@/lib/weekTracking';
+import { readCurrentWeek, readProgrammeQueue, resetSportWeek } from '@/lib/weekTracking';
 import type { ProSport as ProSportKey } from '@/lib/weekProgression';
+import {
+  acknowledgeReturn,
+  cancelVacation,
+  daysUntilReturn,
+  hasReturnedFromVacation,
+  isOnVacation,
+  startVacation,
+  type DeconditioningPlan,
+} from '@/lib/vacation';
 import { MUSCLE_GOAL_LABELS } from '@/lib/muscleEngine';
 import { HYROX_LEVEL_LABELS } from '@/lib/hyroxEngine';
 import { vdotLevelLabel } from '@/lib/runningEngine';
@@ -118,6 +130,19 @@ function hyroxBlockName(week: number): string {
   return 'SPÉCIFICITÉ COURSE';
 }
 
+function formatVacReturn(date: Date): string {
+  try {
+    const f = new Intl.DateTimeFormat('fr-FR', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    }).format(date);
+    return f.charAt(0).toUpperCase() + f.slice(1);
+  } catch {
+    return date.toLocaleDateString('fr-FR');
+  }
+}
+
 function healthConnectErrorMessage(status: HealthConnectStatus): string {
   switch (status) {
     case 'not_installed':
@@ -165,6 +190,10 @@ export default function ProfileScreen(): React.ReactElement {
   const [loading, setLoading] = useState<boolean>(true);
   const [resettingSport, setResettingSport] = useState<ResettableSport | null>(null);
   const [zoneInfoVisible, setZoneInfoVisible] = useState<boolean>(false);
+  const [vacation, setVacation] = useState<VacationState | null>(null);
+  const [vacationSheetVisible, setVacationSheetVisible] = useState<boolean>(false);
+  const [vacationDays, setVacationDays] = useState<number>(7);
+  const [returnPlan, setReturnPlan] = useState<DeconditioningPlan | null>(null);
   const [notifEnabled, setNotifEnabled] = useState<boolean>(true);
   const [notifHour, setNotifHour] = useState<number>(7);
   const [notifMinute, setNotifMinute] = useState<number>(0);
@@ -176,7 +205,7 @@ export default function ProfileScreen(): React.ReactElement {
       return;
     }
     try {
-      const [p, pr, sp, m, st, rp, mp, hp] = await Promise.all([
+      const [p, pr, sp, m, st, rp, mp, hp, vc] = await Promise.all([
         getUserProfile(user.uid),
         getUserProgram(user.uid),
         getUserSports(user.uid),
@@ -185,6 +214,7 @@ export default function ProfileScreen(): React.ReactElement {
         getRunningProfile(user.uid),
         getMuscleProfile(user.uid),
         getHyroxProfile(user.uid),
+        getVacationState(user.uid).catch(() => null),
       ]);
       setProfile(p);
       setProgram(pr);
@@ -194,6 +224,7 @@ export default function ProfileScreen(): React.ReactElement {
       setRunningProfile(rp);
       setMuscleProfile(mp);
       setHyroxProfile(hp);
+      setVacation(vc);
       try {
         const queue = await readProgrammeQueue(user.uid);
         setCurrentWeeks({
@@ -204,6 +235,27 @@ export default function ProfileScreen(): React.ReactElement {
         });
       } catch {
         // keep defaults
+      }
+      // If the athlete's return date has passed since the last app
+      // open, surface the "Bon retour" deconditioning sheet and
+      // persist the recovery factor for upcoming sessions.
+      if (vc && hasReturnedFromVacation(vc)) {
+        const configured: ProSportKey[] = [];
+        if (pr) configured.push('weightlifting');
+        if (rp) configured.push('running');
+        if (mp) configured.push('musculation');
+        if (hp) configured.push('hyrox');
+        try {
+          const plan = await acknowledgeReturn({
+            uid: user.uid,
+            state: vc,
+            sports: configured,
+          });
+          setReturnPlan(plan);
+          setVacation(null);
+        } catch {
+          // best-effort
+        }
       }
     } catch {
       // keep nulls
@@ -233,11 +285,85 @@ export default function ProfileScreen(): React.ReactElement {
     }
   };
 
+  const onRestartProgramme = (sport: ProSportKey): void => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const label =
+      sport === 'weightlifting'
+        ? 'Haltérophilie'
+        : sport === 'running'
+          ? 'Course'
+          : sport === 'musculation'
+            ? 'Musculation'
+            : 'Hyrox';
+    Alert.alert(
+      `Recommencer le programme ${label} ?`,
+      'Tu repartiras de la semaine 1. Tes maxes et ton historique sont conservés.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Recommencer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await resetSportWeek(user.uid, sport);
+              if (sport === 'weightlifting' && program) {
+                await saveUserProgram(user.uid, {
+                  ...program,
+                  current_block: 1,
+                  current_week: 1,
+                  current_day: 1,
+                  mesocycle_start: new Date().toISOString().slice(0, 10),
+                });
+              }
+              setCurrentWeeks((c) => ({ ...c, [sport]: 1 }));
+              Alert.alert('Programme réinitialisé', `Programme ${label} réinitialisé. Bonne reprise !`);
+            } catch {
+              Alert.alert('Erreur', 'Impossible de réinitialiser le programme.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   useFocusEffect(
     useCallback(() => {
       void loadAll();
     }, [loadAll]),
   );
+
+  const onActivateVacation = async (): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+    try {
+      const next = await startVacation(user.uid, vacationDays);
+      setVacation(next);
+      setVacationSheetVisible(false);
+    } catch {
+      Alert.alert('Erreur', 'Impossible de démarrer le mode vacances.');
+    }
+  };
+
+  const onCancelVacation = (): void => {
+    const user = auth.currentUser;
+    if (!user) return;
+    Alert.alert('Annuler les vacances ?', 'Le programme reprend immédiatement.', [
+      { text: 'Garder', style: 'cancel' },
+      {
+        text: 'Annuler les vacances',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await cancelVacation(user.uid);
+            setVacation(null);
+          } catch {
+            // surfaced silently
+          }
+        },
+      },
+    ]);
+  };
 
   const onSignOut = async (): Promise<void> => {
     try {
@@ -538,6 +664,7 @@ export default function ProfileScreen(): React.ReactElement {
                   blockName={getBlockName(program.current_block)}
                   weekInBlock={Math.min(4, Math.max(1, program.current_week))}
                   totalWeek={currentWeeks.weightlifting}
+                  onRestart={() => onRestartProgramme('weightlifting')}
                 />
               ) : null}
               {runningProfile ? (
@@ -548,6 +675,7 @@ export default function ProfileScreen(): React.ReactElement {
                   blockName={runningBlockName(currentWeeks.running)}
                   weekInBlock={weekInBlock(currentWeeks.running)}
                   totalWeek={currentWeeks.running}
+                  onRestart={() => onRestartProgramme('running')}
                 />
               ) : null}
               {muscleProfile ? (
@@ -558,6 +686,7 @@ export default function ProfileScreen(): React.ReactElement {
                   blockName={muscleBlockName(currentWeeks.musculation)}
                   weekInBlock={weekInBlock(currentWeeks.musculation)}
                   totalWeek={currentWeeks.musculation}
+                  onRestart={() => onRestartProgramme('musculation')}
                 />
               ) : null}
               {hyroxProfile ? (
@@ -568,11 +697,51 @@ export default function ProfileScreen(): React.ReactElement {
                   blockName={hyroxBlockName(currentWeeks.hyrox)}
                   weekInBlock={weekInBlock(currentWeeks.hyrox)}
                   totalWeek={currentWeeks.hyrox}
+                  onRestart={() => onRestartProgramme('hyrox')}
                 />
               ) : null}
             </View>
           ) : (
             <EmptyHint text="Pas de programme actif." />
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
+            MODE VACANCES
+          </ZoneText>
+          {isOnVacation(vacation) && vacation ? (
+            <View style={styles.vacationActive}>
+              <ZoneText variant="label" color={colors.text.primary} style={styles.vacationTitle}>
+                MODE VACANCES ACTIF ✈️
+              </ZoneText>
+              <ZoneText variant="caption" color={colors.text.secondary} style={styles.vacationBody}>
+                Retour le {vacation.returnDate ? formatVacReturn(vacation.returnDate.toDate()) : '-'} · Dans {daysUntilReturn(vacation)} jour{daysUntilReturn(vacation) > 1 ? 's' : ''}.
+              </ZoneText>
+              <TouchableOpacity onPress={onCancelVacation} activeOpacity={0.7} style={styles.vacationCancel}>
+                <ZoneText variant="caption" color={colors.text.muted} style={styles.vacationCancelText}>
+                  Annuler les vacances
+                </ZoneText>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.vacationCard}>
+              <ZoneText variant="label" color={colors.text.primary} style={styles.vacationTitle}>
+                Partir en vacances ? ✈️
+              </ZoneText>
+              <ZoneText variant="caption" color={colors.text.secondary} style={styles.vacationBody}>
+                Ton programme s&apos;adapte à ton retour. Le compteur de progression est gelé pendant ton absence.
+              </ZoneText>
+              <TouchableOpacity
+                onPress={() => setVacationSheetVisible(true)}
+                activeOpacity={0.85}
+                style={styles.vacationCta}
+              >
+                <ZoneText variant="label" color={colors.accent.gold} style={styles.vacationCtaText}>
+                  ACTIVER LE MODE VACANCES
+                </ZoneText>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
 
@@ -877,6 +1046,175 @@ export default function ProfileScreen(): React.ReactElement {
           </View>
         </View>
       </Modal>
+
+      {/* Vacation duration sheet */}
+      <Modal
+        visible={vacationSheetVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setVacationSheetVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.sheetBackdrop}
+          activeOpacity={1}
+          onPress={() => setVacationSheetVisible(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            <ZoneText variant="heading" style={styles.vacSheetTitle}>
+              MODE VACANCES ✈️
+            </ZoneText>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.vacSheetLabel}>
+              DURÉE DE L&apos;ABSENCE
+            </ZoneText>
+            <View style={styles.vacPresetRow}>
+              {[7, 14, 21, 28].map((n) => {
+                const active = vacationDays === n;
+                return (
+                  <TouchableOpacity
+                    key={n}
+                    onPress={() => setVacationDays(n)}
+                    activeOpacity={0.85}
+                    style={[styles.vacPreset, active ? styles.vacPresetActive : null]}
+                  >
+                    <ZoneText
+                      variant="label"
+                      color={active ? colors.bg.primary : colors.text.primary}
+                      style={styles.vacPresetText}
+                    >
+                      {n / 7} sem
+                    </ZoneText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <View style={styles.vacCustomRow}>
+              <TouchableOpacity
+                onPress={() => setVacationDays((d) => Math.max(1, d - 1))}
+                activeOpacity={0.7}
+                style={styles.vacStepBtn}
+              >
+                <ZoneText variant="label" color={colors.accent.gold}>
+                  −
+                </ZoneText>
+              </TouchableOpacity>
+              <View style={styles.vacCustomBox}>
+                <ZoneText variant="caption" color={colors.text.muted} style={styles.vacCustomLabel}>
+                  PERSONNALISÉ
+                </ZoneText>
+                <ZoneText variant="heading" style={styles.vacCustomValue}>
+                  {vacationDays} jour{vacationDays > 1 ? 's' : ''}
+                </ZoneText>
+              </View>
+              <TouchableOpacity
+                onPress={() => setVacationDays((d) => Math.min(180, d + 1))}
+                activeOpacity={0.7}
+                style={styles.vacStepBtn}
+              >
+                <ZoneText variant="label" color={colors.accent.gold}>
+                  +
+                </ZoneText>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.vacReturnRow}>
+              <ZoneText variant="caption" color={colors.text.muted}>
+                Date de retour
+              </ZoneText>
+              <ZoneText variant="label" color={colors.text.primary} style={styles.vacReturnDate}>
+                {formatVacReturn(new Date(Date.now() + vacationDays * 24 * 60 * 60 * 1000))}
+              </ZoneText>
+            </View>
+            <TouchableOpacity
+              onPress={() => void onActivateVacation()}
+              activeOpacity={0.85}
+              style={styles.vacActivateBtn}
+            >
+              <ZoneText variant="label" color={colors.bg.primary} style={styles.vacActivateText}>
+                ACTIVER
+              </ZoneText>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Welcome back sheet — shown when the user opens the app
+          on or after the planned return date. */}
+      <Modal
+        visible={returnPlan !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReturnPlan(null)}
+      >
+        <View style={styles.promoBackdrop}>
+          <View style={styles.welcomeCard}>
+            <ZoneText variant="heading" style={styles.welcomeTitle}>
+              BON RETOUR ! 💪
+            </ZoneText>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.welcomeAway}>
+              {returnPlan ? `${returnPlan.awayDays} jour${returnPlan.awayDays > 1 ? 's' : ''} d'absence` : ''}
+            </ZoneText>
+            <ZoneText variant="body" color={colors.text.primary} style={styles.welcomeBody}>
+              {returnPlan?.message ?? ''}
+            </ZoneText>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.welcomeBody}>
+              Référence : Mujika et Padilla 2000.
+            </ZoneText>
+            {returnPlan?.recommendRestart ? (
+              <View style={styles.welcomeActions}>
+                <TouchableOpacity
+                  onPress={() => {
+                    const user = auth.currentUser;
+                    if (!user) return;
+                    void (async () => {
+                      try {
+                        if (program) {
+                          await saveUserProgram(user.uid, {
+                            ...program,
+                            current_block: 1,
+                            current_week: 1,
+                            current_day: 1,
+                            mesocycle_start: new Date().toISOString().slice(0, 10),
+                          });
+                        }
+                        for (const s of ['weightlifting', 'running', 'musculation', 'hyrox'] as ProSportKey[]) {
+                          await resetSportWeek(user.uid, s).catch(() => undefined);
+                        }
+                      } finally {
+                        setReturnPlan(null);
+                      }
+                    })();
+                  }}
+                  activeOpacity={0.85}
+                  style={styles.vacActivateBtn}
+                >
+                  <ZoneText variant="label" color={colors.bg.primary} style={styles.vacActivateText}>
+                    REPRENDRE AU BLOC 1
+                  </ZoneText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setReturnPlan(null)}
+                  activeOpacity={0.7}
+                  style={styles.welcomeGhost}
+                >
+                  <ZoneText variant="caption" color={colors.text.muted}>
+                    Continuer quand même
+                  </ZoneText>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                onPress={() => setReturnPlan(null)}
+                activeOpacity={0.85}
+                style={styles.vacActivateBtn}
+              >
+                <ZoneText variant="label" color={colors.bg.primary} style={styles.vacActivateText}>
+                  C&apos;EST PARTI
+                </ZoneText>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeScreen>
   );
 }
@@ -992,6 +1330,7 @@ function SportProgressRow({
   blockName,
   weekInBlock,
   totalWeek,
+  onRestart,
 }: {
   icon: string;
   label: string;
@@ -999,15 +1338,23 @@ function SportProgressRow({
   blockName: string;
   weekInBlock: number;
   totalWeek: number;
+  onRestart?: () => void;
 }): React.ReactElement {
   // 12 segments total — 4 weeks per block × 3 blocks.
   const TOTAL = 12;
   return (
     <View style={styles.sportProg}>
-      <View style={styles.sportProgMain}>
+      <View style={styles.sportProgHead}>
         <ZoneText variant="label" color={colors.text.primary} style={styles.sportProgTitle}>
           {icon} {label.toUpperCase()} · Bloc {block} · {blockName} · S{weekInBlock}/4
         </ZoneText>
+        {onRestart ? (
+          <TouchableOpacity onPress={onRestart} hitSlop={8} activeOpacity={0.7}>
+            <ZoneText variant="caption" color={colors.accent.gold} style={styles.sportProgRestart}>
+              Recommencer
+            </ZoneText>
+          </TouchableOpacity>
+        ) : null}
       </View>
       <View style={styles.sportProgBar}>
         {Array.from({ length: TOTAL }).map((_, i) => {
@@ -1133,6 +1480,116 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 32,
   },
+  vacationCard: {
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 16,
+  },
+  vacationActive: {
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent.gold,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 16,
+  },
+  vacationTitle: { fontSize: 14, letterSpacing: 0.5 },
+  vacationBody: { marginTop: 8, lineHeight: 18 },
+  vacationCta: {
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+    borderRadius: 999,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  vacationCtaText: { letterSpacing: 1, fontFamily: 'Inter-Bold', fontSize: 12 },
+  vacationCancel: { marginTop: 12, alignSelf: 'flex-start' },
+  vacationCancelText: { fontFamily: 'Inter-Medium', fontSize: 12 },
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: colors.bg.elevated,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 32,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  vacSheetTitle: { fontSize: 22, marginBottom: 16, letterSpacing: 1 },
+  vacSheetLabel: { letterSpacing: 2, fontFamily: 'Inter-Bold', fontSize: 11, marginBottom: 8 },
+  vacPresetRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  vacPreset: {
+    flex: 1,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  vacPresetActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
+  vacPresetText: { fontFamily: 'Inter-Bold' },
+  vacCustomRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+  vacStepBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  vacCustomBox: {
+    flex: 1,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  vacCustomLabel: { letterSpacing: 2, fontFamily: 'Inter-Bold', fontSize: 10 },
+  vacCustomValue: { fontSize: 22, lineHeight: 26, marginTop: 2 },
+  vacReturnRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginBottom: 16,
+  },
+  vacReturnDate: { fontSize: 14 },
+  vacActivateBtn: {
+    backgroundColor: colors.accent.gold,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  vacActivateText: { letterSpacing: 1, fontFamily: 'Inter-Bold' },
+  welcomeCard: {
+    width: '100%',
+    backgroundColor: colors.bg.elevated,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+    padding: 22,
+  },
+  welcomeTitle: { fontSize: 24, letterSpacing: 1, textAlign: 'center' },
+  welcomeAway: { textAlign: 'center', marginTop: 4, fontSize: 12 },
+  welcomeBody: { marginTop: 14, lineHeight: 21 },
+  welcomeActions: { marginTop: 18, gap: 12 },
+  welcomeGhost: { alignSelf: 'center', paddingVertical: 8 },
   promoCard: {
     width: '100%',
     backgroundColor: colors.bg.elevated,
@@ -1215,7 +1672,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
   },
-  sportProgMain: { marginBottom: 8 },
+  sportProgHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  sportProgRestart: { fontFamily: 'Inter-Medium', fontSize: 11 },
   sportProgTitle: { fontSize: 13, letterSpacing: 0.5 },
   sportProgBar: { flexDirection: 'row', gap: 2 },
   sportProgSeg: { flex: 1, height: 6, borderRadius: 2 },

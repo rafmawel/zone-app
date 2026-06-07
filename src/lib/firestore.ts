@@ -1315,3 +1315,39 @@ export async function updateQueueItem(
     { merge: true },
   );
 }
+
+// ---------------------------------------------------------------------------
+// Mode Vacances
+// ---------------------------------------------------------------------------
+
+export interface VacationState {
+  active: boolean;
+  startDate: Timestamp | null;
+  returnDate: Timestamp | null;
+  durationDays: number;
+}
+
+export async function getVacationState(uid: string): Promise<VacationState | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'vacances'));
+  if (!snap.exists()) return null;
+  return snap.data() as VacationState;
+}
+
+export async function setVacationState(
+  uid: string,
+  state: VacationState,
+): Promise<void> {
+  await setDoc(doc(db, 'users', uid, 'state', 'vacances'), state);
+}
+
+export async function clearVacationState(uid: string): Promise<void> {
+  await setDoc(
+    doc(db, 'users', uid, 'state', 'vacances'),
+    {
+      active: false,
+      startDate: null,
+      returnDate: null,
+      durationDays: 0,
+    } satisfies VacationState,
+  );
+}

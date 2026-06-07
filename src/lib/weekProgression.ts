@@ -447,10 +447,26 @@ export function checkWeekProgression(
   profile: SportProfile,
   gender: Gender,
   trigger: ProgressionTrigger = 'manual',
+  onVacation: boolean = false,
 ): WeekProgressionResult {
   void gender;
   const config = getSportConfig(sport);
   const days = daysSince(weekData.startedAt);
+
+  // Vacation mode freezes every progression check: the bilan stays
+  // hidden, the 10-day timeout does not trigger, and the queue does
+  // not advance. Sessions remain available — the athlete just sees
+  // the "Mode vacances actif" state on the home tab.
+  if (onVacation) {
+    return {
+      canAdvance: false,
+      shouldRepeat: false,
+      advanceWithWarning: false,
+      note: 'Vacances actives. La progression reprend à ton retour.',
+      adjustments: {},
+    };
+  }
+
   const forceAdvance = days >= config.daysBeforeForceAdvance || trigger === 'timeout';
   const rate = completionRate(weekData);
   const allDone = rate >= 1;
