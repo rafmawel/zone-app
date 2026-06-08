@@ -275,6 +275,18 @@ export default function AujourdhuiScreen(): React.ReactElement {
     [program, maxes, runningProfile, muscleProfile, hyroxProfile, hyroxBlock, queueState],
   );
 
+  // If any sport has already unlocked its next-week session (e.g.
+  // weightlifting finished its week 1 while running is still
+  // mid-week-1), auto-expand the "Prochaine" block so the
+  // COMMENCER button isn't hidden behind a manual tap.
+  const hasAvailableNextWeekItem = useMemo(
+    () => (queueWeeks[1] ?? []).some((it) => it.status === 'available'),
+    [queueWeeks],
+  );
+  useEffect(() => {
+    if (hasAvailableNextWeekItem) setNextWeekExpanded(true);
+  }, [hasAvailableNextWeekItem]);
+
   const launchQueueItem = async (item: QueueItem): Promise<void> => {
     const user = auth.currentUser;
     if (!user || busy) return;
@@ -675,22 +687,114 @@ export default function AujourdhuiScreen(): React.ReactElement {
                   </ZoneText>
                 </TouchableOpacity>
                 {nextWeekExpanded ? (
-                  queueWeeks[1].map((item) => (
-                    <View
-                      key={item.key}
-                      style={[
-                        styles.qCardPreview,
-                        { borderLeftColor: sportColor(item.sport as SchedulerSport) },
-                      ]}
-                    >
-                      <ZoneText variant="label" color={colors.text.secondary} style={styles.qPreviewTitle}>
-                        {SPORT_ICON[item.sport]} {item.name}
-                      </ZoneText>
-                      <ZoneText variant="caption" color={colors.text.muted}>
-                        ~{item.estimatedMinutes} min · démarre après la semaine 1
-                      </ZoneText>
-                    </View>
-                  ))
+                  // Render each item according to its per-sport
+                  // status. Sport progression is fully independent:
+                  // if weightlifting has finished its week 1 while
+                  // running is still mid-week-1, the queue builder
+                  // already marks the weightlifting week-2 item as
+                  // 'available'. The UI must surface a real
+                  // COMMENCER button for those items rather than
+                  // capping the whole "Prochaine" section to a
+                  // preview row.
+                  queueWeeks[1].map((item) => {
+                    const meta = statusMeta(item.status);
+                    const done = item.status === 'completed' || item.status === 'skipped';
+                    const available = item.status === 'available';
+                    if (available || done) {
+                      return (
+                        <View
+                          key={item.key}
+                          style={[
+                            styles.qCard,
+                            available ? styles.qCardAvailable : null,
+                            done ? styles.qCardDone : null,
+                            { borderLeftColor: sportColor(item.sport as SchedulerSport) },
+                          ]}
+                        >
+                          <TouchableOpacity
+                            activeOpacity={available ? 0.7 : 1}
+                            disabled={!available}
+                            onPress={() => available && setPreviewItem(item)}
+                          >
+                            <View style={styles.qCardHead}>
+                              <ZoneText style={styles.qIcon}>{meta.icon}</ZoneText>
+                              <View style={styles.qMain}>
+                                <ZoneText
+                                  variant="titleSm"
+                                  color={done ? colors.text.muted : colors.text.primary}
+                                >
+                                  {SPORT_ICON[item.sport]} {item.name}
+                                </ZoneText>
+                                <ZoneText variant="caption" color={colors.text.muted}>
+                                  ~{item.estimatedMinutes} min
+                                  {item.exercises.length ? ` · ${item.exercises.join(' · ')}` : ''}
+                                </ZoneText>
+                              </View>
+                              {meta.label ? (
+                                <ZoneText
+                                  variant="caption"
+                                  color={
+                                    item.status === 'completed'
+                                      ? colors.success
+                                      : colors.text.muted
+                                  }
+                                  style={styles.qStatusLabel}
+                                >
+                                  {meta.label}
+                                </ZoneText>
+                              ) : null}
+                            </View>
+                          </TouchableOpacity>
+                          {available ? (
+                            <View style={styles.qActions}>
+                              <TouchableOpacity
+                                onPress={() => pickItem(item)}
+                                disabled={busy === item.sport}
+                                activeOpacity={0.85}
+                                style={styles.qStartBtn}
+                              >
+                                <ZoneText variant="label" size={13} color={colors.bg.primary}>
+                                  {busy === item.sport ? '...' : 'COMMENCER'}
+                                </ZoneText>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => onSkip(item)}
+                                activeOpacity={0.7}
+                                style={styles.qSkipBtn}
+                              >
+                                <ZoneText variant="caption" color={colors.text.muted}>
+                                  Passer
+                                </ZoneText>
+                              </TouchableOpacity>
+                            </View>
+                          ) : null}
+                        </View>
+                      );
+                    }
+                    // Genuinely locked next-week session: its own
+                    // sport hasn't finished week 1 yet, so render
+                    // the lighter preview row.
+                    return (
+                      <View
+                        key={item.key}
+                        style={[
+                          styles.qCardPreview,
+                          { borderLeftColor: sportColor(item.sport as SchedulerSport) },
+                        ]}
+                      >
+                        <ZoneText
+                          variant="label"
+                          color={colors.text.secondary}
+                          style={styles.qPreviewTitle}
+                        >
+                          {SPORT_ICON[item.sport]} {item.name}
+                        </ZoneText>
+                        <ZoneText variant="caption" color={colors.text.muted}>
+                          ~{item.estimatedMinutes} min · termine la semaine {SPORT_LABEL[item.sport].toLowerCase()} pour débloquer
+                        </ZoneText>
+                      </View>
+                    );
+                  })
                 ) : (
                   <ZoneText variant="caption" color={colors.text.muted} style={styles.nextWeekHint}>
                     Touche pour voir les séances prévues.
