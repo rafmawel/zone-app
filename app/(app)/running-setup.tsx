@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Keyboard,
   ScrollView,
@@ -99,6 +99,29 @@ export default function RunningSetupScreen(): React.ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [gender, setGender] = useState<Gender | null>(null);
 
+  // Per-field "user has interacted" flags. The async profile prefill
+  // below must NEVER overwrite a field the athlete has already
+  // touched — otherwise a slow Firestore round-trip can race ahead
+  // of a tap and silently reset the value (the classic "I picked 4
+  // but it saves 3" bug).
+  const touched = useRef<{
+    sessions: boolean;
+    longRun: boolean;
+    raceDate: boolean;
+    goalTime: boolean;
+    pace: boolean;
+    goal: boolean;
+    reference: boolean;
+  }>({
+    sessions: false,
+    longRun: false,
+    raceDate: false,
+    goalTime: false,
+    pace: false,
+    goal: false,
+    reference: false,
+  });
+
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
@@ -117,8 +140,11 @@ export default function RunningSetupScreen(): React.ReactElement {
   }, []);
 
   // Pre-fill the form from any existing running profile so a
-  // reconfiguration doesn't silently reset sessions_per_week, long-run
-  // preference, goal time, etc.
+  // reconfiguration doesn't silently reset sessions_per_week,
+  // long-run preference, goal time, etc. Each field skips its
+  // update if the athlete has already interacted with that input
+  // (see `touched` ref) so the async prefill never overrides a
+  // manual choice.
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
@@ -129,15 +155,34 @@ export default function RunningSetupScreen(): React.ReactElement {
         if (cancelled || !existing) return;
         setState((s) => ({
           ...s,
-          goal: existing.goal || s.goal,
-          easyPaceSec: existing.easy_pace_sec_per_km || s.easyPaceSec,
-          hasReference: existing.reference_distance !== null,
-          refDistance: existing.reference_distance ?? s.refDistance,
-          refTimeSeconds: existing.reference_time_seconds ?? s.refTimeSeconds,
-          sessionsPerWeek: existing.sessions_per_week || s.sessionsPerWeek,
-          longRunPref: existing.long_run_pref ?? s.longRunPref,
-          raceDate: existing.target_race_date ?? s.raceDate,
-          goalTimeSeconds: existing.goal_time_seconds ?? 0,
+          goal: touched.current.goal ? s.goal : (existing.goal || s.goal),
+          easyPaceSec: touched.current.pace
+            ? s.easyPaceSec
+            : (existing.easy_pace_sec_per_km || s.easyPaceSec),
+          hasReference: touched.current.reference
+            ? s.hasReference
+            : existing.reference_distance !== null,
+          refDistance: touched.current.reference
+            ? s.refDistance
+            : (existing.reference_distance ?? s.refDistance),
+          refTimeSeconds: touched.current.reference
+            ? s.refTimeSeconds
+            : (existing.reference_time_seconds ?? s.refTimeSeconds),
+          sessionsPerWeek: touched.current.sessions
+            ? s.sessionsPerWeek
+            : Number.isFinite(existing.sessions_per_week) &&
+                existing.sessions_per_week > 0
+              ? existing.sessions_per_week
+              : s.sessionsPerWeek,
+          longRunPref: touched.current.longRun
+            ? s.longRunPref
+            : (existing.long_run_pref ?? s.longRunPref),
+          raceDate: touched.current.raceDate
+            ? s.raceDate
+            : (existing.target_race_date ?? s.raceDate),
+          goalTimeSeconds: touched.current.goalTime
+            ? s.goalTimeSeconds
+            : (existing.goal_time_seconds ?? 0),
         }));
       } catch {
         // best effort: keep defaults
@@ -258,13 +303,19 @@ export default function RunningSetupScreen(): React.ReactElement {
             {step === 0 ? (
               <GoalStep
                 value={state.goal}
-                onChange={(v) => setState((s) => ({ ...s, goal: v }))}
+                onChange={(v) => {
+                  touched.current.goal = true;
+                  setState((s) => ({ ...s, goal: v }));
+                }}
               />
             ) : null}
             {step === 1 ? (
               <PaceStep
                 paceSec={state.easyPaceSec}
-                onChange={(v) => setState((s) => ({ ...s, easyPaceSec: v }))}
+                onChange={(v) => {
+                  touched.current.pace = true;
+                  setState((s) => ({ ...s, easyPaceSec: v }));
+                }}
                 vdot={baseVdot}
               />
             ) : null}
@@ -273,9 +324,18 @@ export default function RunningSetupScreen(): React.ReactElement {
                 hasReference={state.hasReference}
                 refDistance={state.refDistance}
                 refTimeSeconds={state.refTimeSeconds}
-                onChangeHas={(v) => setState((s) => ({ ...s, hasReference: v }))}
-                onChangeDistance={(v) => setState((s) => ({ ...s, refDistance: v }))}
-                onChangeTime={(v) => setState((s) => ({ ...s, refTimeSeconds: v }))}
+                onChangeHas={(v) => {
+                  touched.current.reference = true;
+                  setState((s) => ({ ...s, hasReference: v }));
+                }}
+                onChangeDistance={(v) => {
+                  touched.current.reference = true;
+                  setState((s) => ({ ...s, refDistance: v }));
+                }}
+                onChangeTime={(v) => {
+                  touched.current.reference = true;
+                  setState((s) => ({ ...s, refTimeSeconds: v }));
+                }}
                 calibratedVdot={calibratedVdot}
                 baseVdot={baseVdot}
               />
@@ -283,14 +343,26 @@ export default function RunningSetupScreen(): React.ReactElement {
             {step === 3 ? (
               <OrganizeStep
                 sessions={state.sessionsPerWeek}
-                onSessions={(v) => setState((s) => ({ ...s, sessionsPerWeek: v }))}
+                onSessions={(v) => {
+                  touched.current.sessions = true;
+                  setState((s) => ({ ...s, sessionsPerWeek: v }));
+                }}
                 longRunPref={state.longRunPref}
-                onLongRunPref={(v) => setState((s) => ({ ...s, longRunPref: v }))}
+                onLongRunPref={(v) => {
+                  touched.current.longRun = true;
+                  setState((s) => ({ ...s, longRunPref: v }));
+                }}
                 raceDate={state.raceDate}
-                onRaceDate={(v) => setState((s) => ({ ...s, raceDate: v }))}
+                onRaceDate={(v) => {
+                  touched.current.raceDate = true;
+                  setState((s) => ({ ...s, raceDate: v }));
+                }}
                 refDistance={state.refDistance}
                 goalTimeSeconds={state.goalTimeSeconds}
-                onGoalTime={(v) => setState((s) => ({ ...s, goalTimeSeconds: v }))}
+                onGoalTime={(v) => {
+                  touched.current.goalTime = true;
+                  setState((s) => ({ ...s, goalTimeSeconds: v }));
+                }}
                 paces={paces}
                 vdot={calibratedVdot}
               />
