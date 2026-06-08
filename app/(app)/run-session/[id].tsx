@@ -19,7 +19,6 @@ import { TreadmillInclineCard } from '@/components/TreadmillInclineCard';
 import {
   completeRunSession,
   updateQueueItem,
-  updateRunningEfPaceAdjustment,
   getRunningProfile,
   getRunSession,
   type RunSession,
@@ -34,7 +33,6 @@ import {
   formatElapsed,
   formatPace,
   formatPaceShort,
-  heatHrTargetForEf,
   paceAdjustmentForConditions,
   paceFeedback,
   paceFromDistanceTime,
@@ -489,14 +487,11 @@ export default function RunSessionScreen(): React.ReactElement {
     }
   };
 
-  const onEfAdjust = async (deltaSec: 0 | 10 | 20): Promise<void> => {
-    const user = auth.currentUser;
-    if (user && deltaSec > 0) {
-      const current = runningProfile?.ef_pace_adjustment ?? 0;
-      await updateRunningEfPaceAdjustment(user.uid, current + deltaSec).catch(
-        () => undefined,
-      );
-    }
+  // Informational dismiss for the post-run EF / RPE note. The note
+  // intentionally does NOT change the programme; one hard easy run is
+  // explained by chaleur / fatigue / mauvaise nuit and is not a
+  // calibration signal.
+  const onEfNoteAck = (): void => {
     setEfAdjustVisible(false);
     endSession();
     router.replace('/(app)/');
@@ -614,55 +609,37 @@ export default function RunSessionScreen(): React.ReactElement {
           </View>
         </ScrollView>
 
-        {/* EF pace recalibration prompt — only shown when RPE >= 7
-            on an EF session. Saves the offset to runningProfile so
-            future EF sessions inherit the adjustment. */}
+        {/* Post-run EF / RPE note — informational only. RPE 7+ on an
+            easy run is usually heat / fatigue / poor sleep, not a
+            real fitness signal, so the programme stays as-is. */}
         <Modal
           visible={efAdjustVisible}
           transparent
           animationType="fade"
-          onRequestClose={() => setEfAdjustVisible(false)}
+          onRequestClose={onEfNoteAck}
         >
           <View style={styles.efBackdrop}>
             <View style={styles.efCard}>
               <ZoneText variant="heading" style={styles.efTitle}>
-                Allure EF à ajuster ?
+                RPE élevé pour une sortie facile
               </ZoneText>
               <ZoneText variant="body" color={colors.text.secondary} style={styles.efBody}>
-                Ta FC était élevée pour une sortie facile. Causes possibles : chaleur, fatigue, forme du jour.
+                Causes possibles : chaleur, fatigue, mauvaise nuit. Ce n&apos;est pas ton niveau réel.
               </ZoneText>
               <ZoneText variant="body" color={colors.text.primary} style={styles.efBody}>
-                Veux-tu ajuster ton allure EF ?
+                Ton programme reste inchangé.
               </ZoneText>
               <View style={styles.efActions}>
                 <TouchableOpacity
-                  onPress={() => void onEfAdjust(10)}
+                  onPress={onEfNoteAck}
                   activeOpacity={0.85}
                   style={styles.efBtn}
                 >
                   <ZoneText variant="label" color={colors.bg.primary} style={styles.efBtnText}>
-                    +10 sec/km
-                  </ZoneText>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => void onEfAdjust(20)}
-                  activeOpacity={0.85}
-                  style={styles.efBtn}
-                >
-                  <ZoneText variant="label" color={colors.bg.primary} style={styles.efBtnText}>
-                    +20 sec/km
+                    C&apos;est noté
                   </ZoneText>
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                onPress={() => void onEfAdjust(0)}
-                activeOpacity={0.7}
-                style={styles.efGhost}
-              >
-                <ZoneText variant="caption" color={colors.text.muted}>
-                  Garder actuelle
-                </ZoneText>
-              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -774,8 +751,8 @@ export default function RunSessionScreen(): React.ReactElement {
           <View style={styles.preCondRow}>
             {(
               [
-                { key: 'heat' as const, label: '🌡️ Chaleur' },
-                { key: 'wind' as const, label: '💨 Vent' },
+                { key: 'heat' as const, label: '☀️ Chaleur' },
+                { key: 'wind' as const, label: '💨 Vent fort' },
                 { key: 'rain' as const, label: '🌧️ Pluie' },
                 { key: 'normal' as const, label: '✓ Normales' },
               ]
@@ -806,11 +783,11 @@ export default function RunSessionScreen(): React.ReactElement {
                   Adapte-toi à la chaleur
                 </ZoneText>
                 <ZoneText variant="caption" color={colors.text.muted} style={styles.preHintBody}>
-                  La chaleur augmente ta FC de 10 à 20 bpm. Allure cible ajustée : +15 sec/km. Guide-toi sur ta FC, pas ton allure.
+                  Guide-toi sur ta FC, pas ton allure. Allure cible ajustée : +15 sec/km. La chaleur augmente la FC de 10 à 20 bpm. C&apos;est normal de courir plus lentement.
                 </ZoneText>
                 {sessionType === 'EF' ? (
                   <ZoneText variant="caption" color={colors.accent.gold} style={styles.preHintHr}>
-                    FC cible : {heatHrTargetForEf().lower} à {heatHrTargetForEf().upper} bpm
+                    FC cible EF : 140 à 155 bpm
                   </ZoneText>
                 ) : null}
               </View>
@@ -843,7 +820,7 @@ export default function RunSessionScreen(): React.ReactElement {
               <ScrollView showsVerticalScrollIndicator={false}>
                 <TreadmillInclineCard />
               </ScrollView>
-              <Button title="J'ai compris" onPress={dismissTreadmillIntro} />
+              <Button title="J'ai compris, inclinaison à 1 %" onPress={dismissTreadmillIntro} />
             </View>
           </View>
         </Modal>
@@ -914,7 +891,7 @@ export default function RunSessionScreen(): React.ReactElement {
       {location === 'treadmill' ? (
         <View style={styles.gpsBanner}>
           <ZoneText style={styles.gpsBannerText}>
-            ⚙️ Inclinaison : 1 % recommandée
+            ⚙️ Tapis · Inclinaison 1 % recommandée
           </ZoneText>
         </View>
       ) : gps.permission === 'denied' ? (

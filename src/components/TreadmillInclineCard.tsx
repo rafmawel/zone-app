@@ -21,7 +21,7 @@ export function TreadmillInclineCard(): React.ReactElement {
   return (
     <View style={styles.card}>
       <ZoneText variant="caption" color={colors.accent.gold} style={styles.eyebrow}>
-        TAPIS ROULANT · INCLINAISON OBLIGATOIRE
+        TAPIS ROULANT · RÉGLAGE IMPORTANT
       </ZoneText>
       <ZoneText variant="label" color={colors.text.primary} style={styles.headline}>
         Règle ton tapis à 1 % d&apos;inclinaison.
@@ -33,7 +33,7 @@ export function TreadmillInclineCard(): React.ReactElement {
         Sans inclinaison, tu surestimes ton niveau et ton programme sera trop difficile.
       </ZoneText>
       <ZoneText variant="caption" color={colors.text.muted} style={styles.source}>
-        Source : Jones et Doust 1996, British Journal of Sports Medicine.
+        Source : Jones &amp; Doust (1996) · British Journal of Sports Medicine.
       </ZoneText>
     </View>
   );
