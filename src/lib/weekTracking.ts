@@ -274,10 +274,12 @@ export function readCurrentWeek(
 }
 
 /**
- * Wipe every week tracking entry for `sport`: the per-week fields and
- * the `${sport}_current_week` pointer. Used when an athlete reconfigures
- * a sport from scratch so the queue restarts at week 1 instead of
- * resuming halfway through the previous cycle.
+ * Wipe every week tracking entry for `sport`: the per-week fields, the
+ * `${sport}_current_week` pointer, and the per-session unlock state stored
+ * under `items.${sport}_w<week>_s<session>`. Used when an athlete
+ * reconfigures a sport from scratch so the queue restarts at week 1 with
+ * session 1 available, instead of resuming halfway through the previous
+ * cycle with stale "completed"/"skipped" statuses leaking through.
  */
 export async function resetSportWeek(uid: string, sport: ProSport): Promise<void> {
   const ref = doc(db, 'users', uid, 'state', 'programme_queue');
@@ -286,24 +288,20 @@ export async function resetSportWeek(uid: string, sport: ProSport): Promise<void
   const data = snap.data() as Record<string, unknown>;
   const weekKeyPattern = new RegExp(`^${sport}_week_\\d+_`);
   const currentWeekKey = `${sport}_current_week`;
-  const wipe: Record<string, unknown> = {};
-  let touched = false;
-  for (const k of Object.keys(data)) {
-    if (k === currentWeekKey || weekKeyPattern.test(k)) {
-      wipe[k] = null;
-      touched = true;
-    }
-  }
-  if (!touched) return;
-  // Firestore's setDoc({merge:true}) treats explicit nulls as field
-  // deletions only via FieldValue.delete(); however a flat overwrite of
-  // the document with the remaining keys gives us the same effect with
-  // a single round trip.
+  const itemKeyPattern = new RegExp(`^${sport}_w\\d+_s\\d+$`);
+
   const remaining: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(data)) {
-    if (k !== currentWeekKey && !weekKeyPattern.test(k)) {
-      remaining[k] = v;
+    if (k === currentWeekKey || weekKeyPattern.test(k)) continue;
+    if (k === 'items' && v && typeof v === 'object') {
+      const filteredItems: Record<string, unknown> = {};
+      for (const [ik, iv] of Object.entries(v as Record<string, unknown>)) {
+        if (!itemKeyPattern.test(ik)) filteredItems[ik] = iv;
+      }
+      remaining[k] = filteredItems;
+      continue;
     }
+    remaining[k] = v;
   }
   await setDoc(ref, remaining);
 }
