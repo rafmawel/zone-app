@@ -213,6 +213,61 @@ export function runningPaceFactor(recentRir: number[]): number {
   return 1;
 }
 
+export type RunConditionKey = 'normal' | 'heat' | 'wind' | 'rain';
+
+/**
+ * Seconds-per-kilometre added to every pace target to compensate for
+ * environmental conditions. Heat is the most aggressive (cardiac drift
+ * adds ~10-20 bpm at race pace), wind / rain a little less.
+ */
+export function paceAdjustmentForConditions(c: RunConditionKey): number {
+  if (c === 'heat') return 15;
+  if (c === 'wind') return 8;
+  if (c === 'rain') return 5;
+  return 0;
+}
+
+/**
+ * Apply both the conditions-based offset and the athlete's manual EF
+ * adjustment to a target pace. Returns null when the input itself is
+ * null so steps without a pace (warm-ups, etc.) round-trip safely.
+ */
+export function adjustedTargetPace(
+  basePaceSecPerKm: number | null,
+  conditions: RunConditionKey | undefined,
+  efAdjustment: number | undefined | null,
+  isEfStep: boolean,
+): number | null {
+  if (basePaceSecPerKm === null || basePaceSecPerKm === undefined) return null;
+  let pace = basePaceSecPerKm;
+  pace += paceAdjustmentForConditions(conditions ?? 'normal');
+  if (isEfStep && typeof efAdjustment === 'number' && Number.isFinite(efAdjustment)) {
+    pace += efAdjustment;
+  }
+  return Math.round(pace);
+}
+
+/**
+ * Heart-rate guide for an EF session under heat. Returns a target
+ * range derived from a simple percentage of HRmax (208 - 0.7 * age
+ * Tanaka formula), capped to a sensible aerobic band. The actual HR
+ * monitor reading is not required by the UI — this is informational
+ * so the athlete can self-regulate when pace lies.
+ */
+export interface HeatHrTarget {
+  lower: number;
+  upper: number;
+}
+export function heatHrTargetForEf(ageYears: number = 35): HeatHrTarget {
+  const hrMax = Math.max(160, Math.min(220, 208 - 0.7 * ageYears));
+  // EF sits around 65-75 % HRmax. In the heat we suggest the lower
+  // half of the band so the athlete keeps the same internal load.
+  return {
+    lower: Math.round(hrMax * 0.65),
+    upper: Math.round(hrMax * 0.72),
+  };
+}
+
 function steady(label: string, minutes: number, pace: number | null): RunningSessionStep {
   return {
     kind: 'steady',

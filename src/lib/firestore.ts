@@ -186,6 +186,12 @@ export interface RunningProfile {
   long_run_pref: LongRunPreference;
   /** Goal finishing time in seconds for the target race. */
   goal_time_seconds?: number | null;
+  /**
+   * Manual offset (sec/km) added to every EF target pace. Set after a
+   * post-run prompt when the athlete's HR / RPE suggested the planned
+   * easy pace was too aggressive for them today.
+   */
+  ef_pace_adjustment?: number | null;
   updated_at: Timestamp | null;
 }
 
@@ -250,6 +256,9 @@ export interface WeeklyScheduleDoc {
   updated_at: Timestamp | null;
 }
 
+export type RunLocation = 'outdoor' | 'treadmill';
+export type RunConditions = 'normal' | 'heat' | 'wind' | 'rain';
+
 export interface RunSession {
   id: string;
   date: string;
@@ -268,6 +277,10 @@ export interface RunSession {
   created_at: Timestamp | null;
   completed_at?: Timestamp | null;
   queue_key?: string;
+  /** Where the run was done. Defaults to outdoor for legacy sessions. */
+  location?: RunLocation;
+  /** Self-reported environmental conditions. Defaults to 'normal'. */
+  conditions?: RunConditions;
 }
 
 export function todayDateString(d: Date = new Date()): string {
@@ -599,6 +612,20 @@ export async function updateVDOT(uid: string, newVDOT: number): Promise<void> {
   });
 }
 
+export async function updateRunningEfPaceAdjustment(
+  uid: string,
+  adjustmentSecPerKm: number,
+): Promise<void> {
+  await setDoc(
+    doc(db, 'users', uid, 'state', 'running_profile'),
+    {
+      ef_pace_adjustment: adjustmentSecPerKm,
+      updated_at: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
 export interface CreateRunSessionInput {
   date: string;
   session_type: RunningSessionType;
@@ -608,6 +635,8 @@ export interface CreateRunSessionInput {
   zone_score_at_start: number | null;
   zone_message: string | null;
   queue_key?: string;
+  location?: RunLocation;
+  conditions?: RunConditions;
 }
 
 export async function createRunSession(uid: string, input: CreateRunSessionInput): Promise<string> {
@@ -633,6 +662,8 @@ export interface CompleteRunInput {
   avg_pace_sec_per_km: number;
   positions?: RunningSessionGPSPoint[];
   rpe?: number;
+  location?: RunLocation;
+  conditions?: RunConditions;
 }
 
 export async function completeRunSession(
@@ -648,6 +679,8 @@ export async function completeRunSession(
     avg_pace_sec_per_km: input.avg_pace_sec_per_km,
     ...(input.rpe !== undefined ? { rpe: input.rpe } : {}),
     ...(input.positions ? { positions: input.positions } : {}),
+    ...(input.location ? { location: input.location } : {}),
+    ...(input.conditions ? { conditions: input.conditions } : {}),
   });
 }
 

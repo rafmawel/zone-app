@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, TouchableOpacity, View, ScrollView } from 'react-native';
+import { Modal, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Animated, {
   Easing,
@@ -17,9 +17,13 @@ import { auth } from '@/lib/firebase';
 import {
   completeRunSession,
   updateQueueItem,
+  updateRunningEfPaceAdjustment,
   getRunningProfile,
   getRunSession,
   type RunSession,
+  type RunningProfile,
+  type RunConditions,
+  type RunLocation,
   type RunningSessionGPSPoint,
   type RunningSessionStepPlanned,
 } from '@/lib/firestore';
@@ -28,6 +32,8 @@ import {
   formatElapsed,
   formatPace,
   formatPaceShort,
+  heatHrTargetForEf,
+  paceAdjustmentForConditions,
   paceFeedback,
   paceFromDistanceTime,
   sessionName,
@@ -35,6 +41,8 @@ import {
   sessionRpe,
   type RunningSessionType,
 } from '@/lib/runningEngine';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { computeAndSaveWorkloadEntry } from '@/lib/pro';
 import { readCurrentWeek, readProgrammeQueue, recordSessionComplete, startWeek } from '@/lib/weekTracking';
 import { usePro } from '@/hooks/usePro';
@@ -107,6 +115,13 @@ export default function RunSessionScreen(): React.ReactElement {
   const [feedback, setFeedback] = useState<string>('');
   const [rpe, setRpe] = useState<number | null>(null);
   const [savingComplete, setSavingComplete] = useState<boolean>(false);
+  // Pre-run context — picked once before the first step starts.
+  const [location, setLocation] = useState<RunLocation>('outdoor');
+  const [conditions, setConditions] = useState<RunConditions>('normal');
+  const [treadmillDistanceText, setTreadmillDistanceText] = useState<string>('');
+  // EF-recalibration prompt shown on the done screen.
+  const [efAdjustVisible, setEfAdjustVisible] = useState<boolean>(false);
+  const [runningProfile, setRunningProfile] = useState<RunningProfile | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
   const startedAtRef = useRef<number>(0);
@@ -123,13 +138,19 @@ export default function RunSessionScreen(): React.ReactElement {
         return;
       }
       try {
-        const r = await getRunSession(user.uid, runId);
+        const [r, profile] = await Promise.all([
+          getRunSession(user.uid, runId),
+          getRunningProfile(user.uid),
+        ]);
         if (cancelled) return;
         if (!r) {
           setError('Sortie introuvable.');
         } else {
           setRun(r);
+          if (r.location) setLocation(r.location);
+          if (r.conditions) setConditions(r.conditions);
         }
+        setRunningProfile(profile);
       } catch {
         if (!cancelled) setError('Erreur de chargement.');
       } finally {
@@ -269,6 +290,16 @@ export default function RunSessionScreen(): React.ReactElement {
 
   const onStart = async (): Promise<void> => {
     if (!run || !currentStep) return;
+    const user = auth.currentUser;
+    // Persist the location and conditions before starting so a crash
+    // mid-run doesn't lose them. Best-effort; the run still launches.
+    if (user) {
+      void setDoc(
+        doc(db, 'users', user.uid, 'runs', runId),
+        { location, conditions },
+        { merge: true },
+      ).catch(() => undefined);
+    }
     startSession(runId);
     startedAtRef.current = Date.now();
     stepStartedAtRef.current = Date.now();
@@ -288,7 +319,11 @@ export default function RunSessionScreen(): React.ReactElement {
       zoneColor: accentColor,
     });
     startTick();
-    void startGps();
+    // Treadmill mode skips GPS entirely; distance comes from the
+    // athlete entering the value at the end of the session.
+    if (location === 'outdoor') {
+      void startGps();
+    }
   };
 
   const finishRun = useCallback((): void => {
@@ -317,6 +352,19 @@ export default function RunSessionScreen(): React.ReactElement {
   }, [phase, stepIdx, stepTotal]);
 
   // Pace feedback when current step changes or GPS updates
+  // Combined pace offset for the currently displayed step: conditions
+  // (heat/wind/rain) push every target slower, and EF steps inherit
+  // the athlete's personal ef_pace_adjustment.
+  const stepPaceOffset = useMemo(() => {
+    const condOffset = paceAdjustmentForConditions(conditions);
+    const isEf = currentStep?.kind === 'steady' && sessionType === 'EF';
+    const efOffset =
+      isEf && Number.isFinite(runningProfile?.ef_pace_adjustment ?? NaN)
+        ? (runningProfile?.ef_pace_adjustment ?? 0)
+        : 0;
+    return condOffset + efOffset;
+  }, [conditions, currentStep, sessionType, runningProfile]);
+
   useEffect(() => {
     if (phase !== 'active' || !currentStep) return;
     const target = currentStep.target_pace_sec_per_km;
@@ -325,23 +373,44 @@ export default function RunSessionScreen(): React.ReactElement {
       return;
     }
     const context = currentStep.kind === 'work' ? 'work' : 'easy';
-    setFeedback(paceFeedback(gps.current_pace, target, context));
-  }, [phase, currentStep, gps.current_pace]);
+    setFeedback(paceFeedback(gps.current_pace, target + stepPaceOffset, context));
+  }, [phase, currentStep, gps.current_pace, stepPaceOffset]);
+
+  const treadmillDistanceKm = useMemo(() => {
+    const cleaned = treadmillDistanceText.replace(',', '.').trim();
+    if (!cleaned) return 0;
+    const n = Number(cleaned);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return n < 30 ? n : n / 1000;
+  }, [treadmillDistanceText]);
 
   const submitCompletion = async (): Promise<void> => {
     const user = auth.currentUser;
     if (!user || !run) return;
     setSavingComplete(true);
     try {
-      const finalDistance = gps.distance_km > 0 ? gps.distance_km : run.estimated_distance_km;
+      // Treadmill mode: GPS distance is always 0, so we use the
+      // athlete-entered value (km or m). Outdoor mode keeps the GPS
+      // measurement, falling back to the planned distance.
+      const finalDistance =
+        location === 'treadmill'
+          ? (treadmillDistanceKm > 0
+              ? treadmillDistanceKm
+              : run.estimated_distance_km)
+          : (gps.distance_km > 0
+              ? gps.distance_km
+              : run.estimated_distance_km);
       const finalDur = elapsed > 0 ? elapsed : run.estimated_duration_min * 60;
       const avg = paceFromDistanceTime(finalDistance * 1000, finalDur);
       await completeRunSession(user.uid, runId, {
         duration_seconds: finalDur,
         distance_km: Math.round(finalDistance * 100) / 100,
         avg_pace_sec_per_km: Math.round(avg),
-        positions: gps.positions.length ? gps.positions : undefined,
+        positions:
+          location === 'outdoor' && gps.positions.length ? gps.positions : undefined,
         ...(rpe !== null ? { rpe } : {}),
+        location,
+        conditions,
       });
       if (run?.queue_key) {
         await updateQueueItem(user.uid, run.queue_key, 'completed').catch(() => undefined);
@@ -373,11 +442,33 @@ export default function RunSessionScreen(): React.ReactElement {
       } catch {
         // tracking is best effort
       }
+      // VDOT recalibration suggestion: when an EF session feels hard
+      // (RPE >= 7) the planned easy pace is likely too aggressive for
+      // today. We surface the prompt before leaving the screen so the
+      // athlete can apply +10 / +20 sec/km right away.
+      if (run.session_type === 'EF' && rpe !== null && rpe >= 7) {
+        setSavingComplete(false);
+        setEfAdjustVisible(true);
+        return;
+      }
       endSession();
       router.replace('/(app)/');
     } catch {
       setSavingComplete(false);
     }
+  };
+
+  const onEfAdjust = async (deltaSec: 0 | 10 | 20): Promise<void> => {
+    const user = auth.currentUser;
+    if (user && deltaSec > 0) {
+      const current = runningProfile?.ef_pace_adjustment ?? 0;
+      await updateRunningEfPaceAdjustment(user.uid, current + deltaSec).catch(
+        () => undefined,
+      );
+    }
+    setEfAdjustVisible(false);
+    endSession();
+    router.replace('/(app)/');
   };
 
   if (loading) {
@@ -408,6 +499,12 @@ export default function RunSessionScreen(): React.ReactElement {
   }
 
   if (phase === 'done') {
+    const displayedDistance =
+      location === 'treadmill'
+        ? treadmillDistanceKm > 0
+          ? treadmillDistanceKm
+          : 0
+        : gps.distance_km || run.estimated_distance_km;
     return (
       <SafeScreen>
         <ScrollView contentContainerStyle={styles.doneWrap}>
@@ -416,16 +513,37 @@ export default function RunSessionScreen(): React.ReactElement {
           </ZoneText>
           <View style={styles.doneStatsRow}>
             <DoneStat label="DURÉE" value={formatElapsed(elapsed)} />
-            <DoneStat label="DISTANCE" value={`${(gps.distance_km || run.estimated_distance_km).toFixed(2)} km`} />
+            <DoneStat
+              label="DISTANCE"
+              value={`${displayedDistance.toFixed(2)} km`}
+            />
             <DoneStat
               label="ALLURE"
               value={
                 gps.avg_pace > 0
                   ? formatPaceShort(gps.avg_pace)
-                  : formatPaceShort(currentStep.target_pace_sec_per_km ?? 0)
+                  : displayedDistance > 0 && elapsed > 0
+                    ? formatPaceShort(paceFromDistanceTime(displayedDistance * 1000, elapsed))
+                    : formatPaceShort(currentStep.target_pace_sec_per_km ?? 0)
               }
             />
           </View>
+
+          {location === 'treadmill' ? (
+            <View style={styles.doneTreadmillBlock}>
+              <ZoneText variant="caption" color={colors.text.muted} style={styles.rpeLabel}>
+                DISTANCE AFFICHÉE PAR LE TAPIS (km)
+              </ZoneText>
+              <TextInput
+                value={treadmillDistanceText}
+                onChangeText={setTreadmillDistanceText}
+                placeholder="ex: 8,5"
+                placeholderTextColor={colors.text.muted}
+                keyboardType="numbers-and-punctuation"
+                style={styles.treadmillInput}
+              />
+            </View>
+          ) : null}
 
           <ZoneText variant="caption" color={colors.text.muted} style={styles.rpeLabel}>
             RESSENTI GLOBAL (RPE)
@@ -464,6 +582,59 @@ export default function RunSessionScreen(): React.ReactElement {
             <Button title="Enregistrer" loading={savingComplete} onPress={submitCompletion} />
           </View>
         </ScrollView>
+
+        {/* EF pace recalibration prompt — only shown when RPE >= 7
+            on an EF session. Saves the offset to runningProfile so
+            future EF sessions inherit the adjustment. */}
+        <Modal
+          visible={efAdjustVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setEfAdjustVisible(false)}
+        >
+          <View style={styles.efBackdrop}>
+            <View style={styles.efCard}>
+              <ZoneText variant="heading" style={styles.efTitle}>
+                Allure EF à ajuster ?
+              </ZoneText>
+              <ZoneText variant="body" color={colors.text.secondary} style={styles.efBody}>
+                Ta FC était élevée pour une sortie facile. Causes possibles : chaleur, fatigue, forme du jour.
+              </ZoneText>
+              <ZoneText variant="body" color={colors.text.primary} style={styles.efBody}>
+                Veux-tu ajuster ton allure EF ?
+              </ZoneText>
+              <View style={styles.efActions}>
+                <TouchableOpacity
+                  onPress={() => void onEfAdjust(10)}
+                  activeOpacity={0.85}
+                  style={styles.efBtn}
+                >
+                  <ZoneText variant="label" color={colors.bg.primary} style={styles.efBtnText}>
+                    +10 sec/km
+                  </ZoneText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => void onEfAdjust(20)}
+                  activeOpacity={0.85}
+                  style={styles.efBtn}
+                >
+                  <ZoneText variant="label" color={colors.bg.primary} style={styles.efBtnText}>
+                    +20 sec/km
+                  </ZoneText>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity
+                onPress={() => void onEfAdjust(0)}
+                activeOpacity={0.7}
+                style={styles.efGhost}
+              >
+                <ZoneText variant="caption" color={colors.text.muted}>
+                  Garder actuelle
+                </ZoneText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </SafeScreen>
     );
   }
@@ -526,6 +697,101 @@ export default function RunSessionScreen(): React.ReactElement {
             <EstCell label="DURÉE" value={`${run.estimated_duration_min} min`} />
             <EstCell label="DISTANCE" value={`${run.estimated_distance_km} km`} />
           </View>
+
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.preEyebrow}>
+            OÙ COURS-TU AUJOURD&apos;HUI ?
+          </ZoneText>
+          <View style={styles.preChoiceRow}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => setLocation('outdoor')}
+              style={[
+                styles.preChoice,
+                location === 'outdoor' ? styles.preChoiceActive : null,
+              ]}
+            >
+              <ZoneText
+                variant="label"
+                color={location === 'outdoor' ? colors.bg.primary : colors.text.primary}
+                style={styles.preChoiceText}
+              >
+                🏃 Extérieur
+              </ZoneText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => setLocation('treadmill')}
+              style={[
+                styles.preChoice,
+                location === 'treadmill' ? styles.preChoiceActive : null,
+              ]}
+            >
+              <ZoneText
+                variant="label"
+                color={location === 'treadmill' ? colors.bg.primary : colors.text.primary}
+                style={styles.preChoiceText}
+              >
+                ⚙️ Tapis roulant
+              </ZoneText>
+            </TouchableOpacity>
+          </View>
+          {location === 'treadmill' ? (
+            <View style={styles.preHint}>
+              <ZoneText variant="label" color={colors.text.primary} style={styles.preHintTitle}>
+                Inclinaison recommandée : 1 %
+              </ZoneText>
+              <ZoneText variant="caption" color={colors.text.muted} style={styles.preHintBody}>
+                Compense l&apos;absence de résistance de l&apos;air en extérieur. Le GPS est désactivé : tu renseigneras la distance affichée par le tapis à la fin de la séance.
+              </ZoneText>
+            </View>
+          ) : null}
+
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.preEyebrow}>
+            CONDITIONS
+          </ZoneText>
+          <View style={styles.preCondRow}>
+            {(
+              [
+                { key: 'heat' as const, label: '🌡️ Chaleur' },
+                { key: 'wind' as const, label: '💨 Vent' },
+                { key: 'rain' as const, label: '🌧️ Pluie' },
+                { key: 'normal' as const, label: '✓ Normales' },
+              ]
+            ).map((o) => {
+              const active = conditions === o.key;
+              return (
+                <TouchableOpacity
+                  key={o.key}
+                  activeOpacity={0.85}
+                  onPress={() => setConditions(o.key)}
+                  style={[styles.preCond, active ? styles.preCondActive : null]}
+                >
+                  <ZoneText
+                    variant="caption"
+                    color={active ? colors.bg.primary : colors.text.primary}
+                    style={styles.preCondText}
+                  >
+                    {o.label}
+                  </ZoneText>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {conditions === 'heat' ? (
+            <View style={styles.preHint}>
+              <ZoneText variant="label" color={colors.text.primary} style={styles.preHintTitle}>
+                Adapte-toi à la chaleur
+              </ZoneText>
+              <ZoneText variant="caption" color={colors.text.muted} style={styles.preHintBody}>
+                La chaleur augmente ta FC de 10 à 20 bpm. Allure cible ajustée : +15 sec/km. Guide-toi sur ta FC, pas ton allure.
+              </ZoneText>
+              {sessionType === 'EF' ? (
+                <ZoneText variant="caption" color={colors.accent.gold} style={styles.preHintHr}>
+                  FC cible : {heatHrTargetForEf().lower} à {heatHrTargetForEf().upper} bpm
+                </ZoneText>
+              ) : null}
+            </View>
+          ) : null}
         </ScrollView>
         <View style={styles.footer}>
           <Button title="Démarrer la séance" onPress={onStart} />
@@ -573,6 +839,7 @@ export default function RunSessionScreen(): React.ReactElement {
           ringProgress={ringProgress}
           currentPace={gps.current_pace}
           feedback={feedback}
+          paceOffsetSecPerKm={stepPaceOffset}
           onAdvance={handleStepAdvance}
           elapsed={elapsed}
           distance={gps.distance_km}
@@ -588,11 +855,18 @@ export default function RunSessionScreen(): React.ReactElement {
           remaining={stepRemaining}
           total={stepTotal}
           feedback={feedback}
+          paceOffsetSecPerKm={stepPaceOffset}
           onFinish={finishRun}
         />
       )}
 
-      {gps.permission === 'denied' ? (
+      {location === 'treadmill' ? (
+        <View style={styles.gpsBanner}>
+          <ZoneText style={styles.gpsBannerText}>
+            ⚙️ Tapis roulant · inclinaison 1 %. Tu noteras la distance à la fin.
+          </ZoneText>
+        </View>
+      ) : gps.permission === 'denied' ? (
         <View style={styles.gpsBanner}>
           <ZoneText style={styles.gpsBannerText}>
             GPS désactivé · mode manuel. La distance sera demandée à la fin.
@@ -627,6 +901,7 @@ function SteadyView({
   remaining,
   total,
   feedback,
+  paceOffsetSecPerKm,
   onFinish,
 }: {
   accentColor: string;
@@ -638,6 +913,7 @@ function SteadyView({
   remaining: number;
   total: number;
   feedback: string;
+  paceOffsetSecPerKm: number;
   onFinish: () => void;
 }): React.ReactElement {
   const progress = total > 0 ? Math.max(0, Math.min(1, 1 - remaining / total)) : 0;
@@ -664,7 +940,8 @@ function SteadyView({
 
       {step.target_pace_sec_per_km ? (
         <ZoneText variant="caption" color={colors.text.muted} style={styles.targetLine}>
-          Cible {formatPace(step.target_pace_sec_per_km)}
+          Cible {formatPace(step.target_pace_sec_per_km + paceOffsetSecPerKm)}
+          {paceOffsetSecPerKm > 0 ? ` · +${paceOffsetSecPerKm}s ajusté` : ''}
         </ZoneText>
       ) : null}
       {feedback ? (
@@ -697,6 +974,7 @@ function IntervalView({
   ringProgress,
   currentPace,
   feedback,
+  paceOffsetSecPerKm,
   onAdvance,
   elapsed,
   distance,
@@ -710,6 +988,7 @@ function IntervalView({
   ringProgress: SharedValue<number>;
   currentPace: number;
   feedback: string;
+  paceOffsetSecPerKm: number;
   onAdvance: () => void;
   elapsed: number;
   distance: number;
@@ -752,7 +1031,12 @@ function IntervalView({
         </ZoneText>
         {step.target_pace_sec_per_km ? (
           <ZoneText variant="heading" style={styles.intervalPace}>
-            {formatPace(step.target_pace_sec_per_km)}
+            {formatPace(step.target_pace_sec_per_km + paceOffsetSecPerKm)}
+            {paceOffsetSecPerKm > 0 ? (
+              <ZoneText variant="caption" color={colors.text.muted}>
+                {' '}· +{paceOffsetSecPerKm}s
+              </ZoneText>
+            ) : null}
           </ZoneText>
         ) : null}
       </View>
@@ -1009,4 +1293,80 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   doneFooter: { marginTop: 28 },
+  preEyebrow: {
+    letterSpacing: 2,
+    fontSize: 11,
+    fontFamily: 'Inter-Bold',
+    marginTop: 22,
+    marginBottom: 10,
+  },
+  preChoiceRow: { flexDirection: 'row', gap: 10 },
+  preChoice: {
+    flex: 1,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  preChoiceActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
+  preChoiceText: { fontSize: 14 },
+  preHint: {
+    marginTop: 10,
+    backgroundColor: `${colors.accent.gold}15`,
+    borderRadius: 12,
+    padding: 12,
+  },
+  preHintTitle: { fontSize: 13 },
+  preHintBody: { marginTop: 6, lineHeight: 17 },
+  preHintHr: { marginTop: 8, fontFamily: 'Inter-Bold', fontSize: 12 },
+  preCondRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  preCond: {
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  preCondActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
+  preCondText: { fontFamily: 'Inter-Medium', fontSize: 12 },
+  doneTreadmillBlock: { marginTop: 8 },
+  treadmillInput: {
+    color: colors.text.primary,
+    fontFamily: 'Inter-Regular',
+    fontSize: 18,
+    backgroundColor: colors.bg.elevated,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  efBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  efCard: {
+    width: '100%',
+    backgroundColor: colors.bg.elevated,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+    padding: 20,
+  },
+  efTitle: { fontSize: 22, letterSpacing: 1 },
+  efBody: { marginTop: 10, lineHeight: 20 },
+  efActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  efBtn: {
+    flex: 1,
+    backgroundColor: colors.accent.gold,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  efBtnText: { fontFamily: 'Inter-Bold' },
+  efGhost: { alignSelf: 'center', marginTop: 12, paddingVertical: 8 },
 });
