@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Plus } from 'lucide-react-native';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import {
@@ -10,7 +10,6 @@ import {
   getCompletedRuns,
   getCompletedSessions,
   getExerciseMaxes,
-  getHyroxSessionHistory,
   getProgrammeQueue,
   getWorkloadHistory,
   setMuscleDeloadActive,
@@ -19,7 +18,6 @@ import {
   type DailyCheckin,
   type ExerciseMax,
   type HyroxProfile,
-  type HyroxSessionRecord,
   type MuscleProfile,
   type QueueState,
   type RunSession,
@@ -57,7 +55,7 @@ import { evaluateDeloadNeed, type DeloadRecommendation } from '@/lib/muscleSessi
 import { blockFromWeeksToRace, type HyroxBlockPhase } from '@/lib/hyroxScience';
 import type { MuscleGroup } from '@/data/exercises';
 import { buildSessionPlan, calculateVDOTPaces, runningPaceFactor } from '@/lib/runningEngine';
-import { sportColor, type SchedulerSport } from '@/lib/multiSportScheduler';
+import { type SchedulerSport, sportColor } from '@/lib/multiSportScheduler';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
@@ -98,53 +96,13 @@ const BONUS_OPTIONS: { id: BonusOption; title: string; description: string; deta
   { id: 'cardio', title: 'CARDIO LÉGER · 25 min', description: 'Zone 2 uniquement, hors programme', detail: 'FC max 130-140 bpm' },
 ];
 
-const FR_DAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-const WEEK_RANGE = 4;
 const QUEUE_WEEKS = 2;
-
-function weekMondayDate(weekOffset: number): Date {
-  const now = new Date();
-  const dayIdx = (now.getDay() + 6) % 7;
-  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  monday.setDate(monday.getDate() - dayIdx + weekOffset * 7);
-  return monday;
-}
-
-function weekDateStrings(weekOffset: number): string[] {
-  const monday = weekMondayDate(weekOffset);
-  const out: string[] = [];
-  for (let i = 0; i < 7; i += 1) {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    out.push(todayDateString(d));
-  }
-  return out;
-}
-
-function frenchDayMonth(date: Date): string {
-  try {
-    return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(date);
-  } catch {
-    return '';
-  }
-}
 
 function weeksUntil(iso: string | null): number | null {
   if (!iso) return null;
   const target = new Date(iso);
   if (Number.isNaN(target.getTime())) return null;
   return Math.max(0, Math.round((target.getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)));
-}
-
-interface CompletedSessionLite {
-  sport: ScheduleSport;
-  date: string;
-}
-
-function sessionSport(s: TrainingSession): ScheduleSport {
-  if (s.discipline === 'musculation') return 'musculation';
-  if (s.sport_key === 'running') return 'running';
-  return 'weightlifting';
 }
 
 const VALID_WORKLOAD_SPORTS: ReadonlySet<WorkloadSport> = new Set([
@@ -188,18 +146,15 @@ export default function AujourdhuiScreen(): React.ReactElement {
   const [muscleProfile, setMuscleProfile] = useState<MuscleProfile | null>(null);
   const [hyroxProfile, setHyroxProfile] = useState<HyroxProfile | null>(null);
   const [maxes, setMaxes] = useState<ExerciseMax[]>([]);
-  const [completed, setCompleted] = useState<CompletedSessionLite[]>([]);
   const [recentRir, setRecentRir] = useState<number[]>([]);
   const [recentMuscleRir, setRecentMuscleRir] = useState<number[]>([]);
   const [recentRunRir, setRecentRunRir] = useState<number[]>([]);
   const [acwrHigh, setAcwrHigh] = useState<boolean>(false);
   const [deload, setDeload] = useState<DeloadRecommendation | null>(null);
   const [recovery, setRecovery] = useState<RecoveryContext>(EMPTY_RECOVERY_CONTEXT);
-  const [nextWeekExpanded, setNextWeekExpanded] = useState<boolean>(false);
-  const [sessionIdByDate, setSessionIdByDate] = useState<Record<string, string>>({});
+  const [expanded, setExpanded] = useState<boolean>(false);
   const [queueState, setQueueState] = useState<QueueState>({});
 
-  const [weekOffset, setWeekOffset] = useState<number>(0);
   const [pending, setPending] = useState<{ item: QueueItem; warning: RecoveryWarning } | null>(null);
   const [previewItem, setPreviewItem] = useState<QueueItem | null>(null);
   const [bonusVisible, setBonusVisible] = useState<boolean>(false);
@@ -228,19 +183,13 @@ export default function AujourdhuiScreen(): React.ReactElement {
   const loadHistory = useCallback(async (): Promise<void> => {
     const user = auth.currentUser;
     if (!user) return;
-    const [sessions, runs, hyrox, exMaxes, workload, ctx, qstate] = await Promise.all([
+    const [sessions, runs, exMaxes, workload, ctx, qstate] = await Promise.all([
       getCompletedSessions(user.uid).catch(() => [] as TrainingSession[]),
       getCompletedRuns(user.uid, 60).catch(() => [] as RunSession[]),
-      getHyroxSessionHistory(user.uid, 60).catch(() => [] as HyroxSessionRecord[]),
       getExerciseMaxes(user.uid).catch(() => [] as ExerciseMax[]),
       getWorkloadHistory(user.uid, 35).catch(() => []),
       loadRecoveryContext(user.uid).catch(() => EMPTY_RECOVERY_CONTEXT),
       getProgrammeQueue(user.uid).catch(() => ({}) as QueueState),
-    ]);
-    setCompleted([
-      ...sessions.map((s) => ({ sport: sessionSport(s), date: s.date })),
-      ...runs.map((r) => ({ sport: 'running' as ScheduleSport, date: r.date })),
-      ...hyrox.map((h) => ({ sport: 'hyrox' as ScheduleSport, date: h.date })),
     ]);
     setMaxes(exMaxes);
     setRecentRir(
@@ -256,9 +205,6 @@ export default function AujourdhuiScreen(): React.ReactElement {
         .sort((a, b) => a.date.localeCompare(b.date)).slice(-2).map((r) => Math.max(0, 10 - (r.rpe as number))),
     );
     setAcwrHigh(calculateACWR(toWorkloadPoints(workload), todayDateString()).riskLevel === 'danger');
-    const byDate: Record<string, string> = {};
-    for (const s of sessions) if (!byDate[s.date]) byDate[s.date] = s.id;
-    setSessionIdByDate(byDate);
     setRecovery(ctx);
     setQueueState(qstate);
     setDeload(evaluateDeloadNeed(sessions.filter((s) => s.discipline === 'musculation'), 'intermediaire'));
@@ -275,17 +221,27 @@ export default function AujourdhuiScreen(): React.ReactElement {
     [program, maxes, runningProfile, muscleProfile, hyroxProfile, hyroxBlock, queueState],
   );
 
-  // If any sport has already unlocked its next-week session (e.g.
-  // weightlifting finished its week 1 while running is still
-  // mid-week-1), auto-expand the "Prochaine" block so the
-  // COMMENCER button isn't hidden behind a manual tap.
-  const hasAvailableNextWeekItem = useMemo(
-    () => (queueWeeks[1] ?? []).some((it) => it.status === 'available'),
-    [queueWeeks],
-  );
-  useEffect(() => {
-    if (hasAvailableNextWeekItem) setNextWeekExpanded(true);
-  }, [hasAvailableNextWeekItem]);
+  // First available item per sport across the visible queue window. If the
+  // sport has queue items but none available (everything in window is
+  // completed/skipped), surface 'complete'. If the sport isn't in the
+  // queue at all, it's null (not configured).
+  const nextBySport = useMemo(() => {
+    const out: Partial<Record<ScheduleSport, QueueItem | 'complete'>> = {};
+    for (const sport of ALL_SPORTS) {
+      let hasItems = false;
+      let next: QueueItem | null = null;
+      for (const week of queueWeeks) {
+        for (const item of week) {
+          if (item.sport !== sport) continue;
+          hasItems = true;
+          if (!next && item.status === 'available') next = item;
+        }
+      }
+      if (next) out[sport] = next;
+      else if (hasItems) out[sport] = 'complete';
+    }
+    return out;
+  }, [queueWeeks]);
 
   const launchQueueItem = async (item: QueueItem): Promise<void> => {
     const user = auth.currentUser;
@@ -473,27 +429,18 @@ export default function AujourdhuiScreen(): React.ReactElement {
   const unconfiguredSports = ALL_SPORTS.filter((s) => !configuredSports.includes(s));
   const bonusAvailable = Boolean(program || runningProfile || muscleProfile);
   const zoneLevel = score !== null ? getZoneLevel(score) : null;
+  const raceWeeks = weeksUntil(hyroxProfile?.target_race_date ?? null);
 
-  const completedByDate = useMemo(() => {
-    const map: Record<string, ScheduleSport[]> = {};
-    for (const c of completed) (map[c.date] ??= []).push(c.sport);
-    return map;
-  }, [completed]);
-
-  const weekBlockLabel = useCallback(
-    (weekNumber: number): string => {
-      if (!program) return `SEMAINE ${weekNumber}`;
-      const projected = projectProgram(program, weekNumber - 1);
-      return `SEMAINE ${weekNumber} · ${getBlockName(projected.current_block)}`;
+  const cardSubtitle = useCallback(
+    (item: QueueItem): string => {
+      if (item.sport === 'weightlifting' && program) {
+        const projected = projectProgram(program, item.weekNumber - 1);
+        return `Bloc ${projected.current_block} · ${getBlockName(projected.current_block)} · Semaine ${Math.min(4, projected.current_week)} · ~${item.estimatedMinutes} min`;
+      }
+      return `Semaine ${item.weekNumber} · ~${item.estimatedMinutes} min`;
     },
     [program],
   );
-
-  const weekDates = useMemo(() => weekDateStrings(weekOffset), [weekOffset]);
-  const todayStr = todayDateString();
-  const isCurrentWeek = weekOffset === 0;
-  const weekLabel = frenchDayMonth(weekMondayDate(weekOffset));
-  const raceWeeks = weeksUntil(hyroxProfile?.target_race_date ?? null);
 
   return (
     <SafeScreen>
@@ -517,69 +464,13 @@ export default function AujourdhuiScreen(): React.ReactElement {
           </ZoneText>
         </View>
 
-        {/* Calendar — completed history, today highlighted, future open */}
-        <View style={styles.calendarCard}>
-          <View style={styles.weekNavRow}>
-            <TouchableOpacity
-              onPress={() => setWeekOffset((w) => Math.max(-WEEK_RANGE, w - 1))}
-              disabled={weekOffset <= -WEEK_RANGE}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              style={styles.weekNavBtn}
-            >
-              <ChevronLeft size={20} color={weekOffset <= -WEEK_RANGE ? colors.text.muted : colors.accent.gold} />
-            </TouchableOpacity>
-            <ZoneText variant="titleSm" color={colors.text.primary}>
-              {isCurrentWeek ? 'Cette semaine' : `Semaine du ${weekLabel}`}
-            </ZoneText>
-            <TouchableOpacity
-              onPress={() => setWeekOffset((w) => Math.min(WEEK_RANGE, w + 1))}
-              disabled={weekOffset >= WEEK_RANGE}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              style={styles.weekNavBtn}
-            >
-              <ChevronRight size={20} color={weekOffset >= WEEK_RANGE ? colors.text.muted : colors.accent.gold} />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.weekRow}>
-            {weekDates.map((date, i) => {
-              const isToday = date === todayStr;
-              const isFuture = date > todayStr;
-              const sports = completedByDate[date] ?? [];
-              const previewId = sessionIdByDate[date];
-              return (
-                <TouchableOpacity
-                  key={date}
-                  activeOpacity={previewId ? 0.7 : 1}
-                  disabled={!previewId}
-                  onPress={() => previewId && router.push(`/(app)/session-preview?id=${previewId}`)}
-                  style={[styles.dayCol, isToday ? styles.dayColToday : null]}
-                >
-                  <ZoneText variant="caption" color={isToday ? colors.accent.gold : colors.text.muted} style={styles.dayLetter}>
-                    {FR_DAYS[i]}
-                  </ZoneText>
-                  <View style={styles.pillStack}>
-                    {sports.length > 0 ? (
-                      sports.map((sp, j) => (
-                        <View key={j} style={[styles.calPill, { backgroundColor: sportColor(sp as SchedulerSport) }]} />
-                      ))
-                    ) : isFuture ? (
-                      <View style={styles.futureDot} />
-                    ) : (
-                      <View style={styles.restDot} />
-                    )}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          {raceWeeks !== null ? (
-            <ZoneText variant="caption" color={colors.accent.gold} style={styles.raceLine}>
-              🏁 Course dans {raceWeeks} semaine{raceWeeks > 1 ? 's' : ''} · pense à alléger en fin de cycle
-            </ZoneText>
-          ) : null}
-        </View>
+        {raceWeeks !== null ? (
+          <ZoneText variant="caption" color={colors.accent.gold} style={styles.raceLineTop}>
+            🏁 Course dans {raceWeeks} semaine{raceWeeks > 1 ? 's' : ''} · pense à alléger en fin de cycle
+          </ZoneText>
+        ) : null}
 
-        {/* Unified multi-sport queue */}
+        {/* Next session per sport */}
         {configuredSports.length === 0 ? (
           <View style={styles.emptyCard}>
             <ZoneText variant="caption" color={colors.text.muted}>
@@ -588,245 +479,170 @@ export default function AujourdhuiScreen(): React.ReactElement {
           </View>
         ) : (
           <>
-            {/* Semaine en cours (semaine 1) */}
-            {queueWeeks[0] && queueWeeks[0].length > 0 ? (
-              <View>
-                <View style={styles.weekHeaderRow}>
-                  <ZoneText variant="caption" style={styles.weekHeader}>
-                    {weekBlockLabel(1)}
-                  </ZoneText>
-                  <ZoneText
-                    variant="caption"
-                    color={colors.accent.gold}
-                    style={styles.weekBadge}
+            <ZoneText variant="caption" style={styles.sectionHeader}>
+              PROCHAINE SÉANCE
+            </ZoneText>
+            {configuredSports.map((sport) => {
+              const slot = nextBySport[sport];
+              if (slot === 'complete') {
+                return (
+                  <View
+                    key={sport}
+                    style={[
+                      styles.qCard,
+                      styles.qCardDone,
+                      { borderLeftColor: sportColor(sport as SchedulerSport) },
+                    ]}
                   >
-                    EN COURS
-                  </ZoneText>
-                </View>
-                {queueWeeks[0].map((item) => {
-                  const meta = statusMeta(item.status);
-                  const done = item.status === 'completed' || item.status === 'skipped';
-                  const available = item.status === 'available';
-                  return (
-                    <View
-                      key={item.key}
-                      style={[
-                        styles.qCard,
-                        available ? styles.qCardAvailable : null,
-                        done ? styles.qCardDone : null,
-                        { borderLeftColor: sportColor(item.sport as SchedulerSport) },
-                      ]}
-                    >
-                      <TouchableOpacity
-                        activeOpacity={available ? 0.7 : 1}
-                        disabled={!available}
-                        onPress={() => available && setPreviewItem(item)}
-                      >
-                        <View style={styles.qCardHead}>
-                          <ZoneText style={styles.qIcon}>{meta.icon}</ZoneText>
-                          <View style={styles.qMain}>
-                            <ZoneText variant="titleSm" color={done ? colors.text.muted : colors.text.primary}>
-                              {SPORT_ICON[item.sport]} {item.name}
-                            </ZoneText>
-                            <ZoneText variant="caption" color={colors.text.muted}>
-                              ~{item.estimatedMinutes} min{item.exercises.length ? ` · ${item.exercises.join(' · ')}` : ''}
-                            </ZoneText>
-                          </View>
-                          {meta.label ? (
-                            <ZoneText
-                              variant="caption"
-                              color={item.status === 'completed' ? colors.success : colors.text.muted}
-                              style={styles.qStatusLabel}
-                            >
-                              {meta.label}
-                            </ZoneText>
-                          ) : null}
-                        </View>
-                      </TouchableOpacity>
-                      {available ? (
-                        <View style={styles.qActions}>
-                          <TouchableOpacity
-                            onPress={() => pickItem(item)}
-                            disabled={busy === item.sport}
-                            activeOpacity={0.85}
-                            style={styles.qStartBtn}
-                          >
-                            <ZoneText variant="label" size={13} color={colors.bg.primary}>
-                              {busy === item.sport ? '...' : 'COMMENCER'}
-                            </ZoneText>
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={() => onSkip(item)} activeOpacity={0.7} style={styles.qSkipBtn}>
-                            <ZoneText variant="caption" color={colors.text.muted}>Passer</ZoneText>
-                          </TouchableOpacity>
-                        </View>
-                      ) : null}
-                    </View>
-                  );
-                })}
-              </View>
-            ) : null}
-
-            {/* Aperçu semaine 2 (repliée par défaut) */}
-            {queueWeeks[1] && queueWeeks[1].length > 0 ? (
-              <View style={styles.nextWeekWrap}>
-                <View style={styles.weekSeparator} />
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => setNextWeekExpanded((e) => !e)}
-                  style={styles.weekHeaderRow}
-                >
-                  <ZoneText variant="caption" style={styles.weekHeader}>
-                    {weekBlockLabel(2)}
-                  </ZoneText>
-                  <ZoneText
-                    variant="caption"
-                    color={colors.text.muted}
-                    style={styles.weekBadge}
-                  >
-                    PROCHAINE · {nextWeekExpanded ? 'Réduire' : 'Aperçu'}
-                  </ZoneText>
-                </TouchableOpacity>
-                {nextWeekExpanded ? (
-                  // Render each item according to its per-sport
-                  // status. Sport progression is fully independent:
-                  // if weightlifting has finished its week 1 while
-                  // running is still mid-week-1, the queue builder
-                  // already marks the weightlifting week-2 item as
-                  // 'available'. The UI must surface a real
-                  // COMMENCER button for those items rather than
-                  // capping the whole "Prochaine" section to a
-                  // preview row.
-                  queueWeeks[1].map((item) => {
-                    const meta = statusMeta(item.status);
-                    const done = item.status === 'completed' || item.status === 'skipped';
-                    const available = item.status === 'available';
-                    if (available || done) {
-                      return (
-                        <View
-                          key={item.key}
-                          style={[
-                            styles.qCard,
-                            available ? styles.qCardAvailable : null,
-                            done ? styles.qCardDone : null,
-                            { borderLeftColor: sportColor(item.sport as SchedulerSport) },
-                          ]}
-                        >
-                          <TouchableOpacity
-                            activeOpacity={available ? 0.7 : 1}
-                            disabled={!available}
-                            onPress={() => available && setPreviewItem(item)}
-                          >
-                            <View style={styles.qCardHead}>
-                              <ZoneText style={styles.qIcon}>{meta.icon}</ZoneText>
-                              <View style={styles.qMain}>
-                                <ZoneText
-                                  variant="titleSm"
-                                  color={done ? colors.text.muted : colors.text.primary}
-                                >
-                                  {SPORT_ICON[item.sport]} {item.name}
-                                </ZoneText>
-                                <ZoneText variant="caption" color={colors.text.muted}>
-                                  ~{item.estimatedMinutes} min
-                                  {item.exercises.length ? ` · ${item.exercises.join(' · ')}` : ''}
-                                </ZoneText>
-                              </View>
-                              {meta.label ? (
-                                <ZoneText
-                                  variant="caption"
-                                  color={
-                                    item.status === 'completed'
-                                      ? colors.success
-                                      : colors.text.muted
-                                  }
-                                  style={styles.qStatusLabel}
-                                >
-                                  {meta.label}
-                                </ZoneText>
-                              ) : null}
-                            </View>
-                          </TouchableOpacity>
-                          {available ? (
-                            <View style={styles.qActions}>
-                              <TouchableOpacity
-                                onPress={() => pickItem(item)}
-                                disabled={busy === item.sport}
-                                activeOpacity={0.85}
-                                style={styles.qStartBtn}
-                              >
-                                <ZoneText variant="label" size={13} color={colors.bg.primary}>
-                                  {busy === item.sport ? '...' : 'COMMENCER'}
-                                </ZoneText>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                onPress={() => onSkip(item)}
-                                activeOpacity={0.7}
-                                style={styles.qSkipBtn}
-                              >
-                                <ZoneText variant="caption" color={colors.text.muted}>
-                                  Passer
-                                </ZoneText>
-                              </TouchableOpacity>
-                            </View>
-                          ) : null}
-                        </View>
-                      );
-                    }
-                    // Genuinely locked next-week session: its own
-                    // sport hasn't finished week 1 yet, so render
-                    // the lighter preview row.
-                    return (
-                      <View
-                        key={item.key}
-                        style={[
-                          styles.qCardPreview,
-                          { borderLeftColor: sportColor(item.sport as SchedulerSport) },
-                        ]}
-                      >
-                        <ZoneText
-                          variant="label"
-                          color={colors.text.secondary}
-                          style={styles.qPreviewTitle}
-                        >
-                          {SPORT_ICON[item.sport]} {item.name}
-                        </ZoneText>
-                        <ZoneText variant="caption" color={colors.text.muted}>
-                          ~{item.estimatedMinutes} min · termine la semaine {SPORT_LABEL[item.sport].toLowerCase()} pour débloquer
+                    <View style={styles.qCardHead}>
+                      <ZoneText style={styles.qIcon}>✅</ZoneText>
+                      <View style={styles.qMain}>
+                        <ZoneText variant="titleSm" color={colors.text.muted}>
+                          {SPORT_ICON[sport]} {SPORT_LABEL[sport]} · Semaine complète
                         </ZoneText>
                       </View>
-                    );
-                  })
-                ) : (
-                  <ZoneText variant="caption" color={colors.text.muted} style={styles.nextWeekHint}>
-                    Touche pour voir les séances prévues.
-                  </ZoneText>
+                    </View>
+                  </View>
+                );
+              }
+              if (!slot) return null;
+              const item = slot;
+              return (
+                <View
+                  key={sport}
+                  style={[
+                    styles.qCard,
+                    styles.qCardAvailable,
+                    { borderLeftColor: sportColor(sport as SchedulerSport) },
+                  ]}
+                >
+                  <TouchableOpacity activeOpacity={0.7} onPress={() => setPreviewItem(item)}>
+                    <View style={styles.qCardHead}>
+                      <ZoneText style={styles.qIcon}>{SPORT_ICON[sport]}</ZoneText>
+                      <View style={styles.qMain}>
+                        <ZoneText variant="titleSm" color={colors.text.primary}>
+                          {item.name}
+                        </ZoneText>
+                        <ZoneText variant="caption" color={colors.text.muted}>
+                          {cardSubtitle(item)}
+                        </ZoneText>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                  <View style={styles.qActions}>
+                    <TouchableOpacity
+                      onPress={() => pickItem(item)}
+                      disabled={busy === item.sport}
+                      activeOpacity={0.85}
+                      style={styles.qStartBtn}
+                    >
+                      <ZoneText variant="label" size={13} color={colors.bg.primary}>
+                        {busy === item.sport ? '...' : 'COMMENCER'}
+                      </ZoneText>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => onSkip(item)} activeOpacity={0.7} style={styles.qSkipBtn}>
+                      <ZoneText variant="caption" color={colors.text.muted}>
+                        Passer
+                      </ZoneText>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setExpanded((e) => !e)}
+              style={styles.expandLink}
+            >
+              <ZoneText variant="caption" color={colors.accent.gold} style={styles.expandLinkText}>
+                {expanded ? 'MASQUER MES SÉANCES' : 'VOIR TOUTES MES SÉANCES'}
+              </ZoneText>
+              {expanded ? (
+                <ChevronUp size={14} color={colors.accent.gold} />
+              ) : (
+                <ChevronDown size={14} color={colors.accent.gold} />
+              )}
+            </TouchableOpacity>
+
+            {expanded ? (
+              <View style={styles.fullQueue}>
+                {queueWeeks.map((week, wi) =>
+                  week.length === 0 ? null : (
+                    <View key={`w-${wi}`}>
+                      <ZoneText variant="caption" style={styles.weekHeader}>
+                        SEMAINE {wi + 1}
+                      </ZoneText>
+                      {week.map((item) => {
+                        const meta = statusMeta(item.status);
+                        const done = item.status === 'completed' || item.status === 'skipped';
+                        const available = item.status === 'available';
+                        return (
+                          <View
+                            key={item.key}
+                            style={[
+                              styles.qCard,
+                              available ? styles.qCardAvailable : null,
+                              done ? styles.qCardDone : null,
+                              { borderLeftColor: sportColor(item.sport as SchedulerSport) },
+                            ]}
+                          >
+                            <TouchableOpacity
+                              activeOpacity={available ? 0.7 : 1}
+                              disabled={!available}
+                              onPress={() => available && setPreviewItem(item)}
+                            >
+                              <View style={styles.qCardHead}>
+                                <ZoneText style={styles.qIcon}>{meta.icon}</ZoneText>
+                                <View style={styles.qMain}>
+                                  <ZoneText
+                                    variant="titleSm"
+                                    color={done ? colors.text.muted : colors.text.primary}
+                                  >
+                                    {SPORT_ICON[item.sport]} {item.name}
+                                  </ZoneText>
+                                  <ZoneText variant="caption" color={colors.text.muted}>
+                                    ~{item.estimatedMinutes} min
+                                    {item.exercises.length ? ` · ${item.exercises.join(' · ')}` : ''}
+                                  </ZoneText>
+                                </View>
+                                {meta.label ? (
+                                  <ZoneText
+                                    variant="caption"
+                                    color={item.status === 'completed' ? colors.success : colors.text.muted}
+                                    style={styles.qStatusLabel}
+                                  >
+                                    {meta.label}
+                                  </ZoneText>
+                                ) : null}
+                              </View>
+                            </TouchableOpacity>
+                            {available ? (
+                              <View style={styles.qActions}>
+                                <TouchableOpacity
+                                  onPress={() => pickItem(item)}
+                                  disabled={busy === item.sport}
+                                  activeOpacity={0.85}
+                                  style={styles.qStartBtn}
+                                >
+                                  <ZoneText variant="label" size={13} color={colors.bg.primary}>
+                                    {busy === item.sport ? '...' : 'COMMENCER'}
+                                  </ZoneText>
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => onSkip(item)} activeOpacity={0.7} style={styles.qSkipBtn}>
+                                  <ZoneText variant="caption" color={colors.text.muted}>
+                                    Passer
+                                  </ZoneText>
+                                </TouchableOpacity>
+                              </View>
+                            ) : null}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ),
                 )}
               </View>
-            ) : null}
-
-            {/* Lien vers le reste du programme */}
-            {program || runningProfile || muscleProfile || hyroxProfile ? (
-              <TouchableOpacity
-                onPress={() =>
-                  router.push({
-                    pathname: '/(app)/programme-overview',
-                    params: {
-                      sport: program
-                        ? 'weightlifting'
-                        : runningProfile
-                          ? 'running'
-                          : muscleProfile
-                            ? 'musculation'
-                            : 'hyrox',
-                    },
-                  })
-                }
-                activeOpacity={0.7}
-                style={styles.programLink}
-              >
-                <ZoneText variant="caption" color={colors.accent.gold} style={styles.programLinkText}>
-                  Voir la suite du programme →
-                </ZoneText>
-              </TouchableOpacity>
             ) : null}
           </>
         )}
@@ -1047,38 +863,34 @@ const styles = StyleSheet.create({
   zoneStripOrb: { width: 22, height: 22, borderRadius: 11 },
   zoneStripScore: { color: colors.text.primary },
   zoneStripStatus: { flex: 1 },
-  calendarCard: { backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 16 },
-  weekNavRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  weekNavBtn: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-  weekRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 },
-  dayCol: { flex: 1, alignItems: 'center', paddingVertical: 6, borderRadius: 12 },
-  dayColToday: { backgroundColor: 'rgba(201,168,76,0.12)' },
-  dayLetter: { fontFamily: 'Inter-Bold', fontSize: 11, letterSpacing: 1 },
-  pillStack: { marginTop: 8, alignItems: 'center', gap: 3, minHeight: 16 },
-  calPill: { width: 18, height: 7, borderRadius: 4 },
-  restDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.border },
-  futureDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'transparent' },
-  raceLine: { marginTop: 14, lineHeight: 16 },
-  weekHeader: { fontFamily: 'Syne-Bold', fontSize: 13, letterSpacing: 1.5, color: colors.text.muted, marginTop: 24, marginBottom: 12 },
-  weekHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  weekBadge: { fontFamily: 'Inter-Bold', fontSize: 11, letterSpacing: 1, marginTop: 24, marginBottom: 12 },
-  weekSeparator: { height: 1, backgroundColor: colors.border, marginTop: 8 },
-  nextWeekWrap: { marginTop: 4 },
-  nextWeekHint: { marginTop: 2, marginBottom: 12, fontStyle: 'italic' },
-  qCardPreview: {
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderLeftWidth: 3,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 8,
-    opacity: 0.75,
+  raceLineTop: { marginTop: 2, marginBottom: 16, lineHeight: 16 },
+  sectionHeader: {
+    fontFamily: 'Syne-Bold',
+    fontSize: 13,
+    letterSpacing: 1.5,
+    color: colors.text.muted,
+    marginBottom: 12,
   },
-  qPreviewTitle: { fontSize: 13, marginBottom: 2 },
-  programLink: { alignSelf: 'center', marginTop: 16, marginBottom: 12, paddingVertical: 6 },
-  programLinkText: { fontFamily: 'Inter-Medium', fontSize: 13 },
+  weekHeader: {
+    fontFamily: 'Syne-Bold',
+    fontSize: 13,
+    letterSpacing: 1.5,
+    color: colors.text.muted,
+    marginTop: 16,
+    marginBottom: 12,
+  },
+  expandLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  expandLinkText: { fontFamily: 'Inter-Bold', fontSize: 12, letterSpacing: 1 },
+  fullQueue: { marginTop: 4 },
   qCard: {
     backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 3,
     borderRadius: 16, padding: 16, marginBottom: 10,
