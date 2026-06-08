@@ -163,7 +163,7 @@ export interface ExerciseMax {
 }
 
 export type RunningRaceDistance = '5km' | '10km' | 'semi' | 'marathon';
-export type RunningSessionType = 'EF' | 'SL' | 'TC' | 'TB' | 'IV' | 'RV' | 'RA';
+export type RunningSessionType = 'EF' | 'SL' | 'TC' | 'TB' | 'IV' | 'RV' | 'RA' | 'CO' | 'AS';
 export type RunningSessionStatus = 'planned' | 'completed' | 'skipped';
 export type Weekday =
   | 'lundi'

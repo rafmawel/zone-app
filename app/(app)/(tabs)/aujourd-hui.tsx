@@ -261,7 +261,18 @@ export default function AujourdhuiScreen(): React.ReactElement {
       } else if (item.sport === 'running' && runningProfile && item.runningType) {
         const paces = calculateVDOTPaces(runningProfile.vdot);
         const level = runningProfile.vdot < 35 ? 'beginner' : runningProfile.vdot < 55 ? 'intermediate' : 'advanced';
-        const plan = buildSessionPlan({ type: item.runningType, paces, level, block: 1, week: 1, paceFactor: runningPaceFactor(recentRunRir) });
+        const plan = buildSessionPlan({
+          type: item.runningType,
+          paces,
+          level,
+          block: 1,
+          week: 1,
+          paceFactor: runningPaceFactor(recentRunRir),
+          withStrides: item.runningWithStrides,
+          recovery: item.runningRecovery,
+          goalDistance: runningProfile.reference_distance ?? undefined,
+          goalTimeSeconds: runningProfile.goal_time_seconds ?? undefined,
+        });
         const id = await createRunSession(user.uid, {
           date: todayDateString(),
           session_type: plan.type,
