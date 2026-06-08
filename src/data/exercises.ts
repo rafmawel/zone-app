@@ -906,6 +906,40 @@ export const EXERCISES: Exercise[] = [
     default_rest_seconds: 150,
   },
   {
+    id: 'jerk_from_rack',
+    name: 'Jeté depuis le rack',
+    name_en: 'Jerk from Rack',
+    sport: 'weightlifting',
+    category: 'olympic_lift',
+    difficulty: 'advanced',
+    equipment: ['barbell', 'rack'],
+    muscles_primary: ['shoulders', 'triceps', 'quadriceps', 'core'],
+    muscles_secondary: ['glutes', 'upper_back', 'calves', 'traps'],
+    description:
+      "Jeté pris au rack à hauteur de clavicules. Permet de travailler spécifiquement le jeté sans la fatigue de l'épaulé.",
+    setup:
+      "Barre dans le rack à hauteur de clavicules, position front rack, coudes hauts, pieds largeur de hanches.",
+    execution:
+      "Descente contrôlée pour le dip strictement vertical. Extension explosive des jambes puis projection des bras. Reçois bras verrouillés en fente ou en quart de squat.",
+    cues: [
+      "Descente contrôlée pour le dip",
+      "Extension explosive des jambes puis bras",
+      "Recevoir les bras verrouillés",
+      "Tronc strictement vertical au dip",
+      "Tête à travers les bras au verrouillage",
+    ],
+    feeling:
+      "Puissance verticale spécifique au jeté, sans fatigue résiduelle du clean.",
+    common_errors: [
+      "Dip vers l'avant",
+      "Pousser la barre avec les bras avant l'extension",
+      "Réception coudes mous",
+    ],
+    default_sets: 4,
+    default_reps: '2',
+    default_rest_seconds: 150,
+  },
+  {
     id: 'bench_press',
     name: 'Développé couché',
     name_en: 'Bench Press',
