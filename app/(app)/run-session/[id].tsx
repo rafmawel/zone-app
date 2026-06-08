@@ -12,8 +12,10 @@ import Animated, {
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { X } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
+import { TreadmillInclineCard } from '@/components/TreadmillInclineCard';
 import {
   completeRunSession,
   updateQueueItem,
@@ -63,6 +65,8 @@ interface GpsState {
   current_pace: number;
   avg_pace: number;
 }
+
+const TREADMILL_INTRO_KEY = '@zone/run/treadmill-intro-seen';
 
 const EMPTY_GPS: GpsState = {
   permission: 'unknown',
@@ -121,6 +125,11 @@ export default function RunSessionScreen(): React.ReactElement {
   const [treadmillDistanceText, setTreadmillDistanceText] = useState<string>('');
   // EF-recalibration prompt shown on the done screen.
   const [efAdjustVisible, setEfAdjustVisible] = useState<boolean>(false);
+  // First-time treadmill explainer modal (one-shot, persisted via
+  // AsyncStorage). Fires when the athlete first picks treadmill mode
+  // on the pre-run screen.
+  const [treadmillIntroVisible, setTreadmillIntroVisible] = useState<boolean>(false);
+  const treadmillIntroSeenRef = useRef<boolean>(false);
   const [runningProfile, setRunningProfile] = useState<RunningProfile | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
@@ -176,6 +185,28 @@ export default function RunSessionScreen(): React.ReactElement {
       }
     };
   }, []);
+
+  // Has the athlete already seen the treadmill explainer? Loaded once
+  // on mount; if they've already dismissed it before we won't fire it
+  // again, but the persistent in-session banner still surfaces.
+  useEffect(() => {
+    void AsyncStorage.getItem(TREADMILL_INTRO_KEY).then((v) => {
+      treadmillIntroSeenRef.current = v === 'seen';
+    });
+  }, []);
+
+  const onPickTreadmill = (): void => {
+    setLocation('treadmill');
+    if (!treadmillIntroSeenRef.current) {
+      setTreadmillIntroVisible(true);
+    }
+  };
+
+  const dismissTreadmillIntro = (): void => {
+    setTreadmillIntroVisible(false);
+    treadmillIntroSeenRef.current = true;
+    void AsyncStorage.setItem(TREADMILL_INTRO_KEY, 'seen').catch(() => undefined);
+  };
 
   const steps = run?.steps ?? [];
   const currentStep = steps[stepIdx];
@@ -720,7 +751,7 @@ export default function RunSessionScreen(): React.ReactElement {
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.85}
-              onPress={() => setLocation('treadmill')}
+              onPress={onPickTreadmill}
               style={[
                 styles.preChoice,
                 location === 'treadmill' ? styles.preChoiceActive : null,
@@ -735,16 +766,7 @@ export default function RunSessionScreen(): React.ReactElement {
               </ZoneText>
             </TouchableOpacity>
           </View>
-          {location === 'treadmill' ? (
-            <View style={styles.preHint}>
-              <ZoneText variant="label" color={colors.text.primary} style={styles.preHintTitle}>
-                Inclinaison recommandée : 1 %
-              </ZoneText>
-              <ZoneText variant="caption" color={colors.text.muted} style={styles.preHintBody}>
-                Compense l&apos;absence de résistance de l&apos;air en extérieur. Le GPS est désactivé : tu renseigneras la distance affichée par le tapis à la fin de la séance.
-              </ZoneText>
-            </View>
-          ) : null}
+          {location === 'treadmill' ? <TreadmillInclineCard /> : null}
 
           <ZoneText variant="caption" color={colors.text.muted} style={styles.preEyebrow}>
             CONDITIONS
@@ -778,24 +800,53 @@ export default function RunSessionScreen(): React.ReactElement {
             })}
           </View>
           {conditions === 'heat' ? (
-            <View style={styles.preHint}>
-              <ZoneText variant="label" color={colors.text.primary} style={styles.preHintTitle}>
-                Adapte-toi à la chaleur
-              </ZoneText>
-              <ZoneText variant="caption" color={colors.text.muted} style={styles.preHintBody}>
-                La chaleur augmente ta FC de 10 à 20 bpm. Allure cible ajustée : +15 sec/km. Guide-toi sur ta FC, pas ton allure.
-              </ZoneText>
-              {sessionType === 'EF' ? (
-                <ZoneText variant="caption" color={colors.accent.gold} style={styles.preHintHr}>
-                  FC cible : {heatHrTargetForEf().lower} à {heatHrTargetForEf().upper} bpm
+            <>
+              <View style={styles.preHint}>
+                <ZoneText variant="label" color={colors.text.primary} style={styles.preHintTitle}>
+                  Adapte-toi à la chaleur
                 </ZoneText>
-              ) : null}
-            </View>
+                <ZoneText variant="caption" color={colors.text.muted} style={styles.preHintBody}>
+                  La chaleur augmente ta FC de 10 à 20 bpm. Allure cible ajustée : +15 sec/km. Guide-toi sur ta FC, pas ton allure.
+                </ZoneText>
+                {sessionType === 'EF' ? (
+                  <ZoneText variant="caption" color={colors.accent.gold} style={styles.preHintHr}>
+                    FC cible : {heatHrTargetForEf().lower} à {heatHrTargetForEf().upper} bpm
+                  </ZoneText>
+                ) : null}
+              </View>
+              <View style={styles.preHint}>
+                <ZoneText variant="label" color={colors.text.primary} style={styles.preHintTitle}>
+                  Et ton test de niveau ?
+                </ZoneText>
+                <ZoneText variant="caption" color={colors.text.muted} style={styles.preHintBody}>
+                  La chaleur et la fatigue peuvent augmenter ta FC de 15 à 25 bpm. Si ton test a été fait dans ces conditions, ton VDOT est peut-être sous-estimé. Refais le test dans 3 à 4 semaines à jeun le matin pour calibrer précisément.
+                </ZoneText>
+              </View>
+            </>
           ) : null}
         </ScrollView>
         <View style={styles.footer}>
           <Button title="Démarrer la séance" onPress={onStart} />
         </View>
+
+        {/* First-time treadmill explainer. Fires on the first pick
+            of treadmill mode; subsequent runs see only the persistent
+            in-session "Inclinaison : 1 %" banner. */}
+        <Modal
+          visible={treadmillIntroVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={dismissTreadmillIntro}
+        >
+          <View style={styles.efBackdrop}>
+            <View style={styles.treadmillIntroCard}>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <TreadmillInclineCard />
+              </ScrollView>
+              <Button title="J'ai compris" onPress={dismissTreadmillIntro} />
+            </View>
+          </View>
+        </Modal>
       </SafeScreen>
     );
   }
@@ -863,7 +914,7 @@ export default function RunSessionScreen(): React.ReactElement {
       {location === 'treadmill' ? (
         <View style={styles.gpsBanner}>
           <ZoneText style={styles.gpsBannerText}>
-            ⚙️ Tapis roulant · inclinaison 1 %. Tu noteras la distance à la fin.
+            ⚙️ Inclinaison : 1 % recommandée
           </ZoneText>
         </View>
       ) : gps.permission === 'denied' ? (
@@ -1355,6 +1406,15 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.accent.gold,
+    padding: 20,
+  },
+  treadmillIntroCard: {
+    width: '100%',
+    maxHeight: '85%',
+    backgroundColor: colors.bg.elevated,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
     padding: 20,
   },
   efTitle: { fontSize: 22, letterSpacing: 1 },

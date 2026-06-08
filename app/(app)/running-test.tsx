@@ -44,6 +44,7 @@ import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Button } from '@/components/ui/Button';
+import { TreadmillInclineCard } from '@/components/TreadmillInclineCard';
 
 type TestType = 'cooper' | 'time_trial';
 type TrialDistance = 1000 | 2000 | 5000 | 10000;
@@ -575,24 +576,27 @@ function TimeTrialStep({
       </ZoneText>
 
       {!running && !done && !confirming ? (
-        <View style={styles.gpsToggleRow}>
-          <View style={styles.gpsToggleText}>
-            <ZoneText variant="label" color={colors.text.primary}>
-              Utiliser le GPS
-            </ZoneText>
-            <ZoneText variant="caption" color={colors.text.muted} style={styles.gpsToggleHint}>
-              {useGps
-                ? 'Distance mesurée par GPS, arrêt automatique.'
-                : 'Mode tapis / piste indoor : timer manuel.'}
-            </ZoneText>
+        <>
+          <View style={styles.gpsToggleRow}>
+            <View style={styles.gpsToggleText}>
+              <ZoneText variant="label" color={colors.text.primary}>
+                Utiliser le GPS
+              </ZoneText>
+              <ZoneText variant="caption" color={colors.text.muted} style={styles.gpsToggleHint}>
+                {useGps
+                  ? 'Distance mesurée par GPS, arrêt automatique.'
+                  : 'Mode tapis / piste indoor : timer manuel.'}
+              </ZoneText>
+            </View>
+            <Switch
+              value={useGps}
+              onValueChange={setUseGps}
+              trackColor={{ false: colors.border, true: colors.accent.gold }}
+              thumbColor={colors.bg.primary}
+            />
           </View>
-          <Switch
-            value={useGps}
-            onValueChange={setUseGps}
-            trackColor={{ false: colors.border, true: colors.accent.gold }}
-            thumbColor={colors.bg.primary}
-          />
-        </View>
+          {treadmillMode ? <TreadmillInclineCard /> : null}
+        </>
       ) : null}
 
       <View style={styles.timerCard}>
