@@ -9,9 +9,13 @@ import {
   getMuscleProfile,
   getRunningProfile,
   getUserProgram,
+  type RunningProfile,
   type TrainingSession,
 } from '@/lib/firestore';
 import { frenchShortDate } from '@/lib/frenchDate';
+import { raceLabel } from '@/lib/runningEngine';
+import { weeksUntilRace } from '@/lib/programmePhases';
+import type { RunningRaceDistance } from '@/lib/firestore';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
@@ -52,6 +56,69 @@ function sportOf(s: TrainingSession): { label: string; icon: string } {
   return { label: 'Haltéro', icon: '🏋️' };
 }
 
+function formatGoal(seconds: number, withHours: boolean): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (withHours) return `${h}h${m.toString().padStart(2, '0')}`;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function RunningCardTail({
+  profile,
+  showTestBanner,
+}: {
+  profile: RunningProfile | null;
+  showTestBanner: boolean;
+}): React.ReactElement {
+  const router = useRouter();
+  const raceDate = profile?.target_race_date ?? null;
+  const distance = (profile?.race_distance ?? profile?.reference_distance ?? null) as
+    | RunningRaceDistance
+    | null;
+  const goalSeconds = profile?.goal_time_seconds ?? 0;
+  const weeks = weeksUntilRace(raceDate);
+  const showHours = distance === 'semi' || distance === 'marathon';
+  return (
+    <View>
+      {distance && raceDate && weeks !== null ? (
+        <View style={styles.racePill}>
+          <ZoneText variant="caption" color={colors.accent.gold} style={styles.racePillText}>
+            🏁 {raceLabel(distance)} · Dans {weeks} sem
+            {goalSeconds > 0 ? ` · Objectif ${formatGoal(goalSeconds, showHours)}` : ''}
+          </ZoneText>
+        </View>
+      ) : null}
+      <TouchableOpacity
+        onPress={() => router.push('/(app)/race-goal')}
+        hitSlop={6}
+        activeOpacity={0.7}
+        style={styles.goalLink}
+      >
+        <ZoneText variant="caption" color={colors.accent.gold} style={styles.goalLinkText}>
+          {raceDate ? 'Modifier mon objectif →' : 'Configurer mon objectif →'}
+        </ZoneText>
+      </TouchableOpacity>
+      {showTestBanner ? (
+        <TouchableOpacity
+          onPress={() => router.push('/(app)/running-test')}
+          hitSlop={6}
+          activeOpacity={0.7}
+          style={styles.testBanner}
+        >
+          <ZoneText
+            variant="caption"
+            color={colors.accent.gold}
+            style={styles.testBannerText}
+          >
+            Calibre ton niveau avec un test →
+          </ZoneText>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
 export default function EntrainerScreen(): React.ReactElement {
   const router = useRouter();
   const { activeSession } = useSession();
@@ -59,6 +126,7 @@ export default function EntrainerScreen(): React.ReactElement {
   const [recent, setRecent] = useState<TrainingSession[]>([]);
   const [search, setSearch] = useState<string>('');
   const [runningCalibrated, setRunningCalibrated] = useState<boolean>(false);
+  const [runningProfile, setRunningProfile] = useState<RunningProfile | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
     const user = auth.currentUser;
@@ -86,6 +154,7 @@ export default function EntrainerScreen(): React.ReactElement {
           running.vdot > 0,
       ),
     );
+    setRunningProfile(running);
     setRecent(completed.slice(0, 5));
   }, []);
 
@@ -185,21 +254,11 @@ export default function EntrainerScreen(): React.ReactElement {
                     En savoir plus →
                   </ZoneText>
                 </TouchableOpacity>
-                {s.key === 'running' && isOn && !runningCalibrated ? (
-                  <TouchableOpacity
-                    onPress={() => router.push('/(app)/running-test')}
-                    hitSlop={6}
-                    activeOpacity={0.7}
-                    style={styles.testBanner}
-                  >
-                    <ZoneText
-                      variant="caption"
-                      color={colors.accent.gold}
-                      style={styles.testBannerText}
-                    >
-                      Calibre ton niveau avec un test →
-                    </ZoneText>
-                  </TouchableOpacity>
+                {s.key === 'running' && isOn ? (
+                  <RunningCardTail
+                    profile={runningProfile}
+                    showTestBanner={!runningCalibrated}
+                  />
                 ) : null}
               </View>
             );
@@ -376,6 +435,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   testBannerText: { fontSize: 11, fontFamily: 'Inter-Medium', textAlign: 'center' },
+  racePill: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    alignSelf: 'flex-start',
+  },
+  racePillText: { fontSize: 11, fontFamily: 'Inter-Bold', letterSpacing: 0.5 },
+  goalLink: { marginTop: 8, paddingVertical: 2 },
+  goalLinkText: { fontSize: 11, fontFamily: 'Inter-Medium' },
   emptyCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,

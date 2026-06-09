@@ -8,9 +8,10 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import Animated, { SlideInRight, SlideOutLeft } from 'react-native-reanimated';
-import { ArrowLeft, Minus, Plus } from 'lucide-react-native';
+import { ArrowLeft, ChevronRight, Minus, Plus } from 'lucide-react-native';
+import { frenchLongDate } from '@/lib/frenchDate';
 import { auth } from '@/lib/firebase';
 import {
   getRunningProfile,
@@ -144,54 +145,55 @@ export default function RunningSetupScreen(): React.ReactElement {
   // long-run preference, goal time, etc. Each field skips its
   // update if the athlete has already interacted with that input
   // (see `touched` ref) so the async prefill never overrides a
-  // manual choice.
-  useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const existing = await getRunningProfile(user.uid);
-        if (cancelled || !existing) return;
-        setState((s) => ({
-          ...s,
-          goal: touched.current.goal ? s.goal : (existing.goal || s.goal),
-          easyPaceSec: touched.current.pace
-            ? s.easyPaceSec
-            : (existing.easy_pace_sec_per_km || s.easyPaceSec),
-          hasReference: touched.current.reference
-            ? s.hasReference
-            : existing.reference_distance !== null,
-          refDistance: touched.current.reference
-            ? s.refDistance
-            : (existing.reference_distance ?? s.refDistance),
-          refTimeSeconds: touched.current.reference
-            ? s.refTimeSeconds
-            : (existing.reference_time_seconds ?? s.refTimeSeconds),
-          sessionsPerWeek: touched.current.sessions
-            ? s.sessionsPerWeek
-            : Number.isFinite(existing.sessions_per_week) &&
-                existing.sessions_per_week > 0
-              ? existing.sessions_per_week
-              : s.sessionsPerWeek,
-          longRunPref: touched.current.longRun
-            ? s.longRunPref
-            : (existing.long_run_pref ?? s.longRunPref),
-          raceDate: touched.current.raceDate
-            ? s.raceDate
-            : (existing.target_race_date ?? s.raceDate),
-          goalTimeSeconds: touched.current.goalTime
-            ? s.goalTimeSeconds
-            : (existing.goal_time_seconds ?? 0),
-        }));
-      } catch {
-        // best effort: keep defaults
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // manual choice. Runs on every focus so the race goal fields
+  // refresh when the athlete returns from /race-goal.
+  useFocusEffect(
+    React.useCallback(() => {
+      const user = auth.currentUser;
+      if (!user) return;
+      let cancelled = false;
+      void (async () => {
+        try {
+          const existing = await getRunningProfile(user.uid);
+          if (cancelled || !existing) return;
+          setState((s) => ({
+            ...s,
+            goal: touched.current.goal ? s.goal : (existing.goal || s.goal),
+            easyPaceSec: touched.current.pace
+              ? s.easyPaceSec
+              : (existing.easy_pace_sec_per_km || s.easyPaceSec),
+            hasReference: touched.current.reference
+              ? s.hasReference
+              : existing.reference_distance !== null,
+            refDistance: touched.current.reference
+              ? s.refDistance
+              : (existing.reference_distance ?? s.refDistance),
+            refTimeSeconds: touched.current.reference
+              ? s.refTimeSeconds
+              : (existing.reference_time_seconds ?? s.refTimeSeconds),
+            sessionsPerWeek: touched.current.sessions
+              ? s.sessionsPerWeek
+              : Number.isFinite(existing.sessions_per_week) &&
+                  existing.sessions_per_week > 0
+                ? existing.sessions_per_week
+                : s.sessionsPerWeek,
+            longRunPref: touched.current.longRun
+              ? s.longRunPref
+              : (existing.long_run_pref ?? s.longRunPref),
+            // raceDate / goalTimeSeconds are owned by /race-goal now: refresh
+            // unconditionally so the summary card reflects what's saved.
+            raceDate: existing.target_race_date ?? s.raceDate,
+            goalTimeSeconds: existing.goal_time_seconds ?? s.goalTimeSeconds,
+          }));
+        } catch {
+          // best effort: keep defaults
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
 
   const baseVdot = useMemo(
     () => vdotFromEasyPace(state.easyPaceSec),
@@ -236,6 +238,11 @@ export default function RunningSetupScreen(): React.ReactElement {
     setSaving(true);
     try {
       const adjustedVdot = Math.max(20, calibratedVdot + vdotGenderDelta(gender));
+      // Read the latest profile so anything written by /race-goal while the
+      // athlete was editing setup (race distance, target VDOT, programme
+      // phases) survives this save. setDoc replaces, so the merge has to
+      // happen in user-land.
+      const existing = await getRunningProfile(user.uid).catch(() => null);
       await saveRunningProfile(user.uid, {
         vdot: adjustedVdot,
         easy_pace_sec_per_km: state.easyPaceSec,
@@ -246,6 +253,11 @@ export default function RunningSetupScreen(): React.ReactElement {
         target_race_date: state.raceDate || null,
         long_run_pref: state.longRunPref,
         goal_time_seconds: state.goalTimeSeconds > 0 ? state.goalTimeSeconds : null,
+        race_distance: existing?.race_distance ?? null,
+        goal_vdot: existing?.goal_vdot ?? null,
+        programme_weeks: existing?.programme_weeks ?? null,
+        programme_start_date: existing?.programme_start_date ?? null,
+        ef_pace_adjustment: existing?.ef_pace_adjustment ?? null,
       });
       // Reconfiguring the sport restarts the programme queue from week 1.
       await resetSportWeek(user.uid, 'running').catch(() => undefined);
@@ -353,16 +365,8 @@ export default function RunningSetupScreen(): React.ReactElement {
                   setState((s) => ({ ...s, longRunPref: v }));
                 }}
                 raceDate={state.raceDate}
-                onRaceDate={(v) => {
-                  touched.current.raceDate = true;
-                  setState((s) => ({ ...s, raceDate: v }));
-                }}
                 refDistance={state.refDistance}
                 goalTimeSeconds={state.goalTimeSeconds}
-                onGoalTime={(v) => {
-                  touched.current.goalTime = true;
-                  setState((s) => ({ ...s, goalTimeSeconds: v }));
-                }}
                 paces={paces}
                 vdot={calibratedVdot}
               />
@@ -780,10 +784,8 @@ function OrganizeStep({
   longRunPref,
   onLongRunPref,
   raceDate,
-  onRaceDate,
   refDistance,
   goalTimeSeconds,
-  onGoalTime,
   paces,
   vdot,
 }: {
@@ -792,10 +794,8 @@ function OrganizeStep({
   longRunPref: LongRunPreference;
   onLongRunPref: (v: LongRunPreference) => void;
   raceDate: string;
-  onRaceDate: (v: string) => void;
   refDistance: RunningRaceDistance;
   goalTimeSeconds: number;
-  onGoalTime: (v: number) => void;
   paces: ReturnType<typeof calculateVDOTPaces>;
   vdot: number;
 }): React.ReactElement {
@@ -806,11 +806,6 @@ function OrganizeStep({
         : null,
     [goalTimeSeconds, refDistance],
   );
-  const [gh, gm, gs] = secondsToParts(goalTimeSeconds);
-  const setGoal = (h: number, m: number, s: number): void => {
-    const total = Math.max(0, h * 3600 + m * 60 + s);
-    onGoalTime(total);
-  };
   const showHours = refDistance === 'semi' || refDistance === 'marathon';
   return (
     <View>
@@ -884,75 +879,16 @@ function OrganizeStep({
       </View>
 
       <ZoneText variant="caption" color={colors.text.muted} style={styles.sectionLabel}>
-        DATE DE COURSE OBJECTIF (optionnel)
+        OBJECTIF DE COURSE
       </ZoneText>
-      <TextInput
-        value={raceDate}
-        onChangeText={onRaceDate}
-        placeholder="AAAA-MM-JJ"
-        placeholderTextColor={colors.text.muted}
-        autoCapitalize="none"
-        autoCorrect={false}
-        style={styles.raceInput}
-        selectionColor={colors.accent.gold}
+      <RaceGoalSummary
+        raceDate={raceDate}
+        goalTimeSeconds={goalTimeSeconds}
+        refDistance={refDistance}
+        showHours={showHours}
+        goalVdot={goalVdot}
+        vdot={vdot}
       />
-
-      <ZoneText variant="caption" color={colors.text.muted} style={styles.sectionLabel}>
-        OBJECTIF DE TEMPS · {raceLabel(refDistance)} (optionnel)
-      </ZoneText>
-      <View style={styles.timeRow}>
-        {showHours ? (
-          <TimePiece
-            value={gh}
-            onChange={(h) => setGoal(h, gm, gs)}
-            max={9}
-            suffix="h"
-          />
-        ) : null}
-        <TimePiece
-          value={gm}
-          onChange={(m) => setGoal(gh, m, gs)}
-          max={59}
-          suffix="min"
-        />
-        <TimePiece
-          value={gs}
-          onChange={(s) => setGoal(gh, gm, s)}
-          max={59}
-          suffix="sec"
-        />
-        {goalTimeSeconds > 0 ? (
-          <TouchableOpacity
-            onPress={() => onGoalTime(0)}
-            activeOpacity={0.7}
-            hitSlop={8}
-            style={styles.goalClear}
-          >
-            <ZoneText variant="caption" color={colors.text.muted}>
-              Je ne sais pas encore
-            </ZoneText>
-          </TouchableOpacity>
-        ) : null}
-      </View>
-
-      {goalVdot !== null && goalVdot > vdot ? (
-        <ZoneText
-          variant="caption"
-          color={colors.text.secondary}
-          style={styles.goalHint}
-        >
-          Pour courir {raceLabel(refDistance).toLowerCase()} en {formatGoalTime(goalTimeSeconds, showHours)}, il te faudra un VDOT d&apos;environ {goalVdot}. Ton VDOT actuel : {vdot}. Ton programme est calibré pour t&apos;amener à VDOT {goalVdot} en 12 semaines.
-        </ZoneText>
-      ) : null}
-      {goalVdot !== null && goalVdot <= vdot ? (
-        <ZoneText
-          variant="caption"
-          color={colors.text.secondary}
-          style={styles.goalHint}
-        >
-          Cet objectif est déjà à portée (VDOT cible {goalVdot}, ton VDOT actuel {vdot}). Le programme va te permettre de le confirmer en course.
-        </ZoneText>
-      ) : null}
 
       <View style={styles.pacesPreview}>
         <ZoneText variant="caption" color={colors.text.muted} style={styles.refLabel}>
@@ -976,6 +912,57 @@ function PaceRow({ label, value }: { label: string; value: string }): React.Reac
       </ZoneText>
       <ZoneText style={styles.paceRowValue}>{value}</ZoneText>
     </View>
+  );
+}
+
+function RaceGoalSummary({
+  raceDate,
+  goalTimeSeconds,
+  refDistance,
+  showHours,
+  goalVdot,
+  vdot,
+}: {
+  raceDate: string;
+  goalTimeSeconds: number;
+  refDistance: RunningRaceDistance;
+  showHours: boolean;
+  goalVdot: number | null;
+  vdot: number;
+}): React.ReactElement {
+  const router = useRouter();
+  const hasGoal = raceDate.length > 0 || goalTimeSeconds > 0;
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={() => router.push('/(app)/race-goal')}
+      style={styles.goalCard}
+    >
+      <View style={styles.goalCardMain}>
+        {hasGoal ? (
+          <>
+            <ZoneText variant="titleSm" color={colors.text.primary}>
+              {raceDate ? frenchLongDate(raceDate) : `${raceLabel(refDistance)}`}
+            </ZoneText>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.goalCardSub}>
+              {raceLabel(refDistance)}
+              {goalTimeSeconds > 0 ? ` · objectif ${formatGoalTime(goalTimeSeconds, showHours)}` : ''}
+              {goalVdot !== null ? ` · VDOT requis ${goalVdot} (actuel ${vdot})` : ''}
+            </ZoneText>
+          </>
+        ) : (
+          <>
+            <ZoneText variant="titleSm" color={colors.text.primary}>
+              Configurer mon objectif
+            </ZoneText>
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.goalCardSub}>
+              Date de course, temps visé et calibrage du programme.
+            </ZoneText>
+          </>
+        )}
+      </View>
+      <ChevronRight size={18} color={colors.accent.gold} />
+    </TouchableOpacity>
   );
 }
 
@@ -1150,25 +1137,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  raceInput: {
-    backgroundColor: colors.bg.elevated,
+  goalCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.bg.card,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: colors.text.primary,
-    fontFamily: 'Inter-Regular',
-    fontSize: 14,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  goalClear: { marginLeft: 12, paddingVertical: 8 },
-  goalHint: {
-    marginTop: 12,
-    backgroundColor: `${colors.accent.gold}10`,
-    borderRadius: 10,
-    padding: 12,
-    lineHeight: 18,
-  },
+  goalCardMain: { flex: 1 },
+  goalCardSub: { marginTop: 4, lineHeight: 16 },
   pacesPreview: {
     marginTop: 18,
     backgroundColor: colors.bg.card,

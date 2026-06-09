@@ -441,6 +441,7 @@ export default function AujourdhuiScreen(): React.ReactElement {
   const bonusAvailable = Boolean(program || runningProfile || muscleProfile);
   const zoneLevel = score !== null ? getZoneLevel(score) : null;
   const raceWeeks = weeksUntil(hyroxProfile?.target_race_date ?? null);
+  const runningRaceWeeks = weeksUntil(runningProfile?.target_race_date ?? null);
 
   const cardSubtitle = useCallback(
     (item: QueueItem): string => {
@@ -518,6 +519,11 @@ export default function AujourdhuiScreen(): React.ReactElement {
               }
               if (!slot) return null;
               const item = slot;
+              const urgentRunning =
+                sport === 'running' &&
+                runningRaceWeeks !== null &&
+                runningRaceWeeks > 0 &&
+                runningRaceWeeks < 8;
               return (
                 <View
                   key={sport}
@@ -537,6 +543,16 @@ export default function AujourdhuiScreen(): React.ReactElement {
                         <ZoneText variant="caption" color={colors.text.muted}>
                           {cardSubtitle(item)}
                         </ZoneText>
+                        {urgentRunning ? (
+                          <ZoneText
+                            variant="caption"
+                            color={colors.orbe.amber}
+                            style={styles.urgencyNote}
+                          >
+                            🏁 Course dans {runningRaceWeeks} semaine
+                            {runningRaceWeeks > 1 ? 's' : ''} · ne lâche pas
+                          </ZoneText>
+                        ) : null}
                       </View>
                     </View>
                   </TouchableOpacity>
@@ -875,6 +891,7 @@ const styles = StyleSheet.create({
   zoneStripScore: { color: colors.text.primary },
   zoneStripStatus: { flex: 1 },
   raceLineTop: { marginTop: 2, marginBottom: 16, lineHeight: 16 },
+  urgencyNote: { marginTop: 4, fontFamily: 'Inter-Bold' },
   sectionHeader: {
     fontFamily: 'Syne-Bold',
     fontSize: 13,

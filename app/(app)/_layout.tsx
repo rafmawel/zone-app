@@ -34,6 +34,7 @@ export default function AppLayout(): React.ReactElement {
       <Stack.Screen name="strength-test" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="skip-week" options={{ animation: 'slide_from_bottom' }} />
       <Stack.Screen name="programme-overview" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="race-goal" options={{ animation: 'slide_from_right' }} />
     </Stack>
   );
 }
