@@ -36,6 +36,11 @@ export interface QueueItem {
   block: number;
   week: number;
   runningType?: RunningSessionType;
+  /** Mirror the weekly-template flags so the launch-time build matches the
+   *  preview-time build (otherwise EF strides / recovery would silently
+   *  disappear on tap). */
+  runningWithStrides?: boolean;
+  runningRecovery?: boolean;
   hyroxType?: HyroxSessionType;
 }
 
@@ -146,19 +151,31 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
       ),
     );
     const dist = getWeeklyDistribution(runPerWeek, 1, 1);
-    const types = dist.items
-      .filter((i) => i.type !== 'REST')
-      .map((i) => i.type as RunningSessionType);
+    const slots = dist.items.filter((i) => i.type !== 'REST');
+    const goalDistance = runningProfile.reference_distance ?? undefined;
+    const goalTimeSeconds = runningProfile.goal_time_seconds ?? undefined;
     for (let w = 1; w <= weeks; w += 1) {
-      types.forEach((t, idx) => {
+      slots.forEach((slot, idx) => {
         const s = idx + 1;
-        const plan = buildSessionPlan({ type: t, paces, level, block: 1, week: 1 });
+        const t = slot.type as RunningSessionType;
+        const plan = buildSessionPlan({
+          type: t,
+          paces,
+          level,
+          block: 1,
+          week: 1,
+          withStrides: slot.withStrides,
+          recovery: slot.recovery,
+          goalDistance,
+          goalTimeSeconds,
+        });
+        const labelSuffix = slot.recovery && t === 'EF' ? ' · récup' : slot.withStrides && t === 'EF' ? ' + foulées' : '';
         perSport.running.push({
           key: queueKey('running', w, s),
           sport: 'running',
           weekNumber: w,
           sessionIndex: s,
-          name: `${sessionName(t)} · ${plan.estimatedDistanceKm} km`,
+          name: `${sessionName(t)}${labelSuffix} · ${plan.estimatedDistanceKm} km`,
           exercises: [`${plan.estimatedDistanceKm} km`, sessionName(t)],
           estimatedMinutes: plan.estimatedDurationMin,
           status: 'locked',
@@ -166,6 +183,8 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
           block: 1,
           week: 1,
           runningType: t,
+          runningWithStrides: slot.withStrides,
+          runningRecovery: slot.recovery,
         });
       });
     }

@@ -1,6 +1,20 @@
 export type RaceDistance = '5km' | '10km' | 'semi' | 'marathon';
 
-export type RunningSessionType = 'EF' | 'SL' | 'TC' | 'TB' | 'IV' | 'RV' | 'RA';
+// Codes line up with Jack Daniels' VDOT zones (E/T/I/R) plus French shorthand
+// for the supporting work that doesn't sit on a Daniels zone:
+//   CO = Côtes (hill repeats, Block 1 strength work)
+//   AS = Allure spécifique (race-pace work, Block 3)
+//   RA = Récupération active (kept for compatibility, used by bonus cardio)
+export type RunningSessionType =
+  | 'EF'
+  | 'SL'
+  | 'TC'
+  | 'TB'
+  | 'IV'
+  | 'RV'
+  | 'RA'
+  | 'CO'
+  | 'AS';
 
 export interface VDOTPaces {
   E_slow: number;
@@ -155,6 +169,8 @@ const SESSION_NAMES: Record<RunningSessionType, string> = {
   IV: 'INTERVALLES VO2MAX',
   RV: 'RÉPÉTITIONS VITESSE',
   RA: 'RÉCUPÉRATION ACTIVE',
+  CO: 'CÔTES',
+  AS: 'ALLURE SPÉCIFIQUE',
 };
 
 const SESSION_PURPOSES: Record<RunningSessionType, string> = {
@@ -165,6 +181,8 @@ const SESSION_PURPOSES: Record<RunningSessionType, string> = {
   IV: 'VO2max. Adaptation cardiaque maximale.',
   RV: 'Économie de course, vitesse et neuromusculaire.',
   RA: 'Récupération active, circulation, élimination lactique.',
+  CO: 'Force, puissance et économie de foulée par le travail en côte.',
+  AS: 'Spécificité d’allure de course, neuromusculaire et mental.',
 };
 
 const SESSION_RPE: Record<RunningSessionType, string> = {
@@ -175,6 +193,8 @@ const SESSION_RPE: Record<RunningSessionType, string> = {
   IV: 'RPE 9/10',
   RV: 'RPE 10/10',
   RA: 'RPE 1-2/10',
+  CO: 'RPE 8/10',
+  AS: 'RPE 7-8/10',
 };
 
 export function sessionName(type: RunningSessionType): string {
@@ -197,6 +217,43 @@ export interface BuildSessionParams {
   week: WeekIndexRunning;
   /** Autoregulation multiplier on target paces (<1 faster, >1 slower). */
   paceFactor?: number;
+  /** Append 4 × 20 s @ R + 60 s walk strides to the EF run. */
+  withStrides?: boolean;
+  /** Mark an EF as the recovery slot: shorter and slower than baseline. */
+  recovery?: boolean;
+  /** Goal race distance — drives race-pace selection for AS / Block 3 IV. */
+  goalDistance?: RaceDistance;
+  /** Goal finishing time in seconds; when set, race pace is derived from
+   *  goal_time / distance instead of from VDOT zones. */
+  goalTimeSeconds?: number;
+}
+
+/**
+ * Resolve the target race pace (sec / km) for race-specific work.
+ *
+ * Order of precedence:
+ *   1. Explicit `goalTimeSeconds` + `goalDistance` (athlete's actual goal)
+ *   2. Daniels zone matching the goal distance (M for marathon/semi,
+ *      T for 10 km, I for 5 km)
+ *   3. Threshold pace as a sensible fallback
+ */
+function racePace(
+  paces: VDOTPaces,
+  goalDistance: RaceDistance | undefined,
+  goalTimeSeconds: number | undefined,
+): number {
+  if (
+    goalTimeSeconds &&
+    goalTimeSeconds > 0 &&
+    goalDistance &&
+    RACE_METERS[goalDistance]
+  ) {
+    return Math.round(goalTimeSeconds / (RACE_METERS[goalDistance] / 1000));
+  }
+  if (!goalDistance) return paces.T;
+  if (goalDistance === '5km') return paces.I;
+  if (goalDistance === '10km') return paces.T;
+  return paces.M;
 }
 
 /**
@@ -278,24 +335,60 @@ function steady(label: string, minutes: number, pace: number | null): RunningSes
   };
 }
 
-function warmup(paces: VDOTPaces): RunningSessionStep {
+function warmup(paces: VDOTPaces, minutes: number = 12): RunningSessionStep {
   return {
     kind: 'warmup',
     label: 'Échauffement',
-    durationSeconds: 12 * 60,
+    durationSeconds: minutes * 60,
     targetPaceSecPerKm: paces.E_slow,
     distanceMeters: null,
   };
 }
 
-function cooldown(paces: VDOTPaces): RunningSessionStep {
+function cooldown(paces: VDOTPaces, minutes: number = 10): RunningSessionStep {
   return {
     kind: 'cooldown',
     label: 'Retour au calme',
-    durationSeconds: 8 * 60,
+    durationSeconds: minutes * 60,
     targetPaceSecPerKm: paces.E_slow,
     distanceMeters: null,
   };
+}
+
+/**
+ * 4 × 20 s @ R pace + 60 s walk between, smooth acceleration. Used as the
+ * tail of an EF (Block 1 strides) and inside the quality warm-up.
+ */
+function stridesBlock(paces: VDOTPaces, reps: number = 4): RunningSessionStep[] {
+  const steps: RunningSessionStep[] = [];
+  for (let i = 1; i <= reps; i += 1) {
+    steps.push({
+      kind: 'work',
+      label: `Foulée ${i}/${reps} · 20 s`,
+      durationSeconds: 20,
+      targetPaceSecPerKm: paces.R,
+      distanceMeters: null,
+    });
+    if (i < reps) {
+      steps.push({
+        kind: 'recovery',
+        label: 'Marche 60 s',
+        durationSeconds: 60,
+        targetPaceSecPerKm: paces.E_slow + 120,
+        distanceMeters: null,
+      });
+    }
+  }
+  return steps;
+}
+
+/**
+ * Daniels' canonical quality warm-up: 15 min easy + 4 strides. Strides
+ * activate neuromuscular pathways before the main set without piling
+ * fatigue, so the first interval doesn't feel like cold-start work.
+ */
+function qualityWarmup(paces: VDOTPaces): RunningSessionStep[] {
+  return [warmup(paces, 15), ...stridesBlock(paces, 4)];
 }
 
 function workStep(label: string, minutes: number, pace: number): RunningSessionStep {
@@ -305,6 +398,16 @@ function workStep(label: string, minutes: number, pace: number): RunningSessionS
     durationSeconds: minutes * 60,
     targetPaceSecPerKm: pace,
     distanceMeters: null,
+  };
+}
+
+function workDistance(label: string, meters: number, pace: number): RunningSessionStep {
+  return {
+    kind: 'work',
+    label,
+    durationSeconds: null,
+    targetPaceSecPerKm: pace,
+    distanceMeters: meters,
   };
 }
 
@@ -318,25 +421,13 @@ function recoveryStep(minutes: number, pace: number): RunningSessionStep {
   };
 }
 
-function reps200(count: number, pace: number, paces: VDOTPaces): RunningSessionStep[] {
-  const steps: RunningSessionStep[] = [];
-  for (let i = 1; i <= count; i += 1) {
-    steps.push({
-      kind: 'work',
-      label: `Répétition ${i}/${count} · 200 m`,
-      durationSeconds: null,
-      targetPaceSecPerKm: pace,
-      distanceMeters: 200,
-    });
-    steps.push({
-      kind: 'recovery',
-      label: 'Récupération marchée 200 m',
-      durationSeconds: null,
-      targetPaceSecPerKm: paces.E_slow + 60,
-      distanceMeters: 200,
-    });
-  }
-  return steps;
+/**
+ * Equal work-to-rest interval recovery (1:1) — Daniels' rule for VO2max
+ * reps. For 1000 m at I pace ≈ rep duration in minutes.
+ */
+function intervalRest(repMeters: number, pace: number, paces: VDOTPaces): RunningSessionStep {
+  const repSec = (repMeters / 1000) * pace;
+  return recoveryStep(Math.max(1, Math.round(repSec / 60)), paces.E_slow);
 }
 
 function durationOfSteps(steps: RunningSessionStep[]): number {
@@ -368,67 +459,200 @@ function distanceOfSteps(steps: RunningSessionStep[]): number {
 }
 
 export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan {
-  const { type, paces, level } = params;
+  const { type, paces, level, block } = params;
   let steps: RunningSessionStep[] = [];
   let message = '';
 
   switch (type) {
     case 'EF': {
-      const minutes = level === 'beginner' ? 35 : level === 'intermediate' ? 50 : 60;
-      steps = [steady('Endurance fondamentale', minutes, paces.E_fast)];
-      message = 'Allure conversationnelle. Tu peux tenir un dialogue complet.';
+      const isRecovery = params.recovery === true;
+      const baseMinutes = isRecovery
+        ? level === 'beginner'
+          ? 25
+          : level === 'intermediate'
+            ? 35
+            : 40
+        : level === 'beginner'
+          ? 35
+          : level === 'intermediate'
+            ? 50
+            : 60;
+      const efPace = isRecovery ? paces.E_slow : paces.E_fast;
+      steps = [
+        steady(
+          isRecovery ? 'Endurance · récupération' : 'Endurance fondamentale',
+          baseMinutes,
+          efPace,
+        ),
+      ];
+      if (params.withStrides && !isRecovery) {
+        steps.push(...stridesBlock(paces, 4));
+      }
+      if (isRecovery) {
+        message =
+          'Récupération sur jambes. Plus lent que ton EF classique, le corps absorbe la séance d’hier.';
+      } else if (params.withStrides) {
+        message =
+          'Allure conversationnelle. Termine par 4 × 20 s de foulées vives mais relâchées : pas un sprint, une accélération propre.';
+      } else {
+        message = 'Allure conversationnelle. Tu peux tenir un dialogue complet.';
+      }
       break;
     }
     case 'SL': {
-      const minutes = level === 'beginner' ? 60 : level === 'intermediate' ? 80 : 100;
-      steps = [steady('Sortie longue', minutes, paces.E_slow)];
-      message = 'Reste sur le pied gauche du couloir. La distance se construit dans la patience.';
+      // 20-30 % of weekly volume. The last 20 minutes drop a notch
+      // (E_slow) so fatigue accumulates without breaking form.
+      const baseMinutes =
+        level === 'beginner' ? 60 : level === 'intermediate' ? 80 : 100;
+      const minutes = params.recovery
+        ? Math.round(baseMinutes * 0.75)
+        : baseMinutes;
+      const slowMinutes = Math.min(20, Math.round(minutes / 4));
+      const fastMinutes = Math.max(10, minutes - slowMinutes);
+      steps = [
+        steady('Sortie longue · allure facile', fastMinutes, paces.E_fast),
+        steady('Sortie longue · dernière partie', slowMinutes, paces.E_slow),
+      ];
+      message = params.recovery
+        ? 'Sortie longue allégée. On garde la routine sans casser les jambes.'
+        : 'Reste sur le pied gauche du couloir. Les 20 dernières minutes, lâche un peu l’allure : la fatigue se construit sans casser la foulée.';
       break;
     }
     case 'TC': {
-      const minutes = level === 'beginner' ? 20 : level === 'intermediate' ? 25 : 30;
-      steps = [warmup(paces), workStep(`Tempo continu ${minutes} min`, minutes, paces.T), cooldown(paces)];
-      message = 'Comfortably hard. Trois mots, pas une phrase complète.';
+      // 10-min warm-up + 20-40 min tempo + 10-min cool-down (Daniels T pace).
+      // Quality warm-up includes 4 strides to pre-activate the legs.
+      const minutes =
+        level === 'beginner' ? 20 : level === 'intermediate' ? 30 : 40;
+      steps = [
+        ...qualityWarmup(paces),
+        workStep(`Tempo continu · ${minutes} min`, minutes, paces.T),
+        cooldown(paces, 10),
+      ];
+      message =
+        'Comfortably hard. Trois mots, pas une phrase complète. Tiens la même allure du début à la fin.';
       break;
     }
     case 'TB': {
-      const blocks = level === 'beginner' ? 3 : level === 'intermediate' ? 4 : 4;
-      const blockMin = level === 'beginner' ? 8 : level === 'intermediate' ? 10 : 12;
-      steps = [warmup(paces)];
+      // Cruise intervals: 3-4 × 8-10 min @ T with 1-min rest (Daniels).
+      const blocks = level === 'beginner' ? 3 : 4;
+      const blockMin = level === 'beginner' ? 8 : 10;
+      steps = [...qualityWarmup(paces)];
       for (let i = 1; i <= blocks; i += 1) {
-        steps.push(workStep(`Bloc tempo ${i}/${blocks} · ${blockMin} min`, blockMin, paces.T));
-        if (i < blocks) steps.push(recoveryStep(3, paces.E_slow));
+        steps.push(
+          workStep(`Bloc tempo ${i}/${blocks} · ${blockMin} min`, blockMin, paces.T),
+        );
+        if (i < blocks) steps.push(recoveryStep(1, paces.E_slow));
       }
-      steps.push(cooldown(paces));
-      message = 'Le seuil par paliers. Garde la même allure sur chaque bloc.';
+      steps.push(cooldown(paces, 10));
+      message = 'Le seuil par paliers. Garde la même allure sur chaque bloc, 1 min de jog entre.';
       break;
     }
     case 'IV': {
-      const reps = level === 'beginner' ? 4 : level === 'intermediate' ? 5 : 6;
-      const workMin = level === 'beginner' ? 2 : 3;
-      steps = [warmup(paces)];
-      for (let i = 1; i <= reps; i += 1) {
-        steps.push(workStep(`Intervalle ${i}/${reps} · ${workMin} min`, workMin, paces.I));
-        steps.push(recoveryStep(workMin, paces.E_slow));
+      // Block 3: race-pace 800 m intervals (5-6 × 800 m, 2 min rest).
+      // Block 1/2: classic VO2max 1000 m reps at I pace, 1:1 rest.
+      if (block === 3) {
+        const reps =
+          level === 'beginner' ? 4 : level === 'intermediate' ? 5 : 6;
+        const pace = racePace(paces, params.goalDistance, params.goalTimeSeconds);
+        steps = [...qualityWarmup(paces)];
+        for (let i = 1; i <= reps; i += 1) {
+          steps.push(
+            workDistance(`Intervalle ${i}/${reps} · 800 m allure course`, 800, pace),
+          );
+          if (i < reps) steps.push(recoveryStep(2, paces.E_slow));
+        }
+        steps.push(cooldown(paces, 10));
+        message =
+          'Intervalles à l’allure visée. Sens la cadence et la position du corps, pas la souffrance.';
+      } else {
+        const reps =
+          level === 'beginner' ? 3 : level === 'intermediate' ? 4 : 5;
+        steps = [...qualityWarmup(paces)];
+        for (let i = 1; i <= reps; i += 1) {
+          steps.push(workDistance(`Intervalle ${i}/${reps} · 1000 m`, 1000, paces.I));
+          if (i < reps) steps.push(intervalRest(1000, paces.I, paces));
+        }
+        steps.push(cooldown(paces, 10));
+        message = 'VO2max. Les premiers intervalles paraissent faciles, ne te grille pas.';
       }
-      steps.push(cooldown(paces));
-      message = 'VO2max. Les premiers intervalles paraissent faciles, ne te grille pas.';
       break;
     }
     case 'RV': {
-      const reps = level === 'beginner' ? 8 : level === 'intermediate' ? 10 : 12;
-      steps = [warmup(paces), ...reps200(reps, paces.R, paces), cooldown(paces)];
-      message = 'Court mais sec. Récupère complètement entre chaque répétition.';
+      // 6-10 × 200 m or 4-6 × 400 m @ R, with 2-3 min rest between reps.
+      const distance = level === 'advanced' ? 400 : 200;
+      const reps =
+        level === 'beginner' ? 6 : level === 'intermediate' ? 8 : 5;
+      const restMin = level === 'beginner' ? 2 : 3;
+      steps = [...qualityWarmup(paces)];
+      for (let i = 1; i <= reps; i += 1) {
+        steps.push(workDistance(`Répétition ${i}/${reps} · ${distance} m`, distance, paces.R));
+        if (i < reps) steps.push(recoveryStep(restMin, paces.E_slow + 90));
+      }
+      steps.push(cooldown(paces, 10));
+      message = 'Court mais sec. Récupère complètement entre chaque répétition, allure vive mais détendue.';
       break;
     }
     case 'RA': {
       const minutes = 25;
-      steps = [
-        steady('Récupération active', minutes, paces.E_slow + 45),
-      ];
+      steps = [steady('Récupération active', minutes, paces.E_slow + 45)];
       message = 'Plus lent que ton allure facile. Si ça ressemble à un effort, ralentis.';
       break;
     }
+    case 'CO': {
+      // Block 1 strength session. 60-90 s uphill at ~I effort, walk down
+      // recovery. Builds running-specific strength and stride power without
+      // the impact cost of flat speed work.
+      const reps =
+        level === 'beginner' ? 6 : level === 'intermediate' ? 8 : 10;
+      steps = [...qualityWarmup(paces)];
+      for (let i = 1; i <= reps; i += 1) {
+        steps.push({
+          kind: 'work',
+          label: `Côte ${i}/${reps} · 75 s en montée`,
+          durationSeconds: 75,
+          targetPaceSecPerKm: paces.I,
+          distanceMeters: null,
+        });
+        steps.push({
+          kind: 'recovery',
+          label: 'Marche descente · 90 s',
+          durationSeconds: 90,
+          targetPaceSecPerKm: paces.E_slow + 120,
+          distanceMeters: null,
+        });
+      }
+      steps.push(cooldown(paces, 10));
+      message =
+        'Pousse contre la pente avec une foulée courte et active. Récupère complètement à la descente.';
+      break;
+    }
+    case 'AS': {
+      // Race-pace continuous block. Pace comes from goal time when set,
+      // otherwise from the Daniels zone matching the goal distance.
+      const minutes =
+        level === 'beginner' ? 20 : level === 'intermediate' ? 25 : 30;
+      const pace = racePace(paces, params.goalDistance, params.goalTimeSeconds);
+      steps = [
+        ...qualityWarmup(paces),
+        workStep(`Allure spécifique · ${minutes} min`, minutes, pace),
+        cooldown(paces, 10),
+      ];
+      message =
+        'Ancre l’allure de course dans le corps. Cadence stable, foulée économique, respiration maîtrisée.';
+      break;
+    }
+  }
+
+  // Weave the athlete's goal target into the session message so each
+  // workout is explicitly framed against the race they're preparing for.
+  if (
+    params.goalTimeSeconds &&
+    params.goalTimeSeconds > 0 &&
+    params.goalDistance
+  ) {
+    const goalLabel = RACE_LABEL[params.goalDistance];
+    const goalTime = formatElapsed(params.goalTimeSeconds);
+    message += ` Cette sortie te prépare pour ${goalTime} au ${goalLabel.toLowerCase()}.`;
   }
 
   const factor = params.paceFactor ?? 1;
@@ -466,40 +690,58 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
 export interface WeeklyPlanItem {
   dayIndex: number;
   type: RunningSessionType | 'REST';
+  /** Append 4 × 20 s strides at R pace after the EF run. */
+  withStrides?: boolean;
+  /** EF / SL slot used as a deliberate recovery day (shorter, slower). */
+  recovery?: boolean;
 }
 
 export interface WeeklyPlan {
   items: WeeklyPlanItem[];
 }
 
-function templateForBlock(block: ProgramBlockRunning, sessions: number): RunningSessionType[] {
+// Per-block weekly templates. Each entry can carry strides / recovery
+// flags that propagate into the build call so the session label and pace
+// match what the athlete actually opens.
+type TemplateSlot = {
+  type: RunningSessionType;
+  withStrides?: boolean;
+  recovery?: boolean;
+};
+
+function templateForBlock(block: ProgramBlockRunning, sessions: number): TemplateSlot[] {
   const s = Math.max(2, Math.min(6, sessions));
+  const EFs: TemplateSlot = { type: 'EF', withStrides: true };
+  const EFr: TemplateSlot = { type: 'EF', recovery: true };
   if (block === 1) {
-    const map: Record<number, RunningSessionType[]> = {
-      2: ['EF', 'SL'],
-      3: ['EF', 'EF', 'SL'],
-      4: ['EF', 'EF', 'TC', 'SL'],
-      5: ['EF', 'EF', 'TC', 'EF', 'SL'],
-      6: ['EF', 'EF', 'TC', 'EF', 'RA', 'SL'],
+    // Base aérobie: all easy + strides + hill repeats. No threshold work.
+    const map: Record<number, TemplateSlot[]> = {
+      2: [EFs, { type: 'SL' }],
+      3: [EFs, EFr, { type: 'SL' }],
+      4: [EFs, { type: 'CO' }, EFr, { type: 'SL' }],
+      5: [EFs, { type: 'CO' }, EFr, EFs, { type: 'SL' }],
+      6: [EFs, { type: 'CO' }, EFr, EFs, { type: 'RA' }, { type: 'SL' }],
     };
     return map[s];
   }
   if (block === 2) {
-    const map: Record<number, RunningSessionType[]> = {
-      2: ['IV', 'SL'],
-      3: ['EF', 'IV', 'SL'],
-      4: ['EF', 'IV', 'TC', 'SL'],
-      5: ['EF', 'IV', 'EF', 'TC', 'SL'],
-      6: ['EF', 'IV', 'EF', 'TC', 'RA', 'SL'],
+    // Développement: threshold + VO2max introduced, easy volume preserved.
+    const map: Record<number, TemplateSlot[]> = {
+      2: [{ type: 'TC' }, { type: 'SL' }],
+      3: [EFs, { type: 'TC' }, { type: 'SL' }],
+      4: [EFs, { type: 'IV' }, EFr, { type: 'SL' }],
+      5: [EFs, { type: 'IV' }, EFr, { type: 'TC' }, { type: 'SL' }],
+      6: [EFs, { type: 'IV' }, EFr, { type: 'TC' }, { type: 'RA' }, { type: 'SL' }],
     };
     return map[s];
   }
-  const map: Record<number, RunningSessionType[]> = {
-    2: ['TC', 'SL'],
-    3: ['EF', 'TC', 'SL'],
-    4: ['EF', 'IV', 'RV', 'SL'],
-    5: ['EF', 'IV', 'EF', 'RV', 'SL'],
-    6: ['EF', 'IV', 'EF', 'TC', 'RV', 'SL'],
+  // Spécificité: race-pace work front and centre.
+  const map: Record<number, TemplateSlot[]> = {
+    2: [{ type: 'AS' }, { type: 'SL' }],
+    3: [EFs, { type: 'AS' }, { type: 'SL' }],
+    4: [EFs, { type: 'IV' }, EFr, { type: 'SL' }],
+    5: [EFs, { type: 'IV' }, EFr, { type: 'AS' }, { type: 'SL' }],
+    6: [EFs, { type: 'IV' }, EFr, { type: 'AS' }, { type: 'RA' }, { type: 'SL' }],
   };
   return map[s];
 }
@@ -512,6 +754,15 @@ const DAY_LAYOUT: Record<number, number[]> = {
   6: [0, 1, 2, 3, 5, 6],
 };
 
+const QUALITY_TYPES: ReadonlySet<RunningSessionType> = new Set([
+  'IV',
+  'RV',
+  'TC',
+  'TB',
+  'CO',
+  'AS',
+]);
+
 export function getWeeklyDistribution(
   sessionsPerWeek: number,
   block: ProgramBlockRunning,
@@ -520,15 +771,31 @@ export function getWeeklyDistribution(
   const sessions = Math.max(2, Math.min(6, sessionsPerWeek));
   const seq = templateForBlock(block, sessions);
   const days = DAY_LAYOUT[sessions] ?? [0, 2, 4, 6];
-  // Deload: turn one quality session into EF
+  // Deload week: swap quality work for a recovery EF; trim the long run.
   const deload = week === 4;
-  const adjusted = deload
-    ? seq.map((s) => (s === 'IV' || s === 'RV' || s === 'TC' || s === 'TB' ? 'EF' : s))
+  const adjusted: TemplateSlot[] = deload
+    ? seq.map((slot) => {
+        if (QUALITY_TYPES.has(slot.type)) {
+          return { type: 'EF', recovery: true };
+        }
+        if (slot.type === 'SL') return { type: 'SL', recovery: true };
+        return slot;
+      })
     : seq;
   const items: WeeklyPlanItem[] = [];
   for (let d = 0; d < 7; d += 1) {
-    const slot = days.indexOf(d);
-    items.push({ dayIndex: d, type: slot === -1 ? 'REST' : (adjusted[slot] ?? 'EF') });
+    const slotIdx = days.indexOf(d);
+    if (slotIdx === -1) {
+      items.push({ dayIndex: d, type: 'REST' });
+      continue;
+    }
+    const slot = adjusted[slotIdx] ?? { type: 'EF' };
+    items.push({
+      dayIndex: d,
+      type: slot.type,
+      withStrides: slot.withStrides,
+      recovery: slot.recovery,
+    });
   }
   return { items };
 }

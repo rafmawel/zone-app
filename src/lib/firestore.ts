@@ -163,7 +163,7 @@ export interface ExerciseMax {
 }
 
 export type RunningRaceDistance = '5km' | '10km' | 'semi' | 'marathon';
-export type RunningSessionType = 'EF' | 'SL' | 'TC' | 'TB' | 'IV' | 'RV' | 'RA';
+export type RunningSessionType = 'EF' | 'SL' | 'TC' | 'TB' | 'IV' | 'RV' | 'RA' | 'CO' | 'AS';
 export type RunningSessionStatus = 'planned' | 'completed' | 'skipped';
 export type Weekday =
   | 'lundi'
@@ -186,6 +186,16 @@ export interface RunningProfile {
   long_run_pref: LongRunPreference;
   /** Goal finishing time in seconds for the target race. */
   goal_time_seconds?: number | null;
+  /** Goal race distance (distinct from `reference_distance`, which is a past
+   *  performance used to calibrate VDOT). */
+  race_distance?: RunningRaceDistance | null;
+  /** VDOT required to hit `goal_time_seconds` over `race_distance`. */
+  goal_vdot?: number | null;
+  /** Phase-aware programme length in weeks (base + dev + spec + taper). */
+  programme_weeks?: number | null;
+  /** ISO date the programme started — used to render race countdowns and
+   *  position the athlete inside the phase plan. */
+  programme_start_date?: string | null;
   /**
    * Manual offset (sec/km) added to every EF target pace. Set after a
    * post-run prompt when the athlete's HR / RPE suggested the planned

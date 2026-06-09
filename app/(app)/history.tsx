@@ -317,8 +317,10 @@ function runTypeColor(t: RunningSessionType): string {
       return colors.orbe.blue;
     case 'TC':
     case 'TB':
+    case 'AS':
       return colors.orbe.amber;
     case 'IV':
+    case 'CO':
       return colors.orbe.red;
     case 'RV':
       return '#B074F0';
