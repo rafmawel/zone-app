@@ -633,6 +633,9 @@ export interface SessionExercisePreview {
   pct: number | null;
   weightKg: number | null;
   rpe: number | null;
+  /** When `reps` is a complex notation (e.g. "2+1"), how many complexes are
+   *  performed per set. Drives the "N × (X+Y)" render. */
+  complexes?: number;
   /** When set, replaces the "N séries × R reps" rendering (complexes, max-out). */
   display?: string;
 }
@@ -720,6 +723,10 @@ function buildWeightliftingSession(params: GenerateParams): BuiltWeightliftingSe
     const rest = restForRole(m.role);
     const rpe = rpeForPct(pct);
     const repsLabel = m.toMax ? '1' : (m.repsLabel ?? String(reps));
+    // For complex prescriptions ("2+1") the integer rep count is the number
+    // of times the complex is performed per set — the multiplier in
+    // "N × (X+Y)". Plain numeric prescriptions don't carry a complex count.
+    const complexes = m.repsLabel && !m.toMax ? reps : undefined;
 
     const setList: PlannedSet[] = [];
     for (let i = 1; i <= sets; i += 1) {
@@ -730,6 +737,7 @@ function buildWeightliftingSession(params: GenerateParams): BuiltWeightliftingSe
         target_weight_kg: targetWeight,
         target_rpe: rpe,
         rest_seconds: rest,
+        ...(complexes !== undefined ? { target_complexes: complexes } : {}),
       });
     }
     exercises.push({ exercise_id: m.exercise_id, sets: setList });
@@ -740,6 +748,7 @@ function buildWeightliftingSession(params: GenerateParams): BuiltWeightliftingSe
       pct,
       weightKg: targetWeight,
       rpe,
+      complexes,
       display: m.display ?? (m.toMax ? 'montée à la max du jour' : undefined),
     });
   }

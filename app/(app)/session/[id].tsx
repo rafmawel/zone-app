@@ -163,7 +163,7 @@ export default function SessionScreen(): React.ReactElement {
         ? currentSet.target_weight_kg
         : 0,
     );
-    setActualReps(parseTargetReps(currentSet.target_reps));
+    setActualReps(parseTargetReps(currentSet.target_reps, currentSet.target_complexes));
     setSetRpe(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exerciseIdx, setIdx, currentSet]);
@@ -517,7 +517,11 @@ function ExerciseHintSheet({
   );
 }
 
-function parseTargetReps(target: string): number {
+function parseTargetReps(target: string, complexes?: number): number {
+  // For complex prescriptions ("2+1") the rep counter defaults to the
+  // number of complexes performed, not the parsed first integer of the
+  // notation — otherwise "2+1" with 3 complexes would suggest 2.
+  if (complexes && complexes > 0) return complexes;
   if (!target) return 1;
   if (target.includes('s')) return 1;
   if (target.includes('-')) {
@@ -656,21 +660,68 @@ function buildRepOptions(target: number): number[] {
  * into one logged repetition. Surface a short explanation so the user
  * knows how to count.
  */
-function explainComplexReps(targetReps: string, exerciseId: string): string | null {
+interface ComplexParts {
+  a: number;
+  b: number;
+  labelA: string;
+  labelB: string;
+}
+
+function parseComplex(targetReps: string, exerciseId: string): ComplexParts | null {
   if (!targetReps.includes('+')) return null;
   const parts = targetReps.split('+').map((p) => p.trim());
   if (parts.length !== 2) return null;
-  const [aRaw, bRaw] = parts;
-  const a = parseInt(aRaw, 10);
-  const b = parseInt(bRaw, 10);
+  const a = parseInt(parts[0], 10);
+  const b = parseInt(parts[1], 10);
   if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
   if (exerciseId === 'clean_and_jerk') {
-    return `${a}+${b} = ${a} épaulé${a > 1 ? 's' : ''} + ${b} jeté${b > 1 ? 's' : ''} · compte comme 1 répétition.`;
+    return { a, b, labelA: 'épaulé', labelB: 'jeté' };
   }
   if (exerciseId === 'snatch') {
-    return `${a}+${b} = ${a} arraché${a > 1 ? 's' : ''} + ${b} OHS · compte comme 1 répétition.`;
+    return { a, b, labelA: 'arraché', labelB: 'OHS' };
   }
-  return `${a}+${b} = ${a} mouvement${a > 1 ? 's' : ''} + ${b} enchaîné${b > 1 ? 's' : ''} · compte comme 1 répétition.`;
+  return { a, b, labelA: 'mouvement', labelB: 'enchaîné' };
+}
+
+function pluralize(label: string, n: number): string {
+  // Light French pluralisation: only the words used in complex labels.
+  if (n <= 1) return label;
+  if (label === 'OHS') return label;
+  return `${label}s`;
+}
+
+/**
+ * Olympic-lift notations like "2+1" or "3+2" pack multiple movements into one
+ * complex. When the prescription is N complexes per set, surface a full
+ * breakdown so the athlete knows what to count.
+ */
+function explainComplexReps(
+  targetReps: string,
+  exerciseId: string,
+  complexes?: number,
+): string | null {
+  const parts = parseComplex(targetReps, exerciseId);
+  if (!parts) return null;
+  const { a, b, labelA, labelB } = parts;
+  const aLabel = pluralize(labelA, a);
+  const bLabel = pluralize(labelB, b);
+  if (complexes && complexes > 1) {
+    const totalA = a * complexes;
+    const totalB = b * complexes;
+    return `${a}+${b} = ${a} ${aLabel} + ${b} ${bLabel} · à réaliser ${complexes} fois de suite = ${totalA} ${pluralize(labelA, totalA)} et ${totalB} ${pluralize(labelB, totalB)} au total.`;
+  }
+  return `${a}+${b} = ${a} ${aLabel} + ${b} ${bLabel} · compte comme 1 répétition.`;
+}
+
+/**
+ * Format the "Objectif" line: "{N} × ({X+Y}) reps" for complex prescriptions,
+ * plain `{reps} reps` otherwise.
+ */
+function formatObjective(targetReps: string, complexes?: number): string {
+  if (targetReps.includes('+') && complexes && complexes > 0) {
+    return `${complexes} × (${targetReps}) reps`;
+  }
+  return `${targetReps} reps`;
 }
 
 function formatWeight(v: number): string {
@@ -740,7 +791,7 @@ function WorkView({
   onDone: () => void;
   onShowInfo: () => void;
 }): React.ReactElement {
-  const target = parseTargetReps(plannedSet.target_reps);
+  const target = parseTargetReps(plannedSet.target_reps, plannedSet.target_complexes);
   const repOptions = buildRepOptions(target);
   const rirOptions: { label: string; rpe: number }[] = [
     { label: '0', rpe: 10 },
@@ -797,18 +848,25 @@ function WorkView({
           </TouchableOpacity>
         </View>
         <ZoneText variant="caption" color={colors.text.muted} style={styles.objective}>
-          Objectif: {plannedSet.target_reps} reps
+          Objectif: {formatObjective(plannedSet.target_reps, plannedSet.target_complexes)}
           {plannedSet.target_weight_kg ? ` · cible ${plannedSet.target_weight_kg} kg` : ''}
         </ZoneText>
-        {explainComplexReps(plannedSet.target_reps, plannedSet.exercise_id) ? (
-          <ZoneText
-            variant="caption"
-            color={colors.text.secondary}
-            style={styles.notationHint}
-          >
-            {explainComplexReps(plannedSet.target_reps, plannedSet.exercise_id)}
-          </ZoneText>
-        ) : null}
+        {(() => {
+          const hint = explainComplexReps(
+            plannedSet.target_reps,
+            plannedSet.exercise_id,
+            plannedSet.target_complexes,
+          );
+          return hint ? (
+            <ZoneText
+              variant="caption"
+              color={colors.text.secondary}
+              style={styles.notationHint}
+            >
+              {hint}
+            </ZoneText>
+          ) : null;
+        })()}
       </View>
 
       {/* Reps tap targets */}
@@ -978,9 +1036,10 @@ function RestView({
     strokeDashoffset: circumference * ringProgress.value,
   }));
 
+  const upcomingReps = formatObjective(nextSet.target_reps, nextSet.target_complexes);
   const upcomingLine = nextSet.target_weight_kg
-    ? `${nextSet.target_reps} reps @ ${nextSet.target_weight_kg} kg`
-    : `${nextSet.target_reps} reps`;
+    ? `${upcomingReps} @ ${nextSet.target_weight_kg} kg`
+    : upcomingReps;
 
   return (
     <View style={styles.restWrap}>

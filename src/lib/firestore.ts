@@ -96,6 +96,10 @@ export interface PlannedSet {
   target_weight_kg: number | null;
   target_rpe: number | null;
   rest_seconds: number;
+  /** When `target_reps` is a complex notation (e.g. "2+1"), the number of
+   *  times the complex is performed per set. Drives the "N × (X+Y)" display
+   *  on the session screen. Absent for simple prescriptions. */
+  target_complexes?: number;
 }
 
 export interface SessionExercise {
