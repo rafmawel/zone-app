@@ -31,6 +31,7 @@ import { getBlockName, projectProgram } from '@/lib/programEngine';
 import { createWeightliftingSession } from '@/lib/sessionLaunch';
 import {
   buildProgrammeQueue,
+  nextAvailableForSport,
   type QueueItem,
   type QueueStatus,
 } from '@/lib/programmeQueue';
@@ -221,24 +222,17 @@ export default function AujourdhuiScreen(): React.ReactElement {
     [program, maxes, runningProfile, muscleProfile, hyroxProfile, hyroxBlock, queueState],
   );
 
-  // First available item per sport across the visible queue window. If the
-  // sport has queue items but none available (everything in window is
-  // completed/skipped), surface 'complete'. If the sport isn't in the
-  // queue at all, it's null (not configured).
+  // First available item per sport across the visible queue window. Each
+  // sport is resolved in complete isolation through nextAvailableForSport;
+  // a stalled running week never holds the weightlifting card back, and
+  // vice-versa. Returns 'complete' when a sport has items but none are
+  // available (every visible week is done/skipped), and undefined when
+  // the sport isn't configured at all.
   const nextBySport = useMemo(() => {
     const out: Partial<Record<ScheduleSport, QueueItem | 'complete'>> = {};
     for (const sport of ALL_SPORTS) {
-      let hasItems = false;
-      let next: QueueItem | null = null;
-      for (const week of queueWeeks) {
-        for (const item of week) {
-          if (item.sport !== sport) continue;
-          hasItems = true;
-          if (!next && item.status === 'available') next = item;
-        }
-      }
-      if (next) out[sport] = next;
-      else if (hasItems) out[sport] = 'complete';
+      const slot = nextAvailableForSport(queueWeeks, sport);
+      if (slot) out[sport] = slot;
     }
     return out;
   }, [queueWeeks]);
