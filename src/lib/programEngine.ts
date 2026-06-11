@@ -238,6 +238,17 @@ export function prilepinAdjustSets(sets: number, reps: number, pct: number): num
   return s;
 }
 
+/**
+ * Sum the parts of a complex notation ("2+1" → 3 movements per complex).
+ * Used to convert "complexes per set" into "movement reps per set" for
+ * Prilepin volume checks.
+ */
+function complexMovements(label: string): number {
+  const parts = label.split('+').map((p) => parseInt(p, 10));
+  if (parts.some((n) => !Number.isFinite(n))) return 1;
+  return parts.reduce((a, b) => a + b, 0);
+}
+
 type MovementRole = 'main' | 'pull' | 'squat' | 'accessory';
 
 interface MovementBlueprint {
@@ -289,7 +300,7 @@ const BLOCK_SESSIONS: Record<ProgramBlock, SessionBlueprint[]> = {
     {
       name: 'Épaulé-jeté',
       movements: [
-        { exercise_id: 'clean_and_jerk', sets: 5, reps: 2, repsLabel: '2+1', pct: 70, role: 'main' },
+        { exercise_id: 'clean_and_jerk', sets: 5, reps: 1, repsLabel: '2+1', pct: 70, role: 'main' },
         { exercise_id: 'clean_pull', sets: 4, reps: 3, pct: 90, role: 'pull' },
         { exercise_id: 'back_squat_high', sets: 4, reps: 4, pct: 78, role: 'squat' },
         { exercise_id: 'snatch_balance', sets: 3, reps: 3, pct: 60, role: 'accessory' },
@@ -526,7 +537,10 @@ function levelizeSession(
       .map(substituteForBeginner);
     return pickBeginnerMovements(filtered).map((m) => ({
       ...m,
-      sets: Math.max(2, m.sets - 1),
+      // Main competition lifts keep full set count so volume hits Prilepin
+      // minimums (5 × 3 snatch, 5 × (2+1) clean & jerk). Pull / squat /
+      // accessories take the -1 to ease total beginner volume.
+      sets: m.role === 'main' ? m.sets : Math.max(2, m.sets - 1),
     }));
   }
   if (tier === 'advanced') {
@@ -633,6 +647,9 @@ export interface SessionExercisePreview {
   pct: number | null;
   weightKg: number | null;
   rpe: number | null;
+  /** When `reps` is a complex notation (e.g. "2+1"), how many complexes are
+   *  performed per set. Drives the "N × (X+Y)" render. */
+  complexes?: number;
   /** When set, replaces the "N séries × R reps" rendering (complexes, max-out). */
   display?: string;
 }
@@ -703,8 +720,17 @@ function buildWeightliftingSession(params: GenerateParams): BuiltWeightliftingSe
     // Deload weeks bypass Prilepin so the intended -50% volume is preserved.
     if (PRILEPIN_ENFORCED.has(m.exercise_id) && !m.toMax && !isDeload) {
       const zone = PRILEPIN[prilepinZoneForPct(pct)];
-      reps = Math.min(zone.maxPerSet, Math.max(zone.minPerSet, m.reps));
-      sets = prilepinAdjustSets(sets, reps, pct);
+      if (m.repsLabel) {
+        // For a complex prescription, `reps` is the number of complexes
+        // performed per set. The Prilepin total range counts movement reps,
+        // so multiply by the complex's movement count (e.g. "2+1" = 3).
+        // Skip per-set clamping — the structure is fixed by the complex.
+        const movementsPerSet = reps * complexMovements(m.repsLabel);
+        sets = prilepinAdjustSets(sets, movementsPerSet, pct);
+      } else {
+        reps = Math.min(zone.maxPerSet, Math.max(zone.minPerSet, m.reps));
+        sets = prilepinAdjustSets(sets, reps, pct);
+      }
     }
     if (m.toMax) {
       reps = 1;
@@ -720,6 +746,10 @@ function buildWeightliftingSession(params: GenerateParams): BuiltWeightliftingSe
     const rest = restForRole(m.role);
     const rpe = rpeForPct(pct);
     const repsLabel = m.toMax ? '1' : (m.repsLabel ?? String(reps));
+    // For complex prescriptions ("2+1") the integer rep count is the number
+    // of times the complex is performed per set — the multiplier in
+    // "N × (X+Y)". Plain numeric prescriptions don't carry a complex count.
+    const complexes = m.repsLabel && !m.toMax ? reps : undefined;
 
     const setList: PlannedSet[] = [];
     for (let i = 1; i <= sets; i += 1) {
@@ -730,6 +760,7 @@ function buildWeightliftingSession(params: GenerateParams): BuiltWeightliftingSe
         target_weight_kg: targetWeight,
         target_rpe: rpe,
         rest_seconds: rest,
+        ...(complexes !== undefined ? { target_complexes: complexes } : {}),
       });
     }
     exercises.push({ exercise_id: m.exercise_id, sets: setList });
@@ -740,6 +771,7 @@ function buildWeightliftingSession(params: GenerateParams): BuiltWeightliftingSe
       pct,
       weightKg: targetWeight,
       rpe,
+      complexes,
       display: m.display ?? (m.toMax ? 'montée à la max du jour' : undefined),
     });
   }

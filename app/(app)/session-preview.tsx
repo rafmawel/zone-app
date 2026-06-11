@@ -39,6 +39,8 @@ interface PreviewRow {
   exerciseId: string;
   sets: number;
   reps: string;
+  /** N complexes per set when `reps` is a "X+Y" complex notation. */
+  complexes?: number;
   pct: number | null;
   weightKg: number | null;
   restMin: number;
@@ -50,11 +52,25 @@ function firstInt(reps: string): number {
   return m ? parseInt(m[0], 10) : 0;
 }
 
+/**
+ * Format the per-set prescription for the preview list. Complex notations
+ * render as "N × (X+Y) reps" to match the session screen; plain reps use
+ * the short "R reps" form.
+ */
+function formatRepsLine(reps: string, complexes?: number): string {
+  if (reps.includes('+') && complexes && complexes > 0) {
+    const word = complexes === 1 ? 'complexe' : 'complexes';
+    return `${complexes} ${word} (${reps})`;
+  }
+  return `${reps} reps`;
+}
+
 function rowsFromPreview(exs: SessionExercisePreview[]): PreviewRow[] {
   return exs.map((ex) => ({
     exerciseId: ex.exerciseId,
     sets: ex.sets,
     reps: ex.reps,
+    complexes: ex.complexes,
     pct: ex.pct,
     weightKg: ex.weightKg,
     restMin: Math.round(restBaseForExercise(ex.exerciseId) / 60),
@@ -69,6 +85,7 @@ function rowsFromDoc(exs: SessionExercise[]): PreviewRow[] {
       exerciseId: ex.exercise_id,
       sets: ex.sets.length,
       reps: first?.target_reps ?? '-',
+      complexes: first?.target_complexes,
       pct: null,
       weightKg: first?.target_weight_kg ?? null,
       restMin: Math.round((first?.rest_seconds ?? 120) / 60),
@@ -256,7 +273,7 @@ export default function SessionPreviewScreen(): React.ReactElement {
                   <ZoneText variant="body" size={14} color={colors.text.primary} style={styles.exLine}>
                     {row.display
                       ? row.display
-                      : `${row.sets} séries × ${row.reps} reps${row.weightKg ? ` @ ${row.weightKg} kg` : ''}`}
+                      : `${row.sets} séries × ${formatRepsLine(row.reps, row.complexes)}${row.weightKg ? ` @ ${row.weightKg} kg` : ''}`}
                   </ZoneText>
                   <ZoneText variant="caption" color={colors.text.muted}>
                     {row.pct != null ? `${row.pct}% de ton max · ` : ''}repos {row.restMin} min

@@ -87,6 +87,41 @@ function runningLevel(vdot: number): 'beginner' | 'intermediate' | 'advanced' {
 }
 
 /**
+ * Mark every item in a single sport's queue. **Per-sport invariant — this
+ * function never reads other sports' keys.** Weightlifting's advancement
+ * to week 2 depends only on whether weightlifting's prior sessions are
+ * done; whether running's week 1 is still in progress is irrelevant, and
+ * vice-versa.
+ *
+ * Sequential within a sport: the first item without a stored
+ * `completed` / `skipped` status becomes `available`; the rest are
+ * `locked`. As soon as a week's last session is marked `completed`,
+ * the next iteration of this loop turns the following week's first
+ * session into `available` — that's the "week progression trigger"
+ * the UI relies on.
+ */
+function assignSportStatuses(items: QueueItem[], state: QueueState): void {
+  let blocked = false;
+  for (const item of items) {
+    const saved = state[item.key];
+    if (saved?.status === 'completed') {
+      item.status = 'completed';
+      continue;
+    }
+    if (saved?.status === 'skipped') {
+      item.status = 'skipped';
+      continue;
+    }
+    if (!blocked) {
+      item.status = 'available';
+      blocked = true;
+      continue;
+    }
+    item.status = 'locked';
+  }
+}
+
+/**
  * Build the unified multi-sport queue, grouped by week. Each sport's sessions
  * are sequential; status is derived from saved completion/skip state.
  *
@@ -255,21 +290,11 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
     }
   }
 
-  // Status: each sport's list is sequential. The first not-done item is
-  // 'available', everything after it 'locked'.
+  // Status: assign per sport, in isolation. Each sport's list is
+  // sequential; sport X never gates sport Y. See assignSportStatuses for
+  // the per-sport invariant.
   for (const sport of SPORT_ORDER) {
-    let blocked = false;
-    for (const item of perSport[sport]) {
-      const saved = state[item.key];
-      if (saved?.status === 'completed') item.status = 'completed';
-      else if (saved?.status === 'skipped') item.status = 'skipped';
-      else if (!blocked) {
-        item.status = 'available';
-        blocked = true;
-      } else {
-        item.status = 'locked';
-      }
-    }
+    assignSportStatuses(perSport[sport], state);
   }
 
   // Group by week.
@@ -284,4 +309,27 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
     grouped.push(items);
   }
   return grouped;
+}
+
+/**
+ * Find the first `available` item for a single sport across the queue.
+ *
+ * Sport-isolated by construction — other sports' items are skipped before
+ * the status is even read. Returns `'complete'` when the sport has items
+ * in the visible window but none are available (every visible week is
+ * already done/skipped) and `null` when the sport isn't configured at all.
+ */
+export function nextAvailableForSport(
+  weeks: QueueItem[][],
+  sport: QueueSport,
+): QueueItem | 'complete' | null {
+  let hasItems = false;
+  for (const week of weeks) {
+    for (const item of week) {
+      if (item.sport !== sport) continue;
+      hasItems = true;
+      if (item.status === 'available') return item;
+    }
+  }
+  return hasItems ? 'complete' : null;
 }
