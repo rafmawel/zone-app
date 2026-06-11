@@ -692,8 +692,8 @@ function pluralize(label: string, n: number): string {
 
 /**
  * Olympic-lift notations like "2+1" or "3+2" pack multiple movements into one
- * complex. When the prescription is N complexes per set, surface a full
- * breakdown so the athlete knows what to count.
+ * complex. The subtitle spells out the movement sequence and the cue that
+ * matters most — the bar stays in hand for the whole complex.
  */
 function explainComplexReps(
   targetReps: string,
@@ -705,21 +705,22 @@ function explainComplexReps(
   const { a, b, labelA, labelB } = parts;
   const aLabel = pluralize(labelA, a);
   const bLabel = pluralize(labelB, b);
+  const sequence = `${a} ${aLabel} puis ${b} ${bLabel}`;
   if (complexes && complexes > 1) {
-    const totalA = a * complexes;
-    const totalB = b * complexes;
-    return `${a}+${b} = ${a} ${aLabel} + ${b} ${bLabel} · à réaliser ${complexes} fois de suite = ${totalA} ${pluralize(labelA, totalA)} et ${totalB} ${pluralize(labelB, totalB)} au total.`;
+    return `${sequence} · à réaliser ${complexes} fois de suite · sans poser la barre.`;
   }
-  return `${a}+${b} = ${a} ${aLabel} + ${b} ${bLabel} · compte comme 1 répétition.`;
+  return `${sequence} · sans poser la barre.`;
 }
 
 /**
- * Format the "Objectif" line: "{N} × ({X+Y}) reps" for complex prescriptions,
- * plain `{reps} reps` otherwise.
+ * Format the "Objectif" line. Complexes render as "{N} complexe(s) · ({X+Y})"
+ * to surface the unit the athlete is counting; plain prescriptions stay as
+ * "{reps} reps".
  */
 function formatObjective(targetReps: string, complexes?: number): string {
   if (targetReps.includes('+') && complexes && complexes > 0) {
-    return `${complexes} × (${targetReps}) reps`;
+    if (complexes === 1) return `1 complexe · (${targetReps})`;
+    return `${complexes} complexes par série · (${targetReps})`;
   }
   return `${targetReps} reps`;
 }
@@ -869,31 +870,57 @@ function WorkView({
         })()}
       </View>
 
-      {/* Reps tap targets */}
-      <View style={styles.repsRow}>
-        {repOptions.map((n) => {
-          const active = actualReps === n;
-          return (
-            <TouchableOpacity
-              key={n}
-              onPress={() => onChangeReps(n)}
-              activeOpacity={0.85}
-              style={[styles.repCell, active ? styles.repCellActive : null]}
+      {/* Reps tap targets — complexes get a single completion button so the
+          athlete doesn't see "1 2 3 4 5" buttons that don't apply to a
+          complex (counting cleans + jerks separately is confusing). */}
+      {plannedSet.target_reps.includes('+') ? (
+        <>
+          <TouchableOpacity
+            onPress={() => onChangeReps(target)}
+            activeOpacity={0.85}
+            style={[styles.complexBtn, actualReps >= target ? styles.complexBtnActive : null]}
+          >
+            <ZoneText
+              variant="label"
+              size={14}
+              color={actualReps >= target ? colors.bg.primary : colors.text.primary}
+              style={styles.complexBtnText}
             >
-              <ZoneText
-                variant="number"
-                size={24}
-                color={active ? colors.bg.primary : colors.text.primary}
-              >
-                {n}
-              </ZoneText>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-      <ZoneText variant="caption" color={colors.text.muted} style={styles.repsCaption}>
-        reps réalisées
-      </ZoneText>
+              ✓ {target > 1 ? 'Complexes terminés' : 'Complexe terminé'}
+            </ZoneText>
+          </TouchableOpacity>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.repsCaption}>
+            {target > 1 ? `${target} complexes au total` : 'série terminée'}
+          </ZoneText>
+        </>
+      ) : (
+        <>
+          <View style={styles.repsRow}>
+            {repOptions.map((n) => {
+              const active = actualReps === n;
+              return (
+                <TouchableOpacity
+                  key={n}
+                  onPress={() => onChangeReps(n)}
+                  activeOpacity={0.85}
+                  style={[styles.repCell, active ? styles.repCellActive : null]}
+                >
+                  <ZoneText
+                    variant="number"
+                    size={24}
+                    color={active ? colors.bg.primary : colors.text.primary}
+                  >
+                    {n}
+                  </ZoneText>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.repsCaption}>
+            reps réalisées
+          </ZoneText>
+        </>
+      )}
 
       {/* RPE / RIR — feeds the autoregulation engine */}
       <View style={styles.rirBlock}>
@@ -1412,6 +1439,18 @@ const styles = StyleSheet.create({
   },
   repCellActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
   repsCaption: { textAlign: 'center', marginTop: 8 },
+  complexBtn: {
+    marginTop: 24,
+    height: 64,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  complexBtnActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
+  complexBtnText: { fontFamily: 'Inter-Bold', letterSpacing: 0.5 },
   rirBlock: { marginTop: 24, alignItems: 'center' },
   rirHeader: { letterSpacing: 2, fontFamily: 'Inter-Bold', fontSize: 11, marginBottom: 10 },
   rirRow: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center' },

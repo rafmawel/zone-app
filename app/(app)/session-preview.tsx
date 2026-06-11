@@ -59,7 +59,8 @@ function firstInt(reps: string): number {
  */
 function formatRepsLine(reps: string, complexes?: number): string {
   if (reps.includes('+') && complexes && complexes > 0) {
-    return `${complexes} × (${reps}) reps`;
+    const word = complexes === 1 ? 'complexe' : 'complexes';
+    return `${complexes} ${word} (${reps})`;
   }
   return `${reps} reps`;
 }
