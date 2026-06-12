@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ChevronDown, ChevronUp, Plus } from 'lucide-react-native';
+import { Plus } from 'lucide-react-native';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import {
-  createRunSession,
   createPlannedSession,
+  createRunSession,
   getCompletedRuns,
   getCompletedSessions,
   getExerciseMaxes,
@@ -23,7 +23,6 @@ import {
   type RunSession,
   type RunningProfile,
   type ScheduleSport,
-  type SessionExercise,
   type TrainingSession,
   type UserProgram,
 } from '@/lib/firestore';
@@ -32,18 +31,9 @@ import type { ProgramBlock } from '@/lib/firestore';
 import { createWeightliftingSession } from '@/lib/sessionLaunch';
 import {
   buildProgrammeQueue,
-  nextAvailableForSport,
   type QueueItem,
   type QueueStatus,
 } from '@/lib/programmeQueue';
-import {
-  buildRecoveryWarning,
-  loadRecoveryContext,
-  EMPTY_RECOVERY_CONTEXT,
-  type RecoveryContext,
-  type RecoveryWarning,
-  type WarnLevel,
-} from '@/lib/recovery';
 import { calculateACWR, type WorkloadDataPoint, type WorkloadSport } from '@/lib/pro';
 import {
   readCurrentWeek,
@@ -125,12 +115,6 @@ function toWorkloadPoints(
   return out;
 }
 
-function warnColor(level: WarnLevel): string {
-  if (level === 'danger') return colors.orbe.red;
-  if (level === 'warn') return colors.orbe.amber;
-  return colors.orbe.blue;
-}
-
 function statusMeta(status: QueueStatus): { icon: string; label: string } {
   switch (status) {
     case 'completed': return { icon: '✅', label: 'FAIT' };
@@ -140,7 +124,7 @@ function statusMeta(status: QueueStatus): { icon: string; label: string } {
   }
 }
 
-export default function AujourdhuiScreen(): React.ReactElement {
+export default function ProgrammeScreen(): React.ReactElement {
   const router = useRouter();
   const [score, setScore] = useState<number | null>(null);
   const [program, setProgram] = useState<UserProgram | null>(null);
@@ -153,14 +137,11 @@ export default function AujourdhuiScreen(): React.ReactElement {
   const [recentRunRir, setRecentRunRir] = useState<number[]>([]);
   const [acwrHigh, setAcwrHigh] = useState<boolean>(false);
   const [deload, setDeload] = useState<DeloadRecommendation | null>(null);
-  const [recovery, setRecovery] = useState<RecoveryContext>(EMPTY_RECOVERY_CONTEXT);
-  const [expanded, setExpanded] = useState<boolean>(false);
   const [queueState, setQueueState] = useState<QueueState>({});
 
-  const [pending, setPending] = useState<{ item: QueueItem; warning: RecoveryWarning } | null>(null);
   const [previewItem, setPreviewItem] = useState<QueueItem | null>(null);
   const [bonusVisible, setBonusVisible] = useState<boolean>(false);
-  const [busy, setBusy] = useState<ScheduleSport | 'bonus' | null>(null);
+  const [busy, setBusy] = useState<'bonus' | null>(null);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -185,12 +166,11 @@ export default function AujourdhuiScreen(): React.ReactElement {
   const loadHistory = useCallback(async (): Promise<void> => {
     const user = auth.currentUser;
     if (!user) return;
-    const [sessions, runs, exMaxes, workload, ctx, qstate] = await Promise.all([
+    const [sessions, runs, exMaxes, workload, qstate] = await Promise.all([
       getCompletedSessions(user.uid).catch(() => [] as TrainingSession[]),
       getCompletedRuns(user.uid, 60).catch(() => [] as RunSession[]),
       getExerciseMaxes(user.uid).catch(() => [] as ExerciseMax[]),
       getWorkloadHistory(user.uid, 35).catch(() => []),
-      loadRecoveryContext(user.uid).catch(() => EMPTY_RECOVERY_CONTEXT),
       getProgrammeQueue(user.uid).catch(() => ({}) as QueueState),
     ]);
     setMaxes(exMaxes);
@@ -207,7 +187,6 @@ export default function AujourdhuiScreen(): React.ReactElement {
         .sort((a, b) => a.date.localeCompare(b.date)).slice(-2).map((r) => Math.max(0, 10 - (r.rpe as number))),
     );
     setAcwrHigh(calculateACWR(toWorkloadPoints(workload), todayDateString()).riskLevel === 'danger');
-    setRecovery(ctx);
     setQueueState(qstate);
     setDeload(evaluateDeloadNeed(sessions.filter((s) => s.discipline === 'musculation'), 'intermediaire'));
   }, []);
@@ -223,105 +202,6 @@ export default function AujourdhuiScreen(): React.ReactElement {
     [program, maxes, runningProfile, muscleProfile, hyroxProfile, hyroxBlock, queueState],
   );
 
-  // First available item per sport across the visible queue window. Each
-  // sport is resolved in complete isolation through nextAvailableForSport;
-  // a stalled running week never holds the weightlifting card back, and
-  // vice-versa. Returns 'complete' when a sport has items but none are
-  // available (every visible week is done/skipped), and undefined when
-  // the sport isn't configured at all.
-  const nextBySport = useMemo(() => {
-    const out: Partial<Record<ScheduleSport, QueueItem | 'complete'>> = {};
-    for (const sport of ALL_SPORTS) {
-      const slot = nextAvailableForSport(queueWeeks, sport);
-      if (slot) out[sport] = slot;
-    }
-    return out;
-  }, [queueWeeks]);
-
-  const launchQueueItem = async (item: QueueItem): Promise<void> => {
-    const user = auth.currentUser;
-    if (!user || busy) return;
-    setBusy(item.sport);
-    try {
-      if (item.sport === 'weightlifting' && program) {
-        const projected: UserProgram = {
-          ...program,
-          current_block: item.block as UserProgram['current_block'],
-          current_week: item.week,
-        };
-        const id = await createWeightliftingSession({
-          uid: user.uid, program: projected, maxes, zoneScore: score, recentRir, dayOfWeek: item.day, queueKey: item.key,
-        });
-        router.push(`/(app)/session/${id}`);
-      } else if (item.sport === 'running' && runningProfile && item.runningType) {
-        const paces = calculateVDOTPaces(runningProfile.vdot);
-        const level = runningProfile.vdot < 35 ? 'beginner' : runningProfile.vdot < 55 ? 'intermediate' : 'advanced';
-        const plan = buildSessionPlan({
-          type: item.runningType,
-          paces,
-          level,
-          block: 1,
-          week: 1,
-          paceFactor: runningPaceFactor(recentRunRir),
-          withStrides: item.runningWithStrides,
-          recovery: item.runningRecovery,
-          goalDistance: runningProfile.reference_distance ?? undefined,
-          goalTimeSeconds: runningProfile.goal_time_seconds ?? undefined,
-        });
-        const id = await createRunSession(user.uid, {
-          date: todayDateString(),
-          session_type: plan.type,
-          steps: plan.steps.map((s) => ({
-            kind: s.kind, label: s.label, duration_seconds: s.durationSeconds,
-            target_pace_sec_per_km: s.targetPaceSecPerKm, distance_meters: s.distanceMeters,
-          })),
-          estimated_duration_min: plan.estimatedDurationMin,
-          estimated_distance_km: plan.estimatedDistanceKm,
-          zone_score_at_start: score,
-          zone_message: plan.message,
-          queue_key: item.key,
-        });
-        router.push(`/(app)/run-session/${id}`);
-      } else if (item.sport === 'musculation' && muscleProfile) {
-        const generated = generateMuscleSession({
-          sessionsPerWeek: muscleProfile.sessions_per_week,
-          dayOfWeek: item.day,
-          goal: muscleProfile.goal,
-          weakPoints: (muscleProfile.weak_points ?? []) as MuscleGroup[],
-          zoneScore: score,
-          recentRir: recentMuscleRir,
-        });
-        const deloadActive = muscleProfile.deload_active === true;
-        const planned: SessionExercise[] = generated.exercises.map((ex) => ({
-          exercise_id: ex.exercise_id,
-          sets: deloadActive ? ex.sets.slice(0, Math.max(1, Math.ceil(ex.sets.length / 2))) : ex.sets,
-        }));
-        const id = await createPlannedSession(user.uid, {
-          date: todayDateString(),
-          sport_key: 'weightlifting',
-          discipline: 'musculation',
-          planned_exercises: planned,
-          zone_score_at_start: score,
-          zone_message: deloadActive ? 'Semaine de décharge · volume réduit, charges maintenues.' : generated.message,
-          queue_key: item.key,
-        });
-        router.push(`/(app)/muscle-session/${id}`);
-      } else if (item.sport === 'hyrox' && hyroxProfile && item.hyroxType) {
-        router.push(`/(app)/hyrox-session/new?type=${item.hyroxType}&block=${item.block}&queueKey=${encodeURIComponent(item.key)}`);
-      }
-    } catch {
-      // no-op
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const pickItem = (item: QueueItem): void => {
-    const warning = buildRecoveryWarning(item.sport, recovery, new Date());
-    if (warning) setPending({ item, warning });
-    else void launchQueueItem(item);
-  };
-
   const onSkip = (item: QueueItem): void => {
     Alert.alert(
       'Passer cette séance ?',
@@ -335,8 +215,6 @@ export default function AujourdhuiScreen(): React.ReactElement {
             const user = auth.currentUser;
             if (!user) return;
             await updateQueueItem(user.uid, item.key, 'skipped').catch(() => undefined);
-            // Also book-keep the skip in week tracking so the bilan
-            // can advance once every planned slot is accounted for.
             try {
               const sport = item.sport as ProSport;
               const queue = await readProgrammeQueue(user.uid);
@@ -375,9 +253,9 @@ export default function AujourdhuiScreen(): React.ReactElement {
     setBonusVisible(false);
     try {
       if (option === 'cardio') {
-        // Bonus cardio is a standalone Zone 2 timer that must NEVER
-        // touch the programme queue. Send the user to the lightweight
-        // bonus-cardio screen instead of creating a planned run.
+        // Bonus cardio is a standalone Zone 2 timer that must NEVER touch the
+        // programme queue. Send the user to the lightweight bonus-cardio
+        // screen instead of creating a planned run.
         router.push('/(app)/bonus-cardio?duration=25');
         return;
       }
@@ -436,31 +314,37 @@ export default function AujourdhuiScreen(): React.ReactElement {
   const bonusAvailable = Boolean(program || runningProfile || muscleProfile);
   const zoneLevel = score !== null ? getZoneLevel(score) : null;
   const raceWeeks = weeksUntil(hyroxProfile?.target_race_date ?? null);
-  const runningRaceWeeks = weeksUntil(runningProfile?.target_race_date ?? null);
 
-  const cardSubtitle = useCallback(
-    (item: QueueItem): string => {
-      // Use item.week / item.block — these are stored as the absolute
-      // programme position (set at build time from projectProgram for
-      // weightlifting, and from the loop counter for the other sports).
-      // The earlier projectProgram(program, item.weekNumber - 1) shortcut
-      // assumed each sport's display week aligned with program.current_week,
-      // which breaks the moment the per-sport dynamic window starts at
-      // anything other than week 1.
-      if (item.sport === 'weightlifting') {
-        const block = (item.block || 1) as ProgramBlock;
-        return `Bloc ${block} · ${getBlockName(block)} · Semaine ${Math.min(4, item.week)} · ~${item.estimatedMinutes} min`;
-      }
-      return `Semaine ${item.week} · ~${item.estimatedMinutes} min`;
-    },
-    [],
-  );
+  const cardSubtitle = useCallback((item: QueueItem): string => {
+    if (item.sport === 'weightlifting') {
+      const block = (item.block || 1) as ProgramBlock;
+      return `Bloc ${block} · ${getBlockName(block)} · Semaine ${Math.min(4, item.week)} · ~${item.estimatedMinutes} min`;
+    }
+    return `Semaine ${item.week} · ~${item.estimatedMinutes} min`;
+  }, []);
+
+  // Group queue items per sport and per display week. Each sport has its own
+  // dynamic window inside the queue (week 1 / week 2 of THAT sport's first
+  // incomplete week), so the rendering follows: section per sport → section
+  // per week → cards inside.
+  const sportSections = useMemo(() => {
+    const sections: { sport: ScheduleSport; weeks: { weekNumber: number; items: QueueItem[] }[] }[] = [];
+    for (const sport of configuredSports) {
+      const weeks: { weekNumber: number; items: QueueItem[] }[] = [];
+      queueWeeks.forEach((week, wi) => {
+        const items = week.filter((it) => it.sport === sport);
+        if (items.length > 0) weeks.push({ weekNumber: wi + 1, items });
+      });
+      if (weeks.length > 0) sections.push({ sport, weeks });
+    }
+    return sections;
+  }, [queueWeeks, configuredSports]);
 
   return (
     <SafeScreen>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <ZoneText variant="heading" style={styles.title}>MON PROGRAMME</ZoneText>
+          <ZoneText variant="heading" style={styles.title}>PROGRAMME</ZoneText>
           {program ? (
             <View style={styles.blockBadge}>
               <ZoneText variant="caption" color={colors.bg.primary} style={styles.blockBadgeText}>
@@ -470,6 +354,7 @@ export default function AujourdhuiScreen(): React.ReactElement {
           ) : null}
         </View>
 
+        {/* Compact Zone strip — small orbe + score + status label. */}
         <View style={styles.zoneStrip}>
           <View style={[styles.zoneStripOrb, { backgroundColor: zoneLevel ? zoneLevel.color : colors.border }]} />
           <ZoneText variant="number" size={18} style={styles.zoneStripScore}>{score ?? '--'}</ZoneText>
@@ -484,196 +369,91 @@ export default function AujourdhuiScreen(): React.ReactElement {
           </ZoneText>
         ) : null}
 
-        {/* Next session per sport */}
-        {configuredSports.length === 0 ? (
+        {/* Full queue, grouped by sport, then by display week. The
+            "COMMENCER" action lives in the Entraîner tab; here we surface a
+            read-only overview with a Passer escape hatch on available items. */}
+        {sportSections.length === 0 ? (
           <View style={styles.emptyCard}>
             <ZoneText variant="caption" color={colors.text.muted}>
-              Configure un sport pour commencer à t'entraîner.
+              Configure un sport dans Entraîner pour voir ton programme.
             </ZoneText>
           </View>
         ) : (
-          <>
-            <ZoneText variant="caption" style={styles.sectionHeader}>
-              PROCHAINE SÉANCE
-            </ZoneText>
-            {configuredSports.map((sport) => {
-              const slot = nextBySport[sport];
-              if (slot === 'complete') {
-                return (
-                  <View
-                    key={sport}
-                    style={[
-                      styles.qCard,
-                      styles.qCardDone,
-                      { borderLeftColor: sportColor(sport as SchedulerSport) },
-                    ]}
-                  >
-                    <View style={styles.qCardHead}>
-                      <ZoneText style={styles.qIcon}>✅</ZoneText>
-                      <View style={styles.qMain}>
-                        <ZoneText variant="titleSm" color={colors.text.muted}>
-                          {SPORT_ICON[sport]} {SPORT_LABEL[sport]} · Semaine complète
-                        </ZoneText>
-                      </View>
-                    </View>
-                  </View>
-                );
-              }
-              if (!slot) return null;
-              const item = slot;
-              const urgentRunning =
-                sport === 'running' &&
-                runningRaceWeeks !== null &&
-                runningRaceWeeks > 0 &&
-                runningRaceWeeks < 8;
-              return (
-                <View
-                  key={sport}
-                  style={[
-                    styles.qCard,
-                    styles.qCardAvailable,
-                    { borderLeftColor: sportColor(sport as SchedulerSport) },
-                  ]}
-                >
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => setPreviewItem(item)}>
-                    <View style={styles.qCardHead}>
-                      <ZoneText style={styles.qIcon}>{SPORT_ICON[sport]}</ZoneText>
-                      <View style={styles.qMain}>
-                        <ZoneText variant="titleSm" color={colors.text.primary}>
-                          {item.name}
-                        </ZoneText>
-                        <ZoneText variant="caption" color={colors.text.muted}>
-                          {cardSubtitle(item)}
-                        </ZoneText>
-                        {urgentRunning ? (
-                          <ZoneText
-                            variant="caption"
-                            color={colors.orbe.amber}
-                            style={styles.urgencyNote}
-                          >
-                            🏁 Course dans {runningRaceWeeks} semaine
-                            {runningRaceWeeks > 1 ? 's' : ''} · ne lâche pas
-                          </ZoneText>
-                        ) : null}
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                  <View style={styles.qActions}>
-                    <TouchableOpacity
-                      onPress={() => pickItem(item)}
-                      disabled={busy === item.sport}
-                      activeOpacity={0.85}
-                      style={styles.qStartBtn}
-                    >
-                      <ZoneText variant="label" size={13} color={colors.bg.primary}>
-                        {busy === item.sport ? '...' : 'COMMENCER'}
-                      </ZoneText>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => onSkip(item)} activeOpacity={0.7} style={styles.qSkipBtn}>
-                      <ZoneText variant="caption" color={colors.text.muted}>
-                        Passer
-                      </ZoneText>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })}
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => setExpanded((e) => !e)}
-              style={styles.expandLink}
-            >
-              <ZoneText variant="caption" color={colors.accent.gold} style={styles.expandLinkText}>
-                {expanded ? 'MASQUER MES SÉANCES' : 'VOIR TOUTES MES SÉANCES'}
-              </ZoneText>
-              {expanded ? (
-                <ChevronUp size={14} color={colors.accent.gold} />
-              ) : (
-                <ChevronDown size={14} color={colors.accent.gold} />
-              )}
-            </TouchableOpacity>
-
-            {expanded ? (
-              <View style={styles.fullQueue}>
-                {queueWeeks.map((week, wi) =>
-                  week.length === 0 ? null : (
-                    <View key={`w-${wi}`}>
-                      <ZoneText variant="caption" style={styles.weekHeader}>
-                        {wi === 0 ? 'CETTE SEMAINE' : 'SEMAINE PROCHAINE'}
-                      </ZoneText>
-                      {week.map((item) => {
-                        const meta = statusMeta(item.status);
-                        const done = item.status === 'completed' || item.status === 'skipped';
-                        const available = item.status === 'available';
-                        return (
-                          <View
-                            key={item.key}
-                            style={[
-                              styles.qCard,
-                              available ? styles.qCardAvailable : null,
-                              done ? styles.qCardDone : null,
-                              { borderLeftColor: sportColor(item.sport as SchedulerSport) },
-                            ]}
-                          >
-                            <TouchableOpacity
-                              activeOpacity={available ? 0.7 : 1}
-                              disabled={!available}
-                              onPress={() => available && setPreviewItem(item)}
-                            >
-                              <View style={styles.qCardHead}>
-                                <ZoneText style={styles.qIcon}>{meta.icon}</ZoneText>
-                                <View style={styles.qMain}>
-                                  <ZoneText
-                                    variant="titleSm"
-                                    color={done ? colors.text.muted : colors.text.primary}
-                                  >
-                                    {SPORT_ICON[item.sport]} {item.name}
-                                  </ZoneText>
-                                  <ZoneText variant="caption" color={colors.text.muted}>
-                                    ~{item.estimatedMinutes} min
-                                    {item.exercises.length ? ` · ${item.exercises.join(' · ')}` : ''}
-                                  </ZoneText>
-                                </View>
-                                {meta.label ? (
-                                  <ZoneText
-                                    variant="caption"
-                                    color={item.status === 'completed' ? colors.success : colors.text.muted}
-                                    style={styles.qStatusLabel}
-                                  >
-                                    {meta.label}
-                                  </ZoneText>
-                                ) : null}
-                              </View>
-                            </TouchableOpacity>
-                            {available ? (
-                              <View style={styles.qActions}>
-                                <TouchableOpacity
-                                  onPress={() => pickItem(item)}
-                                  disabled={busy === item.sport}
-                                  activeOpacity={0.85}
-                                  style={styles.qStartBtn}
-                                >
-                                  <ZoneText variant="label" size={13} color={colors.bg.primary}>
-                                    {busy === item.sport ? '...' : 'COMMENCER'}
-                                  </ZoneText>
-                                </TouchableOpacity>
-                                <TouchableOpacity onPress={() => onSkip(item)} activeOpacity={0.7} style={styles.qSkipBtn}>
-                                  <ZoneText variant="caption" color={colors.text.muted}>
-                                    Passer
-                                  </ZoneText>
-                                </TouchableOpacity>
-                              </View>
+          sportSections.map(({ sport, weeks }) => (
+            <View key={sport} style={styles.sportBlock}>
+              <View style={styles.sportHeaderRow}>
+                <ZoneText style={styles.sportHeaderIcon}>{SPORT_ICON[sport]}</ZoneText>
+                <ZoneText variant="titleSm" style={styles.sportHeaderLabel}>
+                  {SPORT_LABEL[sport].toUpperCase()}
+                </ZoneText>
+              </View>
+              {weeks.map((week) => (
+                <View key={`${sport}-w${week.weekNumber}`} style={styles.weekBlock}>
+                  <ZoneText variant="caption" style={styles.weekHeader}>
+                    {week.weekNumber === 1 ? 'CETTE SEMAINE' : 'SEMAINE PROCHAINE'}
+                  </ZoneText>
+                  {week.items.map((item) => {
+                    const meta = statusMeta(item.status);
+                    const done = item.status === 'completed' || item.status === 'skipped';
+                    const available = item.status === 'available';
+                    return (
+                      <View
+                        key={item.key}
+                        style={[
+                          styles.qCard,
+                          available ? styles.qCardAvailable : null,
+                          done ? styles.qCardDone : null,
+                          { borderLeftColor: sportColor(item.sport as SchedulerSport) },
+                        ]}
+                      >
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          onPress={() => setPreviewItem(item)}
+                        >
+                          <View style={styles.qCardHead}>
+                            <ZoneText style={styles.qIcon}>{meta.icon}</ZoneText>
+                            <View style={styles.qMain}>
+                              <ZoneText
+                                variant="titleSm"
+                                color={done ? colors.text.muted : colors.text.primary}
+                              >
+                                {item.name}
+                              </ZoneText>
+                              <ZoneText variant="caption" color={colors.text.muted}>
+                                {cardSubtitle(item)}
+                              </ZoneText>
+                            </View>
+                            {meta.label ? (
+                              <ZoneText
+                                variant="caption"
+                                color={item.status === 'completed' ? colors.success : colors.text.muted}
+                                style={styles.qStatusLabel}
+                              >
+                                {meta.label}
+                              </ZoneText>
                             ) : null}
                           </View>
-                        );
-                      })}
-                    </View>
-                  ),
-                )}
-              </View>
-            ) : null}
-          </>
+                        </TouchableOpacity>
+                        {available ? (
+                          <View style={styles.qActions}>
+                            <TouchableOpacity
+                              onPress={() => onSkip(item)}
+                              activeOpacity={0.7}
+                              style={styles.qSkipFullBtn}
+                            >
+                              <ZoneText variant="label" size={13} color={colors.text.secondary}>
+                                Passer cette séance
+                              </ZoneText>
+                            </TouchableOpacity>
+                          </View>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          ))
         )}
 
         {muscleProfile ? (
@@ -716,44 +496,8 @@ export default function AujourdhuiScreen(): React.ReactElement {
         ) : null}
       </ScrollView>
 
-      {/* Recovery sheet */}
-      <Modal visible={pending !== null} transparent animationType="slide" onRequestClose={() => setPending(null)}>
-        <View style={styles.sheetBackdrop}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            {pending ? (
-              <>
-                <View style={[styles.warnBar, { backgroundColor: warnColor(pending.warning.level) }]} />
-                <ZoneText variant="title" size={20} style={styles.sheetTitle}>
-                  {SPORT_LABEL[pending.item.sport].toUpperCase()}
-                </ZoneText>
-                <ZoneText variant="body" size={14} color={colors.text.primary} style={styles.sheetBody}>
-                  {pending.warning.message}
-                </ZoneText>
-                {pending.warning.canContinue && pending.warning.level === 'info' ? (
-                  <Button title="CONTINUER" onPress={() => { const p = pending; setPending(null); void launchQueueItem(p.item); }} />
-                ) : pending.warning.canContinue ? (
-                  <>
-                    <Button title="REPORTER" onPress={() => setPending(null)} />
-                    <TouchableOpacity
-                      onPress={() => { const p = pending; setPending(null); void launchQueueItem(p.item); }}
-                      style={styles.ghostBtn}
-                      activeOpacity={0.7}
-                    >
-                      <ZoneText variant="label" color={colors.text.muted}>Continuer quand même</ZoneText>
-                    </TouchableOpacity>
-                  </>
-                ) : (
-                  <Button title="REPORTER" onPress={() => setPending(null)} />
-                )}
-              </>
-            ) : null}
-          </View>
-        </View>
-      </Modal>
-
-      {/* Session preview sheet — tap on a queue card opens this
-          so the user can review the session before committing. */}
+      {/* Read-only preview — no LANCER. The launch flow lives in the
+          Entraîner tab; this view is purely informational. */}
       <Modal
         visible={previewItem !== null}
         transparent
@@ -792,25 +536,18 @@ export default function AujourdhuiScreen(): React.ReactElement {
                     ))}
                   </View>
                 ) : null}
-                <View style={styles.previewActions}>
-                  <Button
-                    title="LANCER LA SÉANCE  →"
-                    onPress={() => {
-                      const it = previewItem;
-                      setPreviewItem(null);
-                      void pickItem(it);
-                    }}
-                  />
-                  <TouchableOpacity
-                    onPress={() => setPreviewItem(null)}
-                    activeOpacity={0.7}
-                    style={styles.previewBack}
-                  >
-                    <ZoneText variant="label" color={colors.text.muted}>
-                      ← Retour
-                    </ZoneText>
-                  </TouchableOpacity>
-                </View>
+                <ZoneText variant="caption" color={colors.text.muted} style={styles.previewHint}>
+                  Tu lances la séance depuis l'onglet Entraîner.
+                </ZoneText>
+                <TouchableOpacity
+                  onPress={() => setPreviewItem(null)}
+                  activeOpacity={0.7}
+                  style={styles.previewBack}
+                >
+                  <ZoneText variant="label" color={colors.text.muted}>
+                    ← Retour
+                  </ZoneText>
+                </TouchableOpacity>
               </>
             ) : null}
           </TouchableOpacity>
@@ -893,34 +630,27 @@ const styles = StyleSheet.create({
   zoneStripScore: { color: colors.text.primary },
   zoneStripStatus: { flex: 1 },
   raceLineTop: { marginTop: 2, marginBottom: 16, lineHeight: 16 },
-  urgencyNote: { marginTop: 4, fontFamily: 'Inter-Bold' },
-  sectionHeader: {
-    fontFamily: 'Syne-Bold',
-    fontSize: 13,
-    letterSpacing: 1.5,
-    color: colors.text.muted,
-    marginBottom: 12,
-  },
-  weekHeader: {
-    fontFamily: 'Syne-Bold',
-    fontSize: 13,
-    letterSpacing: 1.5,
-    color: colors.text.muted,
-    marginTop: 16,
-    marginBottom: 12,
-  },
-  expandLink: {
+  sportBlock: { marginTop: 8, marginBottom: 16 },
+  sportHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    alignSelf: 'center',
-    marginTop: 8,
-    marginBottom: 4,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    gap: 8,
+    marginBottom: 8,
   },
-  expandLinkText: { fontFamily: 'Inter-Bold', fontSize: 12, letterSpacing: 1 },
-  fullQueue: { marginTop: 4 },
+  sportHeaderIcon: { fontSize: 20 },
+  sportHeaderLabel: {
+    color: colors.text.primary,
+    fontFamily: 'Syne-Bold',
+    letterSpacing: 1,
+  },
+  weekBlock: { marginTop: 8 },
+  weekHeader: {
+    fontFamily: 'Inter-Bold',
+    fontSize: 11,
+    letterSpacing: 1.2,
+    color: colors.text.muted,
+    marginBottom: 8,
+  },
   qCard: {
     backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 3,
     borderRadius: 16, padding: 16, marginBottom: 10,
@@ -931,9 +661,15 @@ const styles = StyleSheet.create({
   qIcon: { fontSize: 16, marginRight: 10 },
   qMain: { flex: 1 },
   qStatusLabel: { fontFamily: 'Inter-Bold', letterSpacing: 0.5, marginLeft: 8 },
-  qActions: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
-  qStartBtn: { flex: 1, backgroundColor: colors.accent.gold, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  qSkipBtn: { paddingHorizontal: 14, paddingVertical: 10 },
+  qActions: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
+  qSkipFullBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
   deloadCard: { marginTop: 16, marginBottom: 4, backgroundColor: colors.bg.card, borderWidth: 1, borderRadius: 16, padding: 16 },
   deloadEyebrow: { letterSpacing: 1, fontSize: 11, fontFamily: 'Inter-Bold' },
   deloadBody: { marginTop: 8, lineHeight: 19 },
@@ -948,10 +684,7 @@ const styles = StyleSheet.create({
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: colors.bg.elevated, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 36, overflow: 'hidden' },
   sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 14 },
-  warnBar: { position: 'absolute', top: 0, left: 0, right: 0, height: 4 },
   sheetTitle: { letterSpacing: 1, marginBottom: 12, color: colors.text.primary },
-  sheetBody: { lineHeight: 21, marginBottom: 18 },
-  ghostBtn: { alignSelf: 'center', marginTop: 12, paddingVertical: 8 },
   bonusWarn: { backgroundColor: 'rgba(255,183,77,0.10)', borderRadius: 10, padding: 10, marginBottom: 12 },
   bonusOption: { backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 14, marginBottom: 10 },
   bonusOptDesc: { marginTop: 4, lineHeight: 16 },
@@ -968,6 +701,6 @@ const styles = StyleSheet.create({
   previewExRow: { flexDirection: 'row', paddingVertical: 6 },
   previewExBullet: { width: 22, fontSize: 13 },
   previewExText: { flex: 1, fontSize: 14, lineHeight: 18 },
-  previewActions: { marginTop: 4 },
-  previewBack: { alignSelf: 'center', marginTop: 12, paddingVertical: 8 },
+  previewHint: { fontStyle: 'italic', marginBottom: 12 },
+  previewBack: { alignSelf: 'center', marginTop: 4, paddingVertical: 8 },
 });
