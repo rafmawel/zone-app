@@ -70,7 +70,7 @@ export default function AppLayout(): React.ReactElement {
           name="aujourd-hui"
           options={{
             tabBarIcon: ({ color }) => <CalendarDays size={22} color={color} />,
-            tabBarLabel: ({ focused }) => <TabLabel label="Aujourd'hui" focused={focused} />,
+            tabBarLabel: ({ focused }) => <TabLabel label="Programme" focused={focused} />,
           }}
         />
         <Tabs.Screen
