@@ -27,7 +27,8 @@ import {
   type TrainingSession,
   type UserProgram,
 } from '@/lib/firestore';
-import { getBlockName, projectProgram } from '@/lib/programEngine';
+import { getBlockName } from '@/lib/programEngine';
+import type { ProgramBlock } from '@/lib/firestore';
 import { createWeightliftingSession } from '@/lib/sessionLaunch';
 import {
   buildProgrammeQueue,
@@ -439,13 +440,20 @@ export default function AujourdhuiScreen(): React.ReactElement {
 
   const cardSubtitle = useCallback(
     (item: QueueItem): string => {
-      if (item.sport === 'weightlifting' && program) {
-        const projected = projectProgram(program, item.weekNumber - 1);
-        return `Bloc ${projected.current_block} · ${getBlockName(projected.current_block)} · Semaine ${Math.min(4, projected.current_week)} · ~${item.estimatedMinutes} min`;
+      // Use item.week / item.block — these are stored as the absolute
+      // programme position (set at build time from projectProgram for
+      // weightlifting, and from the loop counter for the other sports).
+      // The earlier projectProgram(program, item.weekNumber - 1) shortcut
+      // assumed each sport's display week aligned with program.current_week,
+      // which breaks the moment the per-sport dynamic window starts at
+      // anything other than week 1.
+      if (item.sport === 'weightlifting') {
+        const block = (item.block || 1) as ProgramBlock;
+        return `Bloc ${block} · ${getBlockName(block)} · Semaine ${Math.min(4, item.week)} · ~${item.estimatedMinutes} min`;
       }
-      return `Semaine ${item.weekNumber} · ~${item.estimatedMinutes} min`;
+      return `Semaine ${item.week} · ~${item.estimatedMinutes} min`;
     },
-    [program],
+    [],
   );
 
   return (
@@ -592,7 +600,7 @@ export default function AujourdhuiScreen(): React.ReactElement {
                   week.length === 0 ? null : (
                     <View key={`w-${wi}`}>
                       <ZoneText variant="caption" style={styles.weekHeader}>
-                        SEMAINE {wi + 1}
+                        {wi === 0 ? 'CETTE SEMAINE' : 'SEMAINE PROCHAINE'}
                       </ZoneText>
                       {week.map((item) => {
                         const meta = statusMeta(item.status);

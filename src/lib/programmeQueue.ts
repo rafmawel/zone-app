@@ -58,6 +58,14 @@ export interface BuildQueueInputs {
 const SPORT_ORDER: QueueSport[] = ['weightlifting', 'running', 'musculation', 'hyrox'];
 const SQUAT_IDS = new Set(['front_squat', 'back_squat_high', 'back_squat_low', 'overhead_squat']);
 
+/**
+ * Depth of the per-sport item pool. The queue builds this many weeks of
+ * sessions per sport so that even after several blocks are closed out the
+ * next "first incomplete week" is still reachable. Twelve covers a full
+ * intermediate cycle (3 blocks × 4 weeks).
+ */
+const POOL_WEEKS = 12;
+
 export function queueKey(sport: QueueSport, week: number, sessionIndex: number): string {
   return `${sport}_w${week}_s${sessionIndex}`;
 }
@@ -122,13 +130,22 @@ function assignSportStatuses(items: QueueItem[], state: QueueState): void {
 }
 
 /**
- * Build the unified multi-sport queue, grouped by week. Each sport's sessions
- * are sequential; status is derived from saved completion/skip state.
+ * Build the unified multi-sport queue, grouped by week.
  *
- * @returns array indexed by (weekNumber - 1), each holding that week's items
+ * **Dynamic window per sport.** The queue scans up to `POOL_WEEKS` weeks
+ * ahead for every configured sport, then picks each sport's "first
+ * incomplete week" (the first week with at least one not-yet-done session)
+ * and surfaces *that* week plus the next one. So if weightlifting has
+ * already closed out weeks 1 and 2 while running is mid-week-1, the
+ * weightlifting card shows week 3 (available + locked), and the running
+ * card stays on week 1 — each sport advances on its own clock.
+ *
+ * @returns array indexed by display position (0 = each sport's current
+ *   active week, 1 = each sport's next week, etc.), each holding the
+ *   items every sport contributes for that display slot.
  */
 export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
-  const weeks = inputs.weeks ?? 3;
+  const visibleWeeks = Math.max(1, inputs.weeks ?? 2);
   const perSport: Record<QueueSport, QueueItem[]> = {
     weightlifting: [],
     running: [],
@@ -141,7 +158,7 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
   // Weightlifting
   if (program && program.sport_key === 'weightlifting') {
     const perWeek = Math.max(1, Math.min(6, program.sessions_per_week));
-    for (let w = 1; w <= weeks; w += 1) {
+    for (let w = 1; w <= POOL_WEEKS; w += 1) {
       const projected = projectProgram(program, w - 1);
       for (let s = 1; s <= perWeek; s += 1) {
         try {
@@ -189,7 +206,7 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
     const slots = dist.items.filter((i) => i.type !== 'REST');
     const goalDistance = runningProfile.reference_distance ?? undefined;
     const goalTimeSeconds = runningProfile.goal_time_seconds ?? undefined;
-    for (let w = 1; w <= weeks; w += 1) {
+    for (let w = 1; w <= POOL_WEEKS; w += 1) {
       slots.forEach((slot, idx) => {
         const s = idx + 1;
         const t = slot.type as RunningSessionType;
@@ -216,7 +233,7 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
           status: 'locked',
           day: s,
           block: 1,
-          week: 1,
+          week: w,
           runningType: t,
           runningWithStrides: slot.withStrides,
           runningRecovery: slot.recovery,
@@ -228,7 +245,7 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
   // Musculation
   if (muscleProfile) {
     const perWeek = Math.max(1, Math.min(6, muscleProfile.sessions_per_week));
-    for (let w = 1; w <= weeks; w += 1) {
+    for (let w = 1; w <= POOL_WEEKS; w += 1) {
       for (let s = 1; s <= perWeek; s += 1) {
         try {
           const gen = generateMuscleSession({
@@ -250,7 +267,7 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
             status: 'locked',
             day: s,
             block: 1,
-            week: 1,
+            week: w,
           });
         } catch {
           // skip
@@ -263,7 +280,7 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
   if (hyroxProfile) {
     const plan = hyroxWeeklyPlan(hyroxProfile.sessions_per_week, inputs.hyroxBlock);
     const types = plan.filter((t): t is HyroxSessionType => t !== 'rest');
-    for (let w = 1; w <= weeks; w += 1) {
+    for (let w = 1; w <= POOL_WEEKS; w += 1) {
       types.forEach((t, idx) => {
         const s = idx + 1;
         const gen = generateHyroxSession({
@@ -283,7 +300,7 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
           status: 'locked',
           day: s,
           block: inputs.hyroxBlock,
-          week: 1,
+          week: w,
           hyroxType: t,
         });
       });
@@ -297,18 +314,64 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
     assignSportStatuses(perSport[sport], state);
   }
 
-  // Group by week.
+  // Per-sport dynamic window: find the first incomplete week, keep that
+  // week + (visibleWeeks - 1) following weeks, and renumber weekNumber
+  // 1..visibleWeeks so the UI can group consistently across sports that
+  // are each at a different absolute week.
+  const visiblePerSport: Record<QueueSport, QueueItem[]> = {
+    weightlifting: filterToVisibleWindow(perSport.weightlifting, visibleWeeks),
+    running: filterToVisibleWindow(perSport.running, visibleWeeks),
+    musculation: filterToVisibleWindow(perSport.musculation, visibleWeeks),
+    hyrox: filterToVisibleWindow(perSport.hyrox, visibleWeeks),
+  };
+
+  // Group by display weekNumber (1..visibleWeeks) so the home screen can
+  // walk the array and surface "current" and "next" slots together.
   const grouped: QueueItem[][] = [];
-  for (let w = 1; w <= weeks; w += 1) {
+  for (let dw = 1; dw <= visibleWeeks; dw += 1) {
     const items: QueueItem[] = [];
     for (const sport of SPORT_ORDER) {
-      for (const item of perSport[sport]) {
-        if (item.weekNumber === w) items.push(item);
+      for (const item of visiblePerSport[sport]) {
+        if (item.weekNumber === dw) items.push(item);
       }
     }
     grouped.push(items);
   }
   return grouped;
+}
+
+/**
+ * Find the first week with at least one not-yet-done session (i.e. neither
+ * `completed` nor `skipped`). Items are assumed to be in week-then-session
+ * order, with the `weekNumber` field carrying the absolute pool week index.
+ * Returns `Infinity` when every session in the pool is done (caller should
+ * treat that as "nothing visible").
+ */
+function findFirstIncompleteWeek(items: QueueItem[]): number {
+  for (const item of items) {
+    if (item.status !== 'completed' && item.status !== 'skipped') {
+      return item.weekNumber;
+    }
+  }
+  return Infinity;
+}
+
+/**
+ * Keep only the items belonging to the first incomplete week and the
+ * following `visibleWeeks - 1` weeks, renumbering `weekNumber` to
+ * 1..visibleWeeks so the caller can group across sports that are each
+ * sitting at a different absolute week.
+ *
+ * Per-sport isolated by construction: only this sport's `items` are read.
+ */
+function filterToVisibleWindow(items: QueueItem[], visibleWeeks: number): QueueItem[] {
+  if (items.length === 0) return [];
+  const first = findFirstIncompleteWeek(items);
+  if (!Number.isFinite(first)) return [];
+  const last = first + visibleWeeks - 1;
+  return items
+    .filter((it) => it.weekNumber >= first && it.weekNumber <= last)
+    .map((it) => ({ ...it, weekNumber: it.weekNumber - first + 1 }));
 }
 
 /**
