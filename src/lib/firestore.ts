@@ -15,6 +15,7 @@ import {
   type Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { normalizeQueueState } from './queueKeys';
 import {
   ALL_PRO_SPORTS,
   EMPTY_SUBSCRIPTION,
@@ -1344,10 +1345,22 @@ export interface QueueItemState {
 export type QueueState = Record<string, QueueItemState>;
 
 export async function getProgrammeQueue(uid: string): Promise<QueueState> {
-  const snap = await getDoc(doc(db, 'users', uid, 'state', 'programme_queue'));
+  const ref = doc(db, 'users', uid, 'state', 'programme_queue');
+  const snap = await getDoc(ref);
   if (!snap.exists()) return {};
   const data = snap.data() as { items?: QueueState };
-  return data.items ?? {};
+  const items = data.items ?? {};
+  const normalized = normalizeQueueState(items);
+  if (normalized !== items) {
+    // Persist the migration so subsequent reads stay fast and downstream
+    // writers (`updateQueueItem`) don't keep recreating the legacy
+    // shape. `updateDoc` replaces the `items` field outright — that
+    // drops the legacy `{sport}_w{N}_s{M}` entries that the canonical
+    // builder no longer references. Best-effort; failure leaves the
+    // in-memory normalized state intact.
+    void updateDoc(ref, { items: normalized, updated_at: serverTimestamp() }).catch(() => undefined);
+  }
+  return normalized;
 }
 
 export async function updateQueueItem(

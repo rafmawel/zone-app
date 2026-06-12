@@ -10,6 +10,7 @@ import { generateMuscleSession } from './muscleEngine';
 import { generateHyroxSession, type HyroxSessionType } from './hyroxEngine';
 import { hyroxWeeklyPlan, type HyroxBlockPhase } from './hyroxScience';
 import { getExerciseById } from '@/data/exercises';
+import { normalizeQueueState, queueKey, type QueueSport } from './queueKeys';
 import type {
   ExerciseMax,
   HyroxProfile,
@@ -19,8 +20,9 @@ import type {
   UserProgram,
 } from './firestore';
 
-export type QueueSport = 'weightlifting' | 'running' | 'musculation' | 'hyrox';
 export type QueueStatus = 'completed' | 'skipped' | 'available' | 'locked';
+export { queueKey } from './queueKeys';
+export type { QueueSport } from './queueKeys';
 
 export interface QueueItem {
   key: string;
@@ -65,10 +67,6 @@ const SQUAT_IDS = new Set(['front_squat', 'back_squat_high', 'back_squat_low', '
  * intermediate cycle (3 blocks × 4 weeks).
  */
 const POOL_WEEKS = 12;
-
-export function queueKey(sport: QueueSport, week: number, sessionIndex: number): string {
-  return `${sport}_w${week}_s${sessionIndex}`;
-}
 
 function exName(id: string): string {
   return getExerciseById(id)?.name ?? id;
@@ -153,7 +151,12 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
     hyrox: [],
   };
 
-  const { program, maxes, runningProfile, muscleProfile, hyroxProfile, state } = inputs;
+  const { program, maxes, runningProfile, muscleProfile, hyroxProfile } = inputs;
+  // Normalize the incoming state — convert pre-block legacy keys
+  // (`{sport}_w{N}_s{M}`) to the canonical `{sport}_b{N}_w{N}_s{N}` shape
+  // so completion data written by older versions still resolves against
+  // the keys the queue generates today.
+  const state = normalizeQueueState(inputs.state);
 
   // Weightlifting
   if (program && program.sport_key === 'weightlifting') {
@@ -167,7 +170,7 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
           perSport.weightlifting.push({
             // Stable across completion-driven advancement (block/week, not the
             // relative display week) so a key is never reused for a new session.
-            key: `weightlifting_b${projected.current_block}_w${projected.current_week}_s${s}`,
+            key: queueKey('weightlifting', projected.current_block, projected.current_week, s),
             sport: 'weightlifting',
             weekNumber: w,
             sessionIndex: s,
@@ -223,7 +226,7 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
         });
         const labelSuffix = slot.recovery && t === 'EF' ? ' · récup' : slot.withStrides && t === 'EF' ? ' + foulées' : '';
         perSport.running.push({
-          key: queueKey('running', w, s),
+          key: queueKey('running', 1, w, s),
           sport: 'running',
           weekNumber: w,
           sessionIndex: s,
@@ -257,7 +260,7 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
             recentRir: [],
           });
           perSport.musculation.push({
-            key: queueKey('musculation', w, s),
+            key: queueKey('musculation', 1, w, s),
             sport: 'musculation',
             weekNumber: w,
             sessionIndex: s,
@@ -290,7 +293,7 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
           zoneScore: 60,
         });
         perSport.hyrox.push({
-          key: queueKey('hyrox', w, s),
+          key: queueKey('hyrox', 1, w, s),
           sport: 'hyrox',
           weekNumber: w,
           sessionIndex: s,
