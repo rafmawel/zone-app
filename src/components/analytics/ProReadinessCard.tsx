@@ -15,9 +15,21 @@ export interface ProReadinessCardProps {
   tsbLabel: string;
 }
 
-function hex(color: string, alphaHex: string): string {
-  if (!color.startsWith('#')) return color;
-  return `${color}${alphaHex}`;
+/**
+ * Soften harsh user-facing wording at display time without touching any
+ * underlying enum values, risk levels or science function output.
+ */
+function softenLabel(text: string): string {
+  return text
+    .replace(/surmenage/gi, 'Fatigue élevée')
+    .replace(/danger/gi, 'À surveiller');
+}
+
+/** Readiness score colour driven by the value, per design spec. */
+function colorForReadiness(score: number): string {
+  if (score > 70) return colors.scoreGreen;
+  if (score >= 40) return colors.warning;
+  return colors.danger;
 }
 
 export function ProReadinessCard({
@@ -29,15 +41,9 @@ export function ProReadinessCard({
   tsb,
   tsbLabel,
 }: ProReadinessCardProps): React.ReactElement {
-  const tint = readiness.color;
+  const scoreColor = colorForReadiness(readiness.score);
   return (
-    <View
-      style={[
-        styles.card,
-        { borderColor: tint, backgroundColor: hex(tint, '26') },
-      ]}
-    >
-      <View style={[styles.leftStrip, { backgroundColor: tint }]} />
+    <View style={styles.card}>
       <ZoneText variant="label" size={13} color={colors.text.primary} style={styles.cardTitle}>
         Comment tu te sens aujourd’hui
       </ZoneText>
@@ -46,7 +52,7 @@ export function ProReadinessCard({
           <ZoneText
             variant="heading"
             size={72}
-            color={tint}
+            color={scoreColor}
             style={styles.scoreText}
           >
             {readiness.score}
@@ -57,7 +63,7 @@ export function ProReadinessCard({
             color={colors.scoreGreen}
             style={styles.label}
           >
-            {readiness.label}
+            {softenLabel(readiness.label)}
           </ZoneText>
         </View>
         <View style={styles.indicators}>
@@ -65,25 +71,21 @@ export function ProReadinessCard({
             icon={<Activity size={14} color={colors.text.muted} />}
             label="Ton niveau d’énergie"
             value={`${Math.round(zoneScore)}/100`}
-            dotColor={colorForScore(zoneScore)}
           />
           <Indicator
             icon={<TrendingUp size={14} color={colors.text.muted} />}
             label="Ton rythme d’entraînement"
-            value={acwrRiskLabel}
-            dotColor={colorForACWR(acwr)}
+            value={softenLabel(acwrRiskLabel)}
           />
           <Indicator
             icon={<Moon size={14} color={colors.text.muted} />}
             label="Ton sommeil cette semaine"
             value={`${avgSleepHours.toFixed(1)} h`}
-            dotColor={colorForSleep(avgSleepHours)}
           />
           <Indicator
             icon={<Brain size={14} color={colors.text.muted} />}
             label="Ta forme du moment"
-            value={tsbLabel}
-            dotColor={colorForTSB(tsb)}
+            value={softenLabel(tsbLabel)}
           />
         </View>
       </View>
@@ -93,7 +95,7 @@ export function ProReadinessCard({
         color={colors.text.primary}
         style={styles.headline}
       >
-        {readiness.headline}
+        {softenLabel(readiness.headline)}
       </ZoneText>
     </View>
   );
@@ -103,10 +105,9 @@ interface IndicatorProps {
   icon: React.ReactNode;
   label: string;
   value: string;
-  dotColor: string;
 }
 
-function Indicator({ icon, label, value, dotColor }: IndicatorProps): React.ReactElement {
+function Indicator({ icon, label, value }: IndicatorProps): React.ReactElement {
   return (
     <View style={styles.indicator}>
       <View style={styles.indicatorHeader}>
@@ -114,7 +115,6 @@ function Indicator({ icon, label, value, dotColor }: IndicatorProps): React.Reac
         <ZoneText variant="caption" color={colors.text.muted}>
           {label}
         </ZoneText>
-        <View style={[styles.dot, { backgroundColor: dotColor }]} />
       </View>
       <ZoneText variant="label" size={13} color={colors.text.primary}>
         {value}
@@ -123,47 +123,11 @@ function Indicator({ icon, label, value, dotColor }: IndicatorProps): React.Reac
   );
 }
 
-function colorForScore(score: number): string {
-  if (score >= 75) return colors.success;
-  if (score >= 55) return colors.scoreGreen;
-  if (score >= 35) return colors.orbe.amber;
-  return colors.danger;
-}
-
-function colorForACWR(acwr: number): string {
-  if (acwr >= 0.8 && acwr <= 1.3) return colors.success;
-  if (acwr < 0.6 || (acwr > 1.3 && acwr <= 1.5)) return colors.orbe.amber;
-  if (acwr > 1.5) return colors.danger;
-  return colors.orbe.blue;
-}
-
-function colorForSleep(hours: number): string {
-  if (hours >= 7.5) return colors.success;
-  if (hours >= 6.5) return colors.orbe.amber;
-  return colors.danger;
-}
-
-function colorForTSB(tsb: number): string {
-  if (tsb >= 5 && tsb <= 25) return colors.success;
-  if (tsb < -30) return colors.danger;
-  if (tsb < -10 || tsb > 25) return colors.orbe.amber;
-  return colors.text.muted;
-}
-
 const styles = StyleSheet.create({
   card: {
-    borderWidth: 1,
-    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
     padding: 16,
-    paddingLeft: 20,
-    overflow: 'hidden',
-  },
-  leftStrip: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
   },
   row: {
     flexDirection: 'row',
@@ -198,12 +162,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginBottom: 2,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginLeft: 'auto',
   },
   headline: {
     marginTop: 12,

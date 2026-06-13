@@ -499,6 +499,7 @@ export default function ProfileScreen(): React.ReactElement {
                 <SportProgressRow
                   icon="🏋️"
                   label="Haltérophilie"
+                  color={colors.haltero}
                   block={program.current_block}
                   blockName={getBlockName(program.current_block)}
                   weekInBlock={Math.min(4, Math.max(1, program.current_week))}
@@ -510,6 +511,7 @@ export default function ProfileScreen(): React.ReactElement {
                 <SportProgressRow
                   icon="🏃"
                   label="Course"
+                  color={colors.run}
                   block={blockFromWeek(currentWeeks.running)}
                   blockName={runningBlockName(currentWeeks.running)}
                   weekInBlock={weekInBlock(currentWeeks.running)}
@@ -521,6 +523,7 @@ export default function ProfileScreen(): React.ReactElement {
                 <SportProgressRow
                   icon="💪"
                   label="Musculation"
+                  color={colors.muscu}
                   block={blockFromWeek(currentWeeks.musculation)}
                   blockName={muscleBlockName(currentWeeks.musculation)}
                   weekInBlock={weekInBlock(currentWeeks.musculation)}
@@ -532,6 +535,7 @@ export default function ProfileScreen(): React.ReactElement {
                 <SportProgressRow
                   icon="🔥"
                   label="Hyrox"
+                  color={colors.hyrox}
                   block={blockFromWeek(currentWeeks.hyrox)}
                   blockName={hyroxBlockName(currentWeeks.hyrox)}
                   weekInBlock={weekInBlock(currentWeeks.hyrox)}
@@ -1110,6 +1114,7 @@ function InfoRow({ label, value }: { label: string; value: string }): React.Reac
 function SportProgressRow({
   icon,
   label,
+  color,
   block,
   blockName,
   weekInBlock,
@@ -1118,6 +1123,7 @@ function SportProgressRow({
 }: {
   icon: string;
   label: string;
+  color: string;
   block: number;
   blockName: string;
   weekInBlock: number;
@@ -1127,14 +1133,14 @@ function SportProgressRow({
   // 12 segments total — 4 weeks per block × 3 blocks.
   const TOTAL = 12;
   return (
-    <View style={styles.sportProg}>
+    <View style={[styles.sportProg, { borderLeftColor: color }]}>
       <View style={styles.sportProgHead}>
         <ZoneText variant="label" color={colors.text.primary} style={styles.sportProgTitle}>
           {icon} {label.toUpperCase()} · Bloc {block} · {blockName} · S{weekInBlock}/4
         </ZoneText>
         {onRestart ? (
           <TouchableOpacity onPress={onRestart} hitSlop={8} activeOpacity={0.7}>
-            <ZoneText variant="caption" color={colors.scoreGreen} style={styles.sportProgRestart}>
+            <ZoneText variant="caption" color={color} style={styles.sportProgRestart}>
               Recommencer
             </ZoneText>
           </TouchableOpacity>
@@ -1265,10 +1271,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   vacationCard: {
-    backgroundColor: colors.bg.card,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 14,
+    borderRadius: 18,
     padding: 16,
   },
   vacationActive: {
@@ -1284,13 +1290,14 @@ const styles = StyleSheet.create({
   vacationBody: { marginTop: 8, lineHeight: 18 },
   vacationCta: {
     marginTop: 14,
+    backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: colors.scoreGreen,
     borderRadius: 999,
     paddingVertical: 12,
     alignItems: 'center',
   },
-  vacationCtaText: { letterSpacing: 1, fontFamily: 'Inter_700Bold', fontSize: 12 },
+  vacationCtaText: { color: colors.scoreGreen, letterSpacing: 1, fontFamily: 'Inter_700Bold', fontSize: 12 },
   vacationCancel: { marginTop: 12, alignSelf: 'flex-start' },
   vacationCancelText: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
@@ -1412,14 +1419,19 @@ const styles = StyleSheet.create({
   promoSubmitText: { fontSize: 14 },
   headerWrap: { alignItems: 'center', marginBottom: 8 },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: colors.scoreGreen,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { color: colors.bg.primary, fontSize: 22, lineHeight: 26 },
+  avatarText: {
+    color: colors.background,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 24,
+    textAlign: 'center',
+  },
   displayName: { marginTop: 10, fontSize: 22, color: colors.text.primary, letterSpacing: 1 },
   email: { marginTop: 4, color: colors.text.secondary, fontSize: 13 },
   memberSince: { marginTop: 2 },
@@ -1451,9 +1463,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.card,
     borderWidth: 1,
     borderColor: colors.border,
-    borderLeftWidth: 3,
+    borderLeftWidth: 4,
     borderLeftColor: colors.scoreGreen,
     borderRadius: 12,
+    borderTopLeftRadius: 12,
+    borderBottomLeftRadius: 12,
     padding: 12,
   },
   sportProgHead: {
@@ -1470,16 +1484,15 @@ const styles = StyleSheet.create({
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   statTile: {
     width: '48%',
-    backgroundColor: colors.bg.card,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    borderRadius: 14,
+    padding: 14,
     marginBottom: 8,
   },
   statLabel: { fontSize: 11 },
-  statValue: { fontSize: 22, color: colors.text.primary, marginTop: 4, lineHeight: 26 },
+  statValue: { fontSize: 26, color: colors.textPrimary, marginTop: 4, lineHeight: 30 },
   statSkeleton: { marginTop: 6 },
   maxRow: {
     flexDirection: 'row',

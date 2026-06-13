@@ -94,7 +94,6 @@ export function LineChart({
           stroke={g.color}
           strokeWidth={1}
           strokeDasharray={g.dashed ? '4,4' : undefined}
-          opacity={0.5}
         />
       ))}
       {series.map((s, idx) => {
@@ -144,8 +143,8 @@ export function LineChart({
           key={`x-${i}`}
           x={scaleX(i, xLabels.length, w, pad)}
           y={h - 6}
-          fontSize={10}
-          fill={colors.text.muted}
+          fontSize={11}
+          fill="rgba(255,255,255,0.4)"
           textAnchor="middle"
         >
           {label}

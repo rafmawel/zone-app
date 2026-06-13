@@ -73,11 +73,11 @@ export function FormFatigueCard({ metrics, formStatus }: FormFatigueCardProps): 
           hasData ? (
             <LineChart
               width={width}
-              height={180}
+              height={200}
               yMin={-60}
               yMax={120}
               band={{ from: 5, to: 25, color: colors.success }}
-              guides={[{ y: 0, color: colors.text.muted, dashed: true }]}
+              guides={[{ y: 0, color: 'rgba(255,255,255,0.05)', dashed: true }]}
               xLabels={xLabels}
               series={[
                 { values: ctlSeries, color: colors.scoreGreen, strokeWidth: 2.5 },
@@ -87,7 +87,7 @@ export function FormFatigueCard({ metrics, formStatus }: FormFatigueCardProps): 
                   strokeWidth: 1.5,
                   dashed: true,
                 },
-                { values: tsbSeries, color: colors.orbe.blue, strokeWidth: 2 },
+                { values: tsbSeries, color: colors.run, strokeWidth: 2 },
               ]}
             />
           ) : (
@@ -103,14 +103,14 @@ export function FormFatigueCard({ metrics, formStatus }: FormFatigueCardProps): 
       <View style={styles.legend}>
         <LegendItem color={colors.scoreGreen} label="Énergie accumulée" />
         <LegendItem color={colors.danger} label="Fatigue récente" />
-        <LegendItem color={colors.orbe.blue} label="Forme du moment" />
+        <LegendItem color={colors.run} label="Forme du moment" />
         <LegendItem color={colors.success} label="Zone idéale" />
       </View>
 
       <View style={styles.metrics}>
-        <Metric label="ÉNERGIE" value={current?.ctl ?? 0} delta={weeklyDelta.ctl} color={colors.scoreGreen} />
-        <Metric label="FATIGUE" value={current?.atl ?? 0} delta={weeklyDelta.atl} color={colors.danger} />
-        <Metric label="FORME" value={current?.tsb ?? 0} delta={weeklyDelta.tsb} color={colors.orbe.blue} signed />
+        <Metric label="ÉNERGIE" value={current?.ctl ?? 0} delta={weeklyDelta.ctl} />
+        <Metric label="FATIGUE" value={current?.atl ?? 0} delta={weeklyDelta.atl} />
+        <Metric label="FORME" value={current?.tsb ?? 0} delta={weeklyDelta.tsb} signed />
       </View>
 
       <View style={[styles.interpret, { borderLeftColor: formStatus.color }]}>
@@ -151,20 +151,19 @@ interface MetricProps {
   label: string;
   value: number;
   delta: number;
-  color: string;
   signed?: boolean;
 }
 
-function Metric({ label, value, delta, color, signed }: MetricProps): React.ReactElement {
+function Metric({ label, value, delta, signed }: MetricProps): React.ReactElement {
   const arrow = delta > 0.5 ? <ChevronUp size={12} color={colors.success} /> : delta < -0.5 ? <ChevronDown size={12} color={colors.danger} /> : null;
   const deltaColor = delta > 0.5 ? colors.success : delta < -0.5 ? colors.danger : colors.text.muted;
   const sign = signed && value > 0 ? '+' : '';
   return (
     <View style={styles.metric}>
-      <ZoneText variant="caption" color={colors.text.muted} style={styles.metricLabel}>
+      <ZoneText variant="caption" size={10} color="rgba(255,255,255,0.4)" style={styles.metricLabel}>
         {label}
       </ZoneText>
-      <ZoneText variant="heading" size={28} color={color}>
+      <ZoneText variant="heading" size={28} color={colors.textPrimary}>
         {sign}
         {Math.round(value)}
       </ZoneText>
@@ -181,6 +180,8 @@ function Metric({ label, value, delta, color, signed }: MetricProps): React.Reac
 
 const styles = StyleSheet.create({
   card: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
     padding: 16,
   },
   title: {
@@ -191,11 +192,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   chartWrap: {
-    minHeight: 180,
+    minHeight: 200,
     marginBottom: 8,
   },
   empty: {
-    minHeight: 180,
+    minHeight: 200,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
@@ -215,14 +216,15 @@ const styles = StyleSheet.create({
   },
   metric: {
     flex: 1,
-    backgroundColor: colors.bg.elevated,
-    borderRadius: 12,
-    padding: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: 14,
     alignItems: 'flex-start',
   },
   metricLabel: {
     letterSpacing: 1,
     marginBottom: 4,
+    textTransform: 'uppercase',
   },
   metricDelta: {
     flexDirection: 'row',

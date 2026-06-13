@@ -31,7 +31,7 @@ import {
 } from '@/lib/firestore';
 import { getBlockName } from '@/lib/programEngine';
 import type { ProgramBlock } from '@/lib/firestore';
-import { createWeightliftingSession } from '@/lib/sessionLaunch';
+import { launchSessionForItem } from '@/lib/sessionLaunch';
 import {
   buildProgrammeQueue,
   nextAvailableForSport,
@@ -255,72 +255,20 @@ export default function EntrainerScreen(): React.ReactElement {
     if (!user || busy) return;
     setBusy(item.sport);
     try {
-      if (item.sport === 'weightlifting' && program) {
-        const projected: UserProgram = {
-          ...program,
-          current_block: item.block as UserProgram['current_block'],
-          current_week: item.week,
-        };
-        const id = await createWeightliftingSession({
-          uid: user.uid, program: projected, maxes, zoneScore: score, recentRir, dayOfWeek: item.day, queueKey: item.key,
-        });
-        router.push(`/(app)/session/${id}`);
-      } else if (item.sport === 'running' && runningProfile && item.runningType) {
-        const paces = calculateVDOTPaces(runningProfile.vdot);
-        const level = runningProfile.vdot < 35 ? 'beginner' : runningProfile.vdot < 55 ? 'intermediate' : 'advanced';
-        const plan = buildSessionPlan({
-          type: item.runningType,
-          paces,
-          level,
-          block: 1,
-          week: 1,
-          paceFactor: runningPaceFactor(recentRunRir),
-          withStrides: item.runningWithStrides,
-          recovery: item.runningRecovery,
-          goalDistance: runningProfile.reference_distance ?? undefined,
-          goalTimeSeconds: runningProfile.goal_time_seconds ?? undefined,
-        });
-        const id = await createRunSession(user.uid, {
-          date: todayDateString(),
-          session_type: plan.type,
-          steps: plan.steps.map((s) => ({
-            kind: s.kind, label: s.label, duration_seconds: s.durationSeconds,
-            target_pace_sec_per_km: s.targetPaceSecPerKm, distance_meters: s.distanceMeters,
-          })),
-          estimated_duration_min: plan.estimatedDurationMin,
-          estimated_distance_km: plan.estimatedDistanceKm,
-          zone_score_at_start: score,
-          zone_message: plan.message,
-          queue_key: item.key,
-        });
-        router.push(`/(app)/run-session/${id}`);
-      } else if (item.sport === 'musculation' && muscleProfile) {
-        const generated = generateMuscleSession({
-          sessionsPerWeek: muscleProfile.sessions_per_week,
-          dayOfWeek: item.day,
-          goal: muscleProfile.goal,
-          weakPoints: (muscleProfile.weak_points ?? []) as MuscleGroup[],
-          zoneScore: score,
-          recentRir: recentMuscleRir,
-        });
-        const deloadActive = muscleProfile.deload_active === true;
-        const planned: SessionExercise[] = generated.exercises.map((ex) => ({
-          exercise_id: ex.exercise_id,
-          sets: deloadActive ? ex.sets.slice(0, Math.max(1, Math.ceil(ex.sets.length / 2))) : ex.sets,
-        }));
-        const id = await createPlannedSession(user.uid, {
-          date: todayDateString(),
-          sport_key: 'weightlifting',
-          discipline: 'musculation',
-          planned_exercises: planned,
-          zone_score_at_start: score,
-          zone_message: deloadActive ? 'Semaine de décharge · volume réduit, charges maintenues.' : generated.message,
-          queue_key: item.key,
-        });
-        router.push(`/(app)/muscle-session/${id}`);
-      } else if (item.sport === 'hyrox' && hyroxProfile && item.hyroxType) {
-        router.push(`/(app)/hyrox-session/new?type=${item.hyroxType}&block=${item.block}&queueKey=${encodeURIComponent(item.key)}`);
-      }
+      const href = await launchSessionForItem({
+        uid: user.uid,
+        item,
+        program,
+        runningProfile,
+        muscleProfile,
+        hyroxProfile,
+        maxes,
+        zoneScore: score,
+        recentRir,
+        recentMuscleRir,
+        recentRunRir,
+      });
+      if (href) router.push(href);
     } catch {
       // no-op
     } finally {
@@ -489,26 +437,22 @@ export default function EntrainerScreen(): React.ReactElement {
               return (
                 <View
                   key={sport}
-                  style={[
-                    styles.qCard,
-                    styles.qCardAvailable,
-                    { borderLeftColor: sportColor(sport as SchedulerSport) },
-                  ]}
+                  style={[styles.qCardColored, { backgroundColor: sportColor(sport as SchedulerSport) }]}
                 >
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => setPreviewItem(item)}>
+                  <TouchableOpacity activeOpacity={0.85} onPress={() => setPreviewItem(item)}>
                     <View style={styles.qCardHead}>
                       <ZoneText style={styles.qIcon}>{SPORT_ICON[sport]}</ZoneText>
                       <View style={styles.qMain}>
-                        <ZoneText variant="titleSm" color={colors.text.primary}>
+                        <ZoneText variant="title" size={18} color="#FFFFFF" style={styles.qTitle}>
                           {item.name}
                         </ZoneText>
-                        <ZoneText variant="caption" color={colors.text.muted}>
+                        <ZoneText variant="caption" color="rgba(255,255,255,0.7)" style={styles.qSubtitle}>
                           {cardSubtitle(item)}
                         </ZoneText>
                         {urgentRunning ? (
                           <ZoneText
                             variant="caption"
-                            color={colors.orbe.amber}
+                            color="rgba(255,255,255,0.9)"
                             style={styles.urgencyNote}
                           >
                             🏁 Course dans {runningRaceWeeks} semaine
@@ -523,18 +467,23 @@ export default function EntrainerScreen(): React.ReactElement {
                       onPress={() => pickItem(item)}
                       disabled={busy === item.sport}
                       activeOpacity={0.85}
-                      style={styles.qStartBtn}
+                      style={styles.qLaunchBtn}
                     >
-                      <ZoneText variant="label" size={13} color={colors.bg.primary}>
-                        {busy === item.sport ? '...' : 'COMMENCER'}
+                      <ZoneText style={styles.qLaunchText}>
+                        {busy === item.sport ? '...' : 'LANCER  →'}
                       </ZoneText>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => onSkip(item)} activeOpacity={0.7} style={styles.qSkipBtn}>
-                      <ZoneText variant="caption" color={colors.text.muted}>
-                        Passer
-                      </ZoneText>
+                    <TouchableOpacity
+                      onPress={() => setPreviewItem(item)}
+                      activeOpacity={0.85}
+                      style={styles.qApercuBtn}
+                    >
+                      <ZoneText style={styles.qApercuText}>Aperçu</ZoneText>
                     </TouchableOpacity>
                   </View>
+                  <TouchableOpacity onPress={() => onSkip(item)} activeOpacity={0.7} style={styles.qSkipBtn}>
+                    <ZoneText style={styles.qSkipText}>Passer cette séance</ZoneText>
+                  </TouchableOpacity>
                   {renderRunningTail(sport)}
                 </View>
               );
@@ -551,8 +500,8 @@ export default function EntrainerScreen(): React.ReactElement {
                 activeOpacity={0.7}
                 style={styles.addLink}
               >
-                <Plus size={14} color={colors.text.secondary} />
-                <ZoneText variant="caption" color={colors.text.secondary} style={styles.addLinkText}>
+                <Plus size={14} color="rgba(255,255,255,0.4)" />
+                <ZoneText variant="caption" color="rgba(255,255,255,0.4)" style={styles.addLinkText}>
                   Ajouter {SPORT_LABEL[sport]}
                 </ZoneText>
               </TouchableOpacity>
@@ -580,13 +529,19 @@ export default function EntrainerScreen(): React.ReactElement {
         ) : (
           recent.map((s) => {
             const sp = sportOf(s);
+            const sportSched: SchedulerSport =
+              s.discipline === 'musculation'
+                ? 'musculation'
+                : s.sport_key === 'running'
+                  ? 'running'
+                  : 'weightlifting';
             const sets = (s.planned_exercises ?? []).reduce((a, e) => a + e.sets.length, 0);
             return (
               <TouchableOpacity
                 key={s.id}
                 activeOpacity={0.8}
                 onPress={() => router.push(`/(app)/session-preview?id=${s.id}`)}
-                style={styles.recentRow}
+                style={[styles.recentRow, { borderLeftWidth: 3, borderLeftColor: sportColor(sportSched) }]}
               >
                 <ZoneText style={styles.recentIcon}>{sp.icon}</ZoneText>
                 <View style={styles.recentMain}>
@@ -816,9 +771,23 @@ const styles = StyleSheet.create({
   qIcon: { fontSize: 16, marginRight: 10 },
   qMain: { flex: 1 },
   urgencyNote: { marginTop: 4, fontFamily: 'Inter_700Bold' },
-  qActions: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
-  qStartBtn: { flex: 1, backgroundColor: colors.scoreGreen, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  qSkipBtn: { paddingHorizontal: 14, paddingVertical: 10 },
+  qCardColored: { borderRadius: 22, padding: 20, marginBottom: 10 },
+  qTitle: { marginBottom: 2 },
+  qSubtitle: { marginTop: 4 },
+  qActions: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 },
+  qLaunchBtn: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 999, paddingVertical: 14, alignItems: 'center' },
+  qLaunchText: { fontFamily: 'Inter_700Bold', fontSize: 15, color: colors.background },
+  qApercuBtn: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.55)',
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  qApercuText: { fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#FFFFFF' },
+  qSkipBtn: { marginTop: 10, alignSelf: 'flex-start', paddingVertical: 6 },
+  qSkipText: { fontFamily: 'Inter_500Medium', fontSize: 13, color: 'rgba(255,255,255,0.6)' },
   runningTail: { marginTop: 12 },
   racePill: {
     borderWidth: 1,
@@ -831,8 +800,19 @@ const styles = StyleSheet.create({
   racePillText: { fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.5 },
   goalLink: { marginTop: 8, paddingVertical: 2 },
   goalLinkText: { fontSize: 11, fontFamily: 'Inter_500Medium' },
-  addLinks: { marginTop: 12, gap: 4, alignItems: 'center' },
-  addLink: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8 },
+  addLinks: { marginTop: 12, gap: 8 },
+  addLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    borderStyle: 'dashed',
+    paddingVertical: 16,
+  },
   addLinkText: { fontFamily: 'Inter_500Medium' },
   recentRow: {
     flexDirection: 'row',
@@ -840,7 +820,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.card,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 16,
+    borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
     marginBottom: 8,

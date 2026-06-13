@@ -22,6 +22,7 @@ import {
   type Weekday,
 } from '@/lib/firestore';
 import { buildProgrammeQueue, type QueueItem } from '@/lib/programmeQueue';
+import { launchSessionForItem } from '@/lib/sessionLaunch';
 import { blockFromWeeksToRace, type HyroxBlockPhase } from '@/lib/hyroxScience';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { useWeekBilans } from '@/hooks/useWeekBilans';
@@ -121,6 +122,10 @@ export default function DashboardScreen(): React.ReactElement {
   const [queueState, setQueueState] = useState<QueueState>({});
   const [weekDays, setWeekDays] = useState<WeekDay[]>(() => buildWeek(new Set(), {}));
   const [lastSession, setLastSession] = useState<RecentSession | null>(null);
+  const [recentRir, setRecentRir] = useState<number[]>([]);
+  const [recentMuscleRir, setRecentMuscleRir] = useState<number[]>([]);
+  const [recentRunRir, setRecentRunRir] = useState<number[]>([]);
+  const [launching, setLaunching] = useState<boolean>(false);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -240,6 +245,30 @@ export default function DashboardScreen(): React.ReactElement {
       })),
     ].sort((a, b) => b.date.localeCompare(a.date));
     setLastSession(recent[0] ?? null);
+
+    // RIR autoregulation inputs (mirrors the Entraîner tab) so a session
+    // launched from Home is generated identically.
+    setRecentRir(
+      sessions
+        .filter((s) => s.sport_key === 'weightlifting' && s.discipline !== 'musculation' && typeof s.rpe === 'number')
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(-2)
+        .map((s) => Math.max(0, 10 - (s.rpe as number))),
+    );
+    setRecentMuscleRir(
+      sessions
+        .filter((s) => s.discipline === 'musculation' && typeof s.rpe === 'number')
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(-2)
+        .map((s) => Math.max(0, 10 - (s.rpe as number))),
+    );
+    setRecentRunRir(
+      runs
+        .filter((r) => typeof r.rpe === 'number')
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(-2)
+        .map((r) => Math.max(0, 10 - (r.rpe as number))),
+    );
   }, []);
 
   useFocusEffect(
@@ -277,6 +306,48 @@ export default function DashboardScreen(): React.ReactElement {
     });
     return (queueWeeks[0] ?? []).filter((i) => i.status === 'available').slice(0, 3);
   }, [program, runningProfile, muscleProfile, hyroxProfile, maxes, queueState]);
+
+  // Launch a queue item directly (same flow as Entraîner → COMMENCER).
+  const onLaunchItem = useCallback(
+    async (item: QueueItem): Promise<void> => {
+      const user = auth.currentUser;
+      if (!user || launching) return;
+      setLaunching(true);
+      try {
+        const href = await launchSessionForItem({
+          uid: user.uid,
+          item,
+          program,
+          runningProfile,
+          muscleProfile,
+          hyroxProfile,
+          maxes,
+          zoneScore: checkin?.zone_score ?? null,
+          recentRir,
+          recentMuscleRir,
+          recentRunRir,
+        });
+        if (href) router.push(href);
+      } catch {
+        // no-op
+      } finally {
+        setLaunching(false);
+      }
+    },
+    [
+      launching,
+      program,
+      runningProfile,
+      muscleProfile,
+      hyroxProfile,
+      maxes,
+      checkin,
+      recentRir,
+      recentMuscleRir,
+      recentRunRir,
+      router,
+    ],
+  );
 
   const score = checkin?.zone_score ?? 0;
   const hasCheckin = Boolean(checkin);
@@ -346,7 +417,7 @@ export default function DashboardScreen(): React.ReactElement {
                 meta={`~${item.estimatedMinutes} min`}
                 metaBg="rgba(255,255,255,0.18)"
                 metaColor="#FFFFFF"
-                onPress={() => router.push('/(app)/(tabs)/entrainer')}
+                onPress={() => void onLaunchItem(item)}
               />
             );
           })}
