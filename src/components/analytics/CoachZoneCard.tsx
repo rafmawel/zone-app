@@ -114,7 +114,7 @@ export function CoachZoneCard(props: CoachZoneCardProps): React.ReactElement {
             Ton bilan personnel · Mis à jour chaque lundi
           </ZoneText>
         </View>
-        <Sparkles size={20} color={colors.accent.gold} />
+        <Sparkles size={20} color={colors.scoreGreen} />
       </View>
       <View style={styles.list}>
         {observations.map((o, idx) => (
@@ -139,8 +139,8 @@ function ObservationRow({ observation }: { observation: Observation }): React.Re
       break;
     case 'recommendation':
     default:
-      icon = <ArrowRight size={18} color={colors.accent.gold} />;
-      color = colors.accent.gold;
+      icon = <ArrowRight size={18} color={colors.scoreGreen} />;
+      color = colors.scoreGreen;
       break;
   }
   return (

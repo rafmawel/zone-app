@@ -42,10 +42,10 @@ export function PredictionsCard({
       ) : null}
       {activeSports.includes('musculation') ? <MusculationPrediction /> : null}
 
-      <View style={[styles.window, { borderColor: colors.accent.gold }]}>
+      <View style={[styles.window, { borderColor: colors.scoreGreen }]}>
         <View style={styles.windowHeader}>
-          <Calendar size={16} color={colors.accent.gold} />
-          <ZoneText variant="label" color={colors.accent.gold}>
+          <Calendar size={16} color={colors.scoreGreen} />
+          <ZoneText variant="label" color={colors.scoreGreen}>
             Ta prochaine fenêtre de forme
           </ZoneText>
         </View>
@@ -97,7 +97,7 @@ function RunningPrediction({
     <View style={styles.predictionCard}>
       <ZoneText variant="body" size={14} color={colors.text.primary} style={styles.predSentence}>
         Dans 8 semaines, tu pourrais courir un {raceLabel(targetDistance)} en{' '}
-        <ZoneText variant="body" size={14} color={colors.accent.gold}>
+        <ZoneText variant="body" size={14} color={colors.scoreGreen}>
           {projectedTime}
         </ZoneText>
         .
@@ -139,7 +139,7 @@ function WeightliftingPrediction({
     <View style={styles.predictionCard}>
       <ZoneText variant="body" size={14} color={colors.text.primary} style={styles.predSentence}>
         Dans 4 semaines, ton {liftName} pourrait atteindre{' '}
-        <ZoneText variant="body" size={14} color={colors.accent.gold}>
+        <ZoneText variant="body" size={14} color={colors.scoreGreen}>
           {projected} kg
         </ZoneText>
         .

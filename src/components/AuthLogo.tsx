@@ -8,7 +8,7 @@ export function AuthLogo(): React.ReactElement {
     <View style={styles.wrapper}>
       <ZoneText
         variant="heading"
-        style={{ fontSize: 56, color: colors.accent.gold, letterSpacing: 6 }}
+        style={{ fontSize: 56, color: colors.scoreGreen, letterSpacing: 6 }}
       >
         ZONE
       </ZoneText>

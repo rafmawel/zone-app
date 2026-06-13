@@ -11,7 +11,7 @@ import { ZoneOrbe } from '@/components/ZoneOrbe';
 import { useOnboarding } from '@/context/OnboardingContext';
 import { colors } from '@/theme/colors';
 
-type LineKind = 'muted' | 'gold' | 'big';
+type LineKind = 'muted' | 'accent' | 'big';
 
 interface IntroLine {
   text: string;
@@ -26,9 +26,9 @@ const LINES: IntroLine[] = [
   { text: 'Un moment où chaque geste devient instinctif.', kind: 'muted', at: 1300 },
   { text: 'Où la fatigue s’efface.', kind: 'muted', at: 1600 },
   { text: 'Où ton corps et ton esprit ne font plus qu’un.', kind: 'muted', at: 1900 },
-  { text: 'Les basketteurs l’appellent la Zone.', kind: 'gold', at: 2600 },
-  { text: 'Les haltérophiles le cherchent sur chaque arraché.', kind: 'gold', at: 2900 },
-  { text: 'Les coureurs le ressentent sur certaines sorties.', kind: 'gold', at: 3200 },
+  { text: 'Les basketteurs l’appellent la Zone.', kind: 'accent', at: 2600 },
+  { text: 'Les haltérophiles le cherchent sur chaque arraché.', kind: 'accent', at: 2900 },
+  { text: 'Les coureurs le ressentent sur certaines sorties.', kind: 'accent', at: 3200 },
   { text: 'Zone mesure ta capacité', kind: 'big', at: 4000 },
   { text: 'à l’atteindre aujourd’hui.', kind: 'big', at: 4300 },
 ];
@@ -127,7 +127,7 @@ export default function CompleteScreen(): React.ReactElement {
                   style={[
                     styles.line,
                     line.kind === 'muted' ? styles.lineMuted : null,
-                    line.kind === 'gold' ? styles.lineGold : null,
+                    line.kind === 'accent' ? styles.lineAccent : null,
                     line.kind === 'big' ? styles.lineBig : null,
                   ]}
                 >
@@ -161,8 +161,8 @@ const styles = StyleSheet.create({
   textWrap: { alignItems: 'center', paddingBottom: 24 },
   line: { textAlign: 'center', marginTop: 6, lineHeight: 22 },
   lineMuted: { color: colors.text.muted },
-  lineGold: { color: colors.accent.gold, fontFamily: 'Inter-Medium' },
-  lineBig: { color: colors.text.primary, fontSize: 20, fontFamily: 'Inter-Bold', marginTop: 10, lineHeight: 26 },
+  lineAccent: { color: colors.scoreGreen, fontFamily: 'Inter_500Medium' },
+  lineBig: { color: colors.text.primary, fontSize: 20, fontFamily: 'Inter_700Bold', marginTop: 10, lineHeight: 26 },
   error: { marginTop: 16, textAlign: 'center' },
   footer: { padding: 24, paddingTop: 8 },
 });

@@ -118,7 +118,7 @@ export default function SessionDetailScreen(): React.ReactElement {
 
   const zoneScore = session?.zone_score_at_start ?? null;
   const zoneLevel = zoneScore !== null ? getZoneLevel(zoneScore) : null;
-  const accentColor = zoneLevel?.color ?? colors.accent.gold;
+  const accentColor = zoneLevel?.color ?? colors.haltero;
   const sport = session?.sport_key === 'running' ? 'Course' : 'Haltérophilie';
   const totalSets = groups.reduce((acc, g) => acc + g.sets.length, 0);
 
@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
   },
   metaText: { fontSize: 12 },
   scoreBubble: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 },
-  scoreBubbleText: { color: colors.bg.primary, fontFamily: 'Inter-Bold', fontSize: 12 },
+  scoreBubbleText: { color: colors.bg.primary, fontFamily: 'Inter_700Bold', fontSize: 12 },
   zoneCard: {
     marginTop: 16,
     backgroundColor: colors.bg.card,
@@ -328,7 +328,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
   },
-  zoneCardTitle: { fontFamily: 'Inter-Bold', fontSize: 13, letterSpacing: 1 },
+  zoneCardTitle: { fontFamily: 'Inter_700Bold', fontSize: 13, letterSpacing: 1 },
   zoneMessage: { marginTop: 6, lineHeight: 17 },
   section: { marginTop: 22 },
   sectionTitle: { fontSize: 16, letterSpacing: 2, color: colors.text.primary, marginBottom: 8 },
@@ -349,8 +349,8 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   tableRow: { flexDirection: 'row', paddingVertical: 6, alignItems: 'center' },
-  cell: { fontFamily: 'Inter-Medium', fontSize: 13 },
-  cellPR: { color: colors.accent.gold, fontFamily: 'Inter-Bold' },
+  cell: { fontFamily: 'Inter_500Medium', fontSize: 13 },
+  cellPR: { color: colors.haltero, fontFamily: 'Inter_700Bold' },
   colSet: { width: 50, fontSize: 11 },
   colWeight: { flex: 1 },
   colReps: { width: 50, textAlign: 'center' },

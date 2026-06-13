@@ -318,8 +318,8 @@ export function RadarChart({
   values,
   reference,
   max,
-  fillColor = colors.accent.gold,
-  strokeColor = colors.accent.gold,
+  fillColor = colors.scoreGreen,
+  strokeColor = colors.scoreGreen,
 }: RadarChartProps): React.ReactElement {
   const cx = size / 2;
   const cy = size / 2;

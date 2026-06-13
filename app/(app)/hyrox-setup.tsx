@@ -113,7 +113,7 @@ export default function HyroxSetupScreen(): React.ReactElement {
         </TouchableOpacity>
       </View>
       <View style={styles.heroRow}>
-        <ZoneText variant="caption" color={colors.accent.gold} style={styles.eyebrow}>
+        <ZoneText variant="caption" color={colors.scoreGreen} style={styles.eyebrow}>
           Étape {step + 1}/{TOTAL_STEPS}
         </ZoneText>
         <View style={styles.dotsRow}>
@@ -122,7 +122,7 @@ export default function HyroxSetupScreen(): React.ReactElement {
               key={i}
               style={[
                 styles.dot,
-                { backgroundColor: i <= step ? colors.accent.gold : colors.border },
+                { backgroundColor: i <= step ? colors.scoreGreen : colors.border },
               ]}
             />
           ))}
@@ -251,7 +251,7 @@ export default function HyroxSetupScreen(): React.ReactElement {
                     autoCapitalize="none"
                     autoCorrect={false}
                     style={styles.raceInput}
-                    selectionColor={colors.accent.gold}
+                    selectionColor={colors.scoreGreen}
                   />
                 </View>
               ) : null}
@@ -295,7 +295,7 @@ const styles = StyleSheet.create({
   backRow: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 4 },
   closeBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22 },
   heroRow: { paddingHorizontal: 24, paddingTop: 4, paddingBottom: 12 },
-  eyebrow: { letterSpacing: 2, fontFamily: 'Inter-Medium' },
+  eyebrow: { letterSpacing: 2, fontFamily: 'Inter_500Medium' },
   dotsRow: { flexDirection: 'row', marginTop: 8 },
   dot: { width: 30, height: 4, borderRadius: 2, marginRight: 6 },
   body: { flex: 1, paddingHorizontal: 24 },
@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderLeftWidth: 3,
-    borderLeftColor: colors.accent.gold,
+    borderLeftColor: colors.scoreGreen,
     borderRadius: 14,
     padding: 16,
   },
@@ -327,7 +327,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     color: colors.text.primary,
-    fontFamily: 'Inter-Regular',
+    fontFamily: 'Inter_400Regular',
     fontSize: 14,
   },
   finishCard: {
@@ -338,7 +338,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 14,
   },
-  finishValue: { fontSize: 36, color: colors.accent.gold, marginVertical: 4, lineHeight: 40 },
+  finishValue: { fontSize: 36, color: colors.scoreGreen, marginVertical: 4, lineHeight: 40 },
   error: { marginTop: 12, textAlign: 'center' },
   footer: { padding: 24, paddingTop: 8 },
 });

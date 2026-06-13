@@ -21,7 +21,7 @@ async function ensureAndroidChannel(): Promise<void> {
   await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
     name: 'Rappel check-in',
     importance: Notifications.AndroidImportance.DEFAULT,
-    lightColor: '#C9A84C',
+    lightColor: '#1BCA82',
   });
 }
 

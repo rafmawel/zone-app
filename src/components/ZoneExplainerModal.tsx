@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
   },
   scroll: { paddingHorizontal: 24, paddingTop: 12 },
   orbWrap: { alignItems: 'center', marginBottom: 12 },
-  title: { fontSize: 40, color: colors.accent.gold, textAlign: 'center', letterSpacing: 2 },
+  title: { fontSize: 40, color: colors.scoreGreen, textAlign: 'center', letterSpacing: 2 },
   paragraph: { textAlign: 'center', marginTop: 12, lineHeight: 21 },
   separator: { height: 1, backgroundColor: colors.border, marginVertical: 22 },
   eyebrow: { letterSpacing: 2, textAlign: 'center', marginBottom: 14 },

@@ -13,7 +13,7 @@ type Phase = 0 | 1 | 2 | 3 | 4 | 5;
 
 /**
  * Splash variant of the orbe: walks through every tier colour before
- * settling on the supplied final score (or gold if none provided).
+ * settling on the supplied final score (or neutral if none provided).
  *
  * Phases (cumulative ms):
  *  0-600   fade in
@@ -56,13 +56,13 @@ export function ZoneOrbeSplash({
     };
   }, [finalScore, onAnimationComplete]);
 
-  // If finalScore is undefined and we've reached phase 5, fall back to gold tint by overriding the score band
-  const useGoldFallback = phase === 5 && typeof finalScore !== 'number';
+  // If finalScore is undefined and we've reached phase 5, fall back to neutral tint by overriding the score band
+  const useNeutralFallback = phase === 5 && typeof finalScore !== 'number';
 
   return (
     <View style={styles.wrap}>
       <ZoneOrbe
-        score={useGoldFallback ? 65 : scoreOverride}
+        score={useNeutralFallback ? 65 : scoreOverride}
         size={120}
         animated
       />

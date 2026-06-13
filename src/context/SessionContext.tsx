@@ -50,7 +50,7 @@ function defaultState(sessionId: string): ActiveSessionState {
     restSecondsRemaining: 0,
     restTotalSeconds: 0,
     restEndsAt: null,
-    zoneColor: colors.accent.gold,
+    zoneColor: colors.scoreGreen,
     startedAt: new Date(),
   };
 }

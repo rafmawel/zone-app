@@ -34,7 +34,6 @@ import {
 import { checkAndAdvanceProgram, computeRestSeconds, estimateOneRepMax } from '@/lib/programEngine';
 import { computeAndSaveWorkloadEntry } from '@/lib/pro';
 import { recordSessionComplete, readProgrammeQueue, readCurrentWeek, startWeek } from '@/lib/weekTracking';
-import { usePro } from '@/hooks/usePro';
 import { ZoneOrbe } from '@/components/ZoneOrbe';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { getExerciseById, type Exercise } from '@/data/exercises';
@@ -66,7 +65,6 @@ interface SessionSummary {
 
 export default function SessionScreen(): React.ReactElement {
   const router = useRouter();
-  const { isPro } = usePro();
   const params = useLocalSearchParams<{ id: string }>();
   const sessionId = params.id ?? '';
   const { activeSession, startSession, updateSessionProgress, endSession } = useSession();
@@ -131,7 +129,7 @@ export default function SessionScreen(): React.ReactElement {
   );
   const zoneScore = state.session?.zone_score_at_start ?? null;
   const zoneLevel = useMemo(() => (zoneScore !== null ? getZoneLevel(zoneScore) : null), [zoneScore]);
-  const accentColor = zoneLevel?.color ?? colors.accent.gold;
+  const accentColor = zoneLevel?.color ?? colors.haltero;
 
   const exerciseIdx = activeSession?.currentExerciseIndex ?? 0;
   const setIdx = activeSession?.currentSetIndex ?? 0;
@@ -381,11 +379,6 @@ export default function SessionScreen(): React.ReactElement {
         <ZoneText variant="caption" numberOfLines={2} style={styles.zoneStripText}>
           {state.session.zone_message ?? 'En route.'}
         </ZoneText>
-        {isPro ? (
-          <View style={styles.proBadge}>
-            <ZoneText style={styles.proBadgeText}>PRO</ZoneText>
-          </View>
-        ) : null}
         {zoneScore !== null ? (
           <ZoneOrbe score={zoneScore} size={40} animated={false} />
         ) : null}
@@ -430,7 +423,6 @@ export default function SessionScreen(): React.ReactElement {
         <WorkView
           exerciseName={exerciseMeta?.name.toUpperCase() ?? currentExercise.exercise_id}
           canShowInfo={!!exerciseMeta}
-          isProUser={isPro}
           setIdx={setIdx}
           totalSets={totalSets}
           plannedSet={currentSet}
@@ -507,7 +499,7 @@ function ExerciseHintSheet({
           ) : null}
 
           <TouchableOpacity onPress={onOpenDetail} style={styles.sheetLink} activeOpacity={0.7}>
-            <ZoneText variant="label" color={colors.accent.gold}>
+            <ZoneText variant="label" color={colors.haltero}>
               Voir la fiche complète
             </ZoneText>
           </TouchableOpacity>
@@ -642,7 +634,7 @@ function PRFlash({ pr }: { pr: ResultPR }): React.ReactElement {
         <ZoneText variant="caption" color={colors.text.muted} style={{ marginHorizontal: 8 }}>
           ·
         </ZoneText>
-        <ZoneText variant="caption" color={colors.accent.gold} style={{ fontFamily: 'Inter-Bold' }}>
+        <ZoneText variant="caption" color={colors.haltero} style={{ fontFamily: 'Inter_700Bold' }}>
           Nouveau {pr.next} kg
         </ZoneText>
       </View>
@@ -754,7 +746,7 @@ function WeightInput({
       onSubmitEditing={commit}
       keyboardType="decimal-pad"
       returnKeyType="done"
-      selectionColor={colors.accent.gold}
+      selectionColor={colors.haltero}
       style={styles.weightInput}
       maxLength={6}
     />
@@ -764,7 +756,6 @@ function WeightInput({
 function WorkView({
   exerciseName,
   canShowInfo,
-  isProUser,
   setIdx,
   totalSets,
   plannedSet,
@@ -779,7 +770,6 @@ function WorkView({
 }: {
   exerciseName: string;
   canShowInfo: boolean;
-  isProUser: boolean;
   setIdx: number;
   totalSets: number;
   plannedSet: PlannedSet;
@@ -831,7 +821,7 @@ function WorkView({
             style={styles.weightBtn}
             activeOpacity={0.7}
           >
-            <Minus size={24} color={colors.accent.gold} />
+            <Minus size={24} color={colors.haltero} />
           </TouchableOpacity>
           <View style={styles.weightValueWrap}>
             <WeightInput value={actualWeight} onChange={onChangeWeight} />
@@ -845,7 +835,7 @@ function WorkView({
             style={styles.weightBtn}
             activeOpacity={0.7}
           >
-            <Plus size={24} color={colors.accent.gold} />
+            <Plus size={24} color={colors.haltero} />
           </TouchableOpacity>
         </View>
         <ZoneText variant="caption" color={colors.text.muted} style={styles.objective}>
@@ -951,10 +941,10 @@ function WorkView({
         <ZoneText variant="caption" color={colors.text.muted} style={styles.rirHint}>
           Reps en réserve · 0 = échec, 3+ = très facile
         </ZoneText>
-        {isProUser && setRpe !== null ? (
+        {setRpe !== null ? (
           <ZoneText
             variant="caption"
-            color={colors.accent.gold}
+            color={colors.haltero}
             style={styles.rirProSuggestion}
           >
             {weightSuggestionForRpe(setRpe, actualWeight)}
@@ -1006,7 +996,7 @@ function NumberStepper({
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={styles.stepperBtn}
         >
-          <Minus size={18} color={colors.accent.gold} />
+          <Minus size={18} color={colors.haltero} />
         </TouchableOpacity>
         <ZoneText variant="heading" style={styles.stepperValue}>
           {Number.isInteger(value) ? value : value.toFixed(1)}
@@ -1017,7 +1007,7 @@ function NumberStepper({
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={styles.stepperBtn}
         >
-          <Plus size={18} color={colors.accent.gold} />
+          <Plus size={18} color={colors.haltero} />
         </TouchableOpacity>
       </View>
     </View>
@@ -1102,7 +1092,7 @@ function RestView({
       <View style={styles.nextBlock}>
         <ZoneText
           variant="caption"
-          color={isNewExercise ? colors.accent.gold : colors.text.muted}
+          color={isNewExercise ? colors.haltero : colors.text.muted}
           style={styles.nextEyebrow}
         >
           {isNewExercise ? 'PROCHAIN EXERCICE' : 'PROCHAINE SÉRIE'}
@@ -1116,7 +1106,7 @@ function RestView({
         {isNewExercise ? (
           <ZoneText
             variant="caption"
-            color={colors.accent.gold}
+            color={colors.haltero}
             style={styles.nextPrepare}
           >
             Prépare-toi
@@ -1189,7 +1179,7 @@ function SummaryView({
                   <ZoneText variant="label" style={styles.prsExercise}>
                     🏆 {ex?.name ?? p.exercise_id}
                   </ZoneText>
-                  <ZoneText variant="caption" color={colors.accent.gold} style={styles.prsValue}>
+                  <ZoneText variant="caption" color={colors.haltero} style={styles.prsValue}>
                     {p.previous} → {p.next} kg
                   </ZoneText>
                 </View>
@@ -1258,7 +1248,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   proBadge: {
-    borderColor: colors.accent.gold,
+    borderColor: colors.haltero,
     borderWidth: 1,
     borderRadius: 4,
     paddingHorizontal: 6,
@@ -1266,15 +1256,15 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
   proBadgeText: {
-    color: colors.accent.gold,
-    fontFamily: 'Inter-Bold',
+    color: colors.haltero,
+    fontFamily: 'Inter_700Bold',
     fontSize: 8,
     letterSpacing: 1,
   },
   zoneStripText: {
     flex: 1,
     color: colors.bg.primary,
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Inter_700Bold',
     fontSize: 12,
     letterSpacing: 0.3,
   },
@@ -1288,7 +1278,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginLeft: 8,
   },
-  zoneScoreText: { color: colors.text.primary, fontFamily: 'Inter-Bold', fontSize: 13 },
+  zoneScoreText: { color: colors.text.primary, fontFamily: 'Inter_700Bold', fontSize: 13 },
   headerRow: {
     paddingHorizontal: 16,
     paddingTop: 8,
@@ -1335,7 +1325,7 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.haltero,
     marginTop: 7,
   },
   sheetCueText: { flex: 1, lineHeight: 20 },
@@ -1354,12 +1344,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.haltero,
     borderRadius: 999,
   },
-  rpeBadgeText: { color: colors.accent.gold, fontFamily: 'Inter-Bold', fontSize: 11 },
+  rpeBadgeText: { color: colors.haltero, fontFamily: 'Inter_700Bold', fontSize: 11 },
   targetMain: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', marginTop: 8 },
-  targetWeight: { fontSize: 64, color: colors.accent.gold, lineHeight: 70 },
+  targetWeight: { fontSize: 64, color: colors.haltero, lineHeight: 70 },
   targetReps: { fontSize: 28, color: colors.text.primary, marginLeft: 18, lineHeight: 36 },
   inputCard: {
     marginTop: 16,
@@ -1418,8 +1408,8 @@ const styles = StyleSheet.create({
   weightInput: {
     minWidth: 120,
     textAlign: 'center',
-    color: colors.accent.gold,
-    fontFamily: 'BebasNeue-Regular',
+    color: colors.haltero,
+    fontFamily: 'Inter_700Bold',
     fontSize: 64,
     lineHeight: 70,
     paddingVertical: 0,
@@ -1437,7 +1427,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  repCellActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
+  repCellActive: { backgroundColor: colors.haltero, borderColor: colors.haltero },
   repsCaption: { textAlign: 'center', marginTop: 8 },
   complexBtn: {
     marginTop: 24,
@@ -1449,10 +1439,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  complexBtnActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
-  complexBtnText: { fontFamily: 'Inter-Bold', letterSpacing: 0.5 },
+  complexBtnActive: { backgroundColor: colors.haltero, borderColor: colors.haltero },
+  complexBtnText: { fontFamily: 'Inter_700Bold', letterSpacing: 0.5 },
   rirBlock: { marginTop: 24, alignItems: 'center' },
-  rirHeader: { letterSpacing: 2, fontFamily: 'Inter-Bold', fontSize: 11, marginBottom: 10 },
+  rirHeader: { letterSpacing: 2, fontFamily: 'Inter_700Bold', fontSize: 11, marginBottom: 10 },
   rirRow: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center' },
   rirLabel: { letterSpacing: 1 },
   rirHint: { marginTop: 10, fontSize: 11, fontStyle: 'italic' },
@@ -1460,7 +1450,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    backgroundColor: `${colors.accent.gold}15`,
+    backgroundColor: `${colors.haltero}15`,
     borderRadius: 10,
     textAlign: 'center',
     lineHeight: 18,
@@ -1476,10 +1466,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rirCellActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
-  rirCellText: { fontFamily: 'Inter-Bold' },
+  rirCellActive: { backgroundColor: colors.haltero, borderColor: colors.haltero },
+  rirCellText: { fontFamily: 'Inter_700Bold' },
   restWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
-  restEyebrow: { letterSpacing: 3, fontFamily: 'Inter-Bold', marginBottom: 16 },
+  restEyebrow: { letterSpacing: 3, fontFamily: 'Inter_700Bold', marginBottom: 16 },
   ringWrap: { width: 220, height: 220, alignItems: 'center', justifyContent: 'center' },
   ringContent: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   ringValue: { fontSize: 56, lineHeight: 60 },
@@ -1495,10 +1485,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     minWidth: 240,
   },
-  nextEyebrow: { letterSpacing: 2, fontFamily: 'Inter-Bold', fontSize: 11 },
+  nextEyebrow: { letterSpacing: 2, fontFamily: 'Inter_700Bold', fontSize: 11 },
   nextName: { marginTop: 6, fontSize: 16, letterSpacing: 1 },
   nextLine: { marginTop: 4, lineHeight: 17 },
-  nextPrepare: { marginTop: 6, fontFamily: 'Inter-Bold', letterSpacing: 1 },
+  nextPrepare: { marginTop: 6, fontFamily: 'Inter_700Bold', letterSpacing: 1 },
   nextRemaining: { marginTop: 6, fontSize: 11 },
   restControls: { flexDirection: 'row', alignItems: 'center', marginTop: 28 },
   restAdjust: {
@@ -1509,15 +1499,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginHorizontal: 6,
   },
-  restAdjustText: { color: colors.text.secondary, fontFamily: 'Inter-Medium' },
+  restAdjustText: { color: colors.text.secondary, fontFamily: 'Inter_500Medium' },
   restSkip: {
     paddingHorizontal: 24,
     paddingVertical: 12,
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.haltero,
     borderRadius: 12,
     marginHorizontal: 6,
   },
-  restSkipText: { color: colors.bg.primary, fontFamily: 'Inter-Bold', letterSpacing: 1 },
+  restSkipText: { color: colors.bg.primary, fontFamily: 'Inter_700Bold', letterSpacing: 1 },
   prOverlay: {
     position: 'absolute',
     top: 0,
@@ -1530,7 +1520,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   prTitle: { fontSize: 48, color: colors.bg.primary, letterSpacing: 2 },
-  prExercise: { marginTop: 8, color: colors.bg.primary, fontFamily: 'Inter-Bold' },
+  prExercise: { marginTop: 8, color: colors.bg.primary, fontFamily: 'Inter_700Bold' },
   prRow: { flexDirection: 'row', marginTop: 12, alignItems: 'center' },
   summaryWrap: { flex: 1, padding: 24 },
   summaryTitle: { fontSize: 40, marginTop: 24, letterSpacing: 2 },
@@ -1554,14 +1544,14 @@ const styles = StyleSheet.create({
     marginTop: 20,
     backgroundColor: colors.bg.card,
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.haltero,
     borderRadius: 16,
     padding: 14,
   },
   prsLabel: { letterSpacing: 2, fontSize: 11, marginBottom: 8 },
   prsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 2 },
   prsExercise: { color: colors.text.primary, fontSize: 14 },
-  prsValue: { fontFamily: 'Inter-Bold' },
+  prsValue: { fontFamily: 'Inter_700Bold' },
   zoneSummaryCard: {
     marginTop: 24,
     backgroundColor: colors.bg.card,

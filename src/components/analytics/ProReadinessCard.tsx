@@ -54,7 +54,7 @@ export function ProReadinessCard({
           <ZoneText
             variant="label"
             size={12}
-            color={colors.accent.gold}
+            color={colors.scoreGreen}
             style={styles.label}
           >
             {readiness.label}
@@ -125,7 +125,7 @@ function Indicator({ icon, label, value, dotColor }: IndicatorProps): React.Reac
 
 function colorForScore(score: number): string {
   if (score >= 75) return colors.success;
-  if (score >= 55) return colors.accent.gold;
+  if (score >= 55) return colors.scoreGreen;
   if (score >= 35) return colors.orbe.amber;
   return colors.danger;
 }

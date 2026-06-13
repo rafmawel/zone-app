@@ -55,7 +55,7 @@ export interface ProgrammeDescription {
 }
 
 const BLOCK_COLOR_BLUE = '#64B5F6';
-const BLOCK_COLOR_GOLD = '#C9A84C';
+const BLOCK_COLOR_ACCENT = '#1BCA82';
 const BLOCK_COLOR_RED = '#E57373';
 const BLOCK_COLOR_GREEN = '#4CAF50';
 
@@ -93,7 +93,7 @@ const WEIGHTLIFTING: ProgrammeDescription = {
       goal:
         "Développer la force maximale. Les charges montent, le corps s'adapte.",
       sessionDuration: '55 à 75 min',
-      color: BLOCK_COLOR_GOLD,
+      color: BLOCK_COLOR_ACCENT,
     },
     {
       name: 'BLOC 3 · RÉALISATION',
@@ -203,7 +203,7 @@ const RUNNING: ProgrammeDescription = {
       volume: 'Volume maintenu, qualité augmente',
       goal: 'Développer le seuil lactique et la VMA.',
       sessionDuration: '40 à 90 min',
-      color: BLOCK_COLOR_GOLD,
+      color: BLOCK_COLOR_ACCENT,
     },
     {
       name: 'BLOC 3 · SPÉCIFICITÉ',
@@ -311,7 +311,7 @@ const MUSCULATION: ProgrammeDescription = {
       volume: 'Volume optimal pour la croissance max',
       goal: 'Maximiser le stimulus hypertrophique.',
       sessionDuration: '55 à 70 min',
-      color: BLOCK_COLOR_GOLD,
+      color: BLOCK_COLOR_ACCENT,
     },
     {
       name: 'PHASE MRV · ACCUMULATION',
@@ -421,7 +421,7 @@ const HYROX: ProgrammeDescription = {
       goal:
         'Augmenter la capacité des stations tout en maintenant la base running.',
       sessionDuration: '45 à 70 min',
-      color: BLOCK_COLOR_GOLD,
+      color: BLOCK_COLOR_ACCENT,
     },
     {
       name: 'BLOC 3 · SPÉCIFICITÉ COURSE',

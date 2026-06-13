@@ -32,7 +32,7 @@ export function SelectableCard({
       style={[
         styles.card,
         {
-          borderColor: selected ? colors.accent.gold : colors.border,
+          borderColor: selected ? colors.scoreGreen : colors.border,
           backgroundColor: selected ? colors.bg.elevated : colors.bg.card,
           opacity: disabled ? 0.5 : 1,
         },
@@ -49,8 +49,8 @@ export function SelectableCard({
           <ZoneText
             variant="label"
             style={{
-              color: selected ? colors.accent.gold : colors.text.primary,
-              fontFamily: 'Inter-Medium',
+              color: selected ? colors.scoreGreen : colors.text.primary,
+              fontFamily: 'Inter_500Medium',
               fontSize: 16,
             }}
           >
@@ -86,11 +86,11 @@ const styles = StyleSheet.create({
   textCol: { flex: 1 },
   subtitle: { marginTop: 4 },
   badge: {
-    backgroundColor: colors.accent.goldDark,
+    backgroundColor: colors.scoreGreen,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 4,
     marginLeft: 12,
   },
-  badgeText: { fontFamily: 'Inter-Medium', fontSize: 11 },
+  badgeText: { fontFamily: 'Inter_500Medium', fontSize: 11 },
 });

@@ -1,38 +1,65 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Info } from 'lucide-react-native';
-import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Dimensions, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { Bell } from 'lucide-react-native';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import {
-  countCompletedSessionsSince,
-  getAllTimeStats,
+  getCompletedRuns,
+  getCompletedSessions,
   getExerciseMaxes,
+  getHyroxSessionHistory,
+  getUserSchedule,
   todayDateString,
-  type AllTimeStats,
   type DailyCheckin,
   type ExerciseMax,
   type HyroxProfile,
   type MuscleProfile,
   type QueueState,
   type RunningProfile,
-  type TrainingSession,
   type UserProfile,
   type UserProgram,
+  type Weekday,
 } from '@/lib/firestore';
 import { buildProgrammeQueue, type QueueItem } from '@/lib/programmeQueue';
 import { blockFromWeeksToRace, type HyroxBlockPhase } from '@/lib/hyroxScience';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { useWeekBilans } from '@/hooks/useWeekBilans';
-import { colors } from '@/theme/colors';
+import { colors, radius, type SportColorKey } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
-import { Button } from '@/components/ui/Button';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { ZoneOrbe } from '@/components/ZoneOrbe';
+import { WeekTimeline, type WeekDay } from '@/components/ui/WeekTimeline';
 import { BilanCard } from '@/components/BilanCard';
 import { ProgrammeCompleteCard } from '@/components/ProgrammeCompleteCard';
-import type { ProSport } from '@/lib/weekProgression';
+
+const GAP = 12;
+const H_PADDING = 20;
+const CARD_W = (Dimensions.get('window').width - H_PADDING * 2 - GAP) / 2;
+const DAY_LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+const SPORT_KEY: Record<string, SportColorKey> = {
+  weightlifting: 'haltero',
+  running: 'run',
+  musculation: 'muscu',
+  hyrox: 'hyrox',
+};
+
+const SPORT_NAME: Record<SportColorKey, string> = {
+  haltero: 'Haltérophilie',
+  run: 'Course',
+  muscu: 'Musculation',
+  hyrox: 'Hyrox',
+};
+
+const WEEKDAY_INDEX: Record<Weekday, number> = {
+  lundi: 0,
+  mardi: 1,
+  mercredi: 2,
+  jeudi: 3,
+  vendredi: 4,
+  samedi: 5,
+  dimanche: 6,
+};
 
 function frenchDate(): string {
   try {
@@ -47,48 +74,53 @@ function frenchDate(): string {
   }
 }
 
-function sportOf(s: TrainingSession): { label: string; icon: string; color: string } {
-  if (s.discipline === 'musculation')
-    return { label: 'Musculation', icon: '💪', color: colors.orbe.blue };
-  if (s.sport_key === 'running')
-    return { label: 'Course', icon: '🏃', color: colors.orbe.green };
-  return { label: 'Haltérophilie', icon: '🏋️', color: colors.accent.gold };
+function mondayDate(): Date {
+  const d = new Date();
+  const day = (d.getDay() + 6) % 7;
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - day);
+  return d;
 }
 
-function sportLabel(sport: ProSport): { label: string; icon: string; color: string } {
-  if (sport === 'musculation') return { label: 'Musculation', icon: '💪', color: colors.orbe.blue };
-  if (sport === 'running') return { label: 'Course', icon: '🏃', color: colors.orbe.green };
-  if (sport === 'hyrox') return { label: 'Hyrox', icon: '🔥', color: colors.orbe.amber };
-  return { label: 'Haltérophilie', icon: '🏋️', color: colors.accent.gold };
+function buildWeek(
+  doneDates: Set<string>,
+  scheduled: Record<number, SportColorKey>,
+): WeekDay[] {
+  const monday = mondayDate();
+  const today = todayDateString();
+  const out: WeekDay[] = [];
+  for (let i = 0; i < 7; i += 1) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const ds = todayDateString(d);
+    if (ds === today) out.push({ label: DAY_LABELS[i], status: 'today' });
+    else if (doneDates.has(ds)) out.push({ label: DAY_LABELS[i], status: 'done' });
+    else if (ds > today && scheduled[i])
+      out.push({ label: DAY_LABELS[i], status: 'scheduled', sport: scheduled[i] });
+    else out.push({ label: DAY_LABELS[i], status: 'rest' });
+  }
+  return out;
 }
 
-function proSportFromSession(session: TrainingSession): ProSport {
-  if (session.discipline === 'musculation') return 'musculation';
-  if (session.sport_key === 'running') return 'running';
-  return 'weightlifting';
-}
-
-function sessionMeta(s: TrainingSession): string {
-  const sets = (s.planned_exercises ?? []).reduce((a, e) => a + e.sets.length, 0);
-  const ex = s.planned_exercises?.length ?? 0;
-  const minutes = Math.max(20, 10 + Math.round(sets * 3));
-  return `${ex} exercice${ex > 1 ? 's' : ''} · ~${minutes} min`;
+interface RecentSession {
+  date: string;
+  sport: SportColorKey;
+  label: string;
+  meta: string;
 }
 
 export default function DashboardScreen(): React.ReactElement {
   const router = useRouter();
   const [checkin, setCheckin] = useState<DailyCheckin | null>(null);
-  const [loaded, setLoaded] = useState<boolean>(false);
-  const [todaySession, setTodaySession] = useState<TrainingSession | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
-  const [stats, setStats] = useState<AllTimeStats | null>(null);
-  const [weekCount, setWeekCount] = useState<number>(0);
   const [program, setProgram] = useState<UserProgram | null>(null);
   const [runningProfile, setRunningProfile] = useState<RunningProfile | null>(null);
   const [muscleProfile, setMuscleProfile] = useState<MuscleProfile | null>(null);
   const [hyroxProfile, setHyroxProfile] = useState<HyroxProfile | null>(null);
   const [maxes, setMaxes] = useState<ExerciseMax[]>([]);
   const [queueState, setQueueState] = useState<QueueState>({});
+  const [weekDays, setWeekDays] = useState<WeekDay[]>(() => buildWeek(new Set(), {}));
+  const [lastSession, setLastSession] = useState<RecentSession | null>(null);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -133,16 +165,98 @@ export default function DashboardScreen(): React.ReactElement {
     };
   }, []);
 
-  // First "available" item in the programme queue across every
-  // configured sport plus the count of any additional available
-  // sessions still queued for this week.
-  const { nextQueueItem, additionalAvailable } = useMemo<{
-    nextQueueItem: QueueItem | null;
-    additionalAvailable: number;
-  }>(() => {
-    if (!program && !runningProfile && !muscleProfile && !hyroxProfile) {
-      return { nextQueueItem: null, additionalAvailable: 0 };
-    }
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const unsub = onSnapshot(
+      doc(db, 'users', user.uid, 'checkins', todayDateString()),
+      (snap) => setCheckin(snap.exists() ? (snap.data() as DailyCheckin) : null),
+      () => setCheckin(null),
+    );
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        if (!cancelled && snap.exists()) {
+          const data = snap.data() as Partial<UserProfile>;
+          setProfileName(data.name ?? data.first_name ?? null);
+        }
+      } catch {
+        // best-effort
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Weekly timeline + last completed session.
+  const loadWeek = useCallback(async (): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const [sessions, runs, hyrox, schedule] = await Promise.all([
+      getCompletedSessions(user.uid).catch(() => []),
+      getCompletedRuns(user.uid, 30).catch(() => []),
+      getHyroxSessionHistory(user.uid, 20).catch(() => []),
+      getUserSchedule(user.uid).catch(() => null),
+    ]);
+
+    const done = new Set<string>();
+    sessions.forEach((s) => done.add(s.date));
+    runs.forEach((r) => done.add(r.date));
+    hyrox.forEach((h) => done.add(h.date));
+
+    const scheduled: Record<number, SportColorKey> = {};
+    schedule?.assignments?.forEach((a) => {
+      const idx = WEEKDAY_INDEX[a.day];
+      if (idx != null && scheduled[idx] == null) scheduled[idx] = SPORT_KEY[a.sport] ?? 'haltero';
+    });
+    setWeekDays(buildWeek(done, scheduled));
+
+    const recent: RecentSession[] = [
+      ...sessions.map((s) => ({
+        date: s.date,
+        sport: (s.discipline === 'musculation' ? 'muscu' : 'haltero') as SportColorKey,
+        label: s.discipline === 'musculation' ? 'Musculation' : 'Haltérophilie',
+        meta: s.duration_minutes ? `${s.duration_minutes} min` : 'Séance',
+      })),
+      ...runs.map((r) => ({
+        date: r.date,
+        sport: 'run' as SportColorKey,
+        label: 'Course',
+        meta: r.actual_distance_km ? `${r.actual_distance_km.toFixed(1)} km` : 'Course',
+      })),
+      ...hyrox.map((h) => ({
+        date: h.date,
+        sport: 'hyrox' as SportColorKey,
+        label: 'Hyrox',
+        meta: 'Séance Hyrox',
+      })),
+    ].sort((a, b) => b.date.localeCompare(a.date));
+    setLastSession(recent[0] ?? null);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadWeek();
+    }, [loadWeek]),
+  );
+
+  const { bilans, advance, repeat, startNewCycle } = useWeekBilans({
+    program,
+    runningProfile,
+    muscleProfile,
+    hyroxProfile,
+  });
+
+  const availableItems = useMemo<QueueItem[]>(() => {
+    if (!program && !runningProfile && !muscleProfile && !hyroxProfile) return [];
     const iso = hyroxProfile?.target_race_date ?? null;
     const weeksToRace = (() => {
       if (!iso) return null;
@@ -161,149 +275,110 @@ export default function DashboardScreen(): React.ReactElement {
       state: queueState,
       weeks: 1,
     });
-    const available = (queueWeeks[0] ?? []).filter((i) => i.status === 'available');
-    return {
-      nextQueueItem: available[0] ?? null,
-      additionalAvailable: Math.max(0, available.length - 1),
-    };
+    return (queueWeeks[0] ?? []).filter((i) => i.status === 'available').slice(0, 3);
   }, [program, runningProfile, muscleProfile, hyroxProfile, maxes, queueState]);
 
-  const { bilans, advance, repeat, startNewCycle } = useWeekBilans({
-    program,
-    runningProfile,
-    muscleProfile,
-    hyroxProfile,
-  });
-
-  useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) {
-      setLoaded(true);
-      return;
-    }
-    const unsub = onSnapshot(
-      doc(db, 'users', user.uid, 'checkins', todayDateString()),
-      (snap) => {
-        setCheckin(snap.exists() ? (snap.data() as DailyCheckin) : null);
-        setLoaded(true);
-      },
-      () => setLoaded(true),
-    );
-    return unsub;
-  }, []);
-
-  useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) return;
-    const q = query(
-      collection(db, 'users', user.uid, 'sessions'),
-      orderBy('date', 'asc'),
-      limit(20),
-    );
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const today = todayDateString();
-        const rows = snap.docs.map((d) => d.data() as TrainingSession);
-        setTodaySession(
-          rows.find((s) => s.status === 'planned' && s.date === today) ?? null,
-        );
-      },
-      () => setTodaySession(null),
-    );
-    return unsub;
-  }, []);
-
-  useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const snap = await getDoc(doc(db, 'users', user.uid));
-        if (!cancelled && snap.exists()) {
-          const data = snap.data() as Partial<UserProfile>;
-          setProfileName(data.name ?? data.first_name ?? null);
-        }
-        const all = await getAllTimeStats(user.uid).catch(() => null);
-        if (!cancelled && all) setStats(all);
-        const completed = await countCompletedSessionsSince(user.uid, mondayISO());
-        if (!cancelled) setWeekCount(completed);
-      } catch {
-        // best-effort
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const score = checkin?.zone_score ?? 50;
-  const level = checkin ? getZoneLevel(score) : null;
+  const score = checkin?.zone_score ?? 0;
+  const hasCheckin = Boolean(checkin);
+  const level = hasCheckin ? getZoneLevel(score) : null;
   const date = frenchDate();
   const name = auth.currentUser?.displayName?.trim() || profileName || 'Athlète';
-  const hasCheckin = Boolean(checkin);
+
+  const blockColor = hasCheckin ? level?.color ?? colors.scoreGreen : colors.surface;
+  const onColor = hasCheckin;
+  const eyebrowColor = onColor ? 'rgba(255,255,255,0.85)' : colors.textMuted;
+  const valueColor = onColor ? '#FFFFFF' : colors.textPrimary;
+  const labelColor = onColor ? 'rgba(255,255,255,0.92)' : colors.textSecondary;
 
   return (
     <SafeScreen>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Header */}
         <View style={styles.header}>
-          <ZoneText variant="body" size={16} color={colors.text.secondary}>
-            Bonjour, {name}
+          <ZoneText variant="caption" color={colors.textMuted}>
+            {date}
           </ZoneText>
-          {date ? (
-            <ZoneText variant="caption" size={14} color={colors.text.muted} style={styles.headerDate}>
-              {date}
+          <View style={styles.headerRight}>
+            <ZoneText variant="label" color={colors.textPrimary} style={styles.greeting}>
+              Bonjour, {name}
             </ZoneText>
-          ) : null}
+            <Bell size={20} color={colors.textSecondary} />
+          </View>
         </View>
 
-        {/* HERO — Zone score */}
+        {/* Score Zone block */}
         <TouchableOpacity
           activeOpacity={hasCheckin ? 1 : 0.85}
           disabled={hasCheckin}
           onPress={() => router.push('/(app)/checkin')}
-          style={[styles.hero, !hasCheckin ? styles.heroPrompt : null]}
+          style={[styles.scoreBlock, { backgroundColor: blockColor }]}
         >
-          {!loaded ? (
-            <Skeleton width={120} height={120} borderRadius={60} />
-          ) : (
-            <>
-              <ZoneOrbe
-                score={hasCheckin ? score : 50}
-                size={120}
-                animated
-                overlayText={!hasCheckin ? '?' : undefined}
-              />
-              {hasCheckin ? (
-                <>
-                  <ZoneText
-                    variant="number"
-                    style={[styles.score, { color: level ? level.color : colors.accent.gold }]}
-                  >
-                    {score}
-                  </ZoneText>
-                  {level ? (
-                    <ZoneText variant="title" size={18} style={{ color: level.color }}>
-                      {level.label}
-                    </ZoneText>
-                  ) : null}
-                  {level ? (
-                    <ZoneText variant="caption" color={colors.text.muted} style={styles.heroMsg}>
-                      {level.message ?? ''}
-                    </ZoneText>
-                  ) : null}
-                </>
-              ) : (
-                <ZoneText variant="titleSm" color={colors.accent.gold} style={styles.heroPromptText}>
-                  Fais ton check-in
-                </ZoneText>
-              )}
-            </>
-          )}
+          <ZoneText style={[styles.scoreEyebrow, { color: eyebrowColor }]}>SCORE ZONE</ZoneText>
+          <View style={styles.scoreMain}>
+            <ZoneText style={[styles.scoreValue, { color: valueColor }]}>
+              {hasCheckin ? score : '—'}
+            </ZoneText>
+            <View style={styles.scoreLabelWrap}>
+              <ZoneText style={[styles.scoreLabel, { color: labelColor }]} numberOfLines={3}>
+                {hasCheckin ? level?.label ?? '' : 'Fais ton check-in du jour'}
+              </ZoneText>
+            </View>
+          </View>
         </TouchableOpacity>
 
-        {/* Bilans hebdomadaires par sport */}
+        {/* Cette semaine */}
+        <ZoneText style={styles.sectionLabel}>CETTE SEMAINE</ZoneText>
+        <WeekTimeline days={weekDays} />
+
+        {/* Aujourd'hui */}
+        <ZoneText style={[styles.sectionLabel, styles.sectionLabelSpaced]}>AUJOURD'HUI</ZoneText>
+        <View style={styles.grid}>
+          {availableItems.map((item) => {
+            const sport = SPORT_KEY[item.sport] ?? 'haltero';
+            return (
+              <GridCard
+                key={item.key}
+                bg={colors[sport]}
+                eyebrow={SPORT_NAME[sport]}
+                eyebrowColor="rgba(255,255,255,0.85)"
+                title={item.name}
+                titleColor="#FFFFFF"
+                meta={`~${item.estimatedMinutes} min`}
+                metaBg="rgba(255,255,255,0.18)"
+                metaColor="#FFFFFF"
+                onPress={() => router.push('/(app)/(tabs)/entrainer')}
+              />
+            );
+          })}
+
+          <GridCard
+            bg={colors.checkin}
+            eyebrow="Check-in"
+            eyebrowColor="rgba(255,255,255,0.85)"
+            title="Sommeil & ressenti"
+            titleColor="#FFFFFF"
+            meta={hasCheckin ? `Fait · ${score}` : 'À compléter'}
+            metaBg="rgba(255,255,255,0.18)"
+            metaColor="#FFFFFF"
+            onPress={() => router.push('/(app)/checkin')}
+          />
+
+          {lastSession ? (
+            <GridCard
+              bg={colors.surface}
+              eyebrow="Dernière séance"
+              eyebrowColor={colors.textMuted}
+              title={lastSession.label}
+              titleColor={colors.textPrimary}
+              meta={lastSession.meta}
+              metaBg={colors.surfaceAlt}
+              metaColor={colors.textSecondary}
+              onPress={() => router.push('/(app)/history')}
+            />
+          ) : null}
+        </View>
+
+        {/* Bilans hebdomadaires (avancement de programme) */}
         {bilans.length > 0 ? (
           <View style={styles.bilansBlock}>
             {bilans.map((b) =>
@@ -342,243 +417,134 @@ export default function DashboardScreen(): React.ReactElement {
                     })
                   }
                   notStartedOnStart={
-                    b.notStarted
-                      ? () => router.push('/(app)/(tabs)/aujourd-hui')
-                      : undefined
+                    b.notStarted ? () => router.push('/(app)/(tabs)/aujourd-hui') : undefined
                   }
                 />
               ),
             )}
           </View>
         ) : null}
-
-        {/* Next session (any sport from the programme queue). When the
-            queue has nothing available we fall back to the planned
-            TrainingSession doc (legacy weightlifting/musculation
-            sessions), and finally to a Rest / Bonus card. */}
-        {nextQueueItem ? (
-          (() => {
-            const sport = sportLabel(nextQueueItem.sport as ProSport);
-            return (
-              <View style={styles.sessionCard}>
-                <View style={styles.sessionHeaderRow}>
-                  <View style={[styles.sportPill, { backgroundColor: `${sport.color}22`, borderColor: sport.color }]}>
-                    <ZoneText variant="caption" color={sport.color} style={styles.sportPillText}>
-                      {sport.icon} {sport.label.toUpperCase()}
-                    </ZoneText>
-                  </View>
-                  <TouchableOpacity
-                    hitSlop={12}
-                    onPress={() =>
-                      router.push({
-                        pathname: '/(app)/programme-overview',
-                        params: { sport: nextQueueItem.sport },
-                      })
-                    }
-                    accessibilityLabel="Voir le programme en détail"
-                    style={styles.sessionInfoBtn}
-                  >
-                    <Info size={16} color={colors.text.muted} />
-                  </TouchableOpacity>
-                </View>
-                <ZoneText variant="title" size={18} color={colors.text.primary} style={styles.sessionName}>
-                  {nextQueueItem.name}
-                </ZoneText>
-                <ZoneText variant="caption" color={colors.text.muted} style={styles.sessionMeta}>
-                  ~{nextQueueItem.estimatedMinutes} min
-                  {nextQueueItem.exercises.length > 0 ? ` · ${nextQueueItem.exercises.join(' · ')}` : ''}
-                </ZoneText>
-                {additionalAvailable > 0 ? (
-                  <ZoneText variant="caption" color={colors.text.muted} style={styles.sessionExtra}>
-                    ET {additionalAvailable} AUTRE SÉANCE{additionalAvailable > 1 ? 'S' : ''} CETTE SEMAINE
-                  </ZoneText>
-                ) : null}
-                <Button
-                  title="COMMENCER"
-                  onPress={() => router.push('/(app)/(tabs)/aujourd-hui')}
-                  style={styles.sessionBtn}
-                />
-              </View>
-            );
-          })()
-        ) : todaySession ? (
-          <View style={styles.sessionCard}>
-            <View style={styles.sessionHeaderRow}>
-              <View style={[styles.sportPill, { backgroundColor: `${sportOf(todaySession).color}22`, borderColor: sportOf(todaySession).color }]}>
-                <ZoneText variant="caption" color={sportOf(todaySession).color} style={styles.sportPillText}>
-                  {sportOf(todaySession).icon} {sportOf(todaySession).label.toUpperCase()}
-                </ZoneText>
-              </View>
-              <TouchableOpacity
-                hitSlop={12}
-                onPress={() =>
-                  router.push({
-                    pathname: '/(app)/programme-overview',
-                    params: { sport: proSportFromSession(todaySession) },
-                  })
-                }
-                accessibilityLabel="Voir le programme en détail"
-                style={styles.sessionInfoBtn}
-              >
-                <Info size={16} color={colors.text.muted} />
-              </TouchableOpacity>
-            </View>
-            <ZoneText variant="title" size={18} color={colors.text.primary} style={styles.sessionName}>
-              Séance du jour
-            </ZoneText>
-            <ZoneText variant="caption" color={colors.text.muted} style={styles.sessionMeta}>
-              {sessionMeta(todaySession)}
-            </ZoneText>
-            <Button
-              title="COMMENCER"
-              onPress={() => router.push(`/(app)/session/${todaySession.id}`)}
-              style={styles.sessionBtn}
-            />
-          </View>
-        ) : (
-          <View style={styles.restCard}>
-            <ZoneText variant="titleSm" color={colors.text.primary}>
-              Repos
-            </ZoneText>
-            <ZoneText variant="caption" color={colors.text.muted} style={styles.sessionMeta}>
-              Récupération active possible.
-            </ZoneText>
-            <TouchableOpacity
-              onPress={() => router.push('/(app)/(tabs)/aujourd-hui')}
-              activeOpacity={0.8}
-              style={styles.bonusGhost}
-            >
-              <ZoneText variant="label" color={colors.accent.gold}>
-                Séance bonus
-              </ZoneText>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Weekly stats */}
-        <View style={styles.statsRow}>
-          <StatCard label="Cette semaine" value={String(weekCount)} suffix="séances" />
-          <StatCard label="Streak" value={stats ? String(stats.bestStreak) : '0'} suffix="jours" />
-          <StatCard
-            label="Score moyen"
-            value={stats && stats.avgZoneScore ? String(stats.avgZoneScore) : '--'}
-            suffix="pts"
-          />
-        </View>
       </ScrollView>
     </SafeScreen>
   );
 }
 
-function mondayISO(): string {
-  const d = new Date();
-  const day = (d.getDay() + 6) % 7;
-  d.setDate(d.getDate() - day);
-  return todayDateString(d);
-}
-
-function StatCard({
-  label,
-  value,
-  suffix,
+function GridCard({
+  bg,
+  eyebrow,
+  eyebrowColor,
+  title,
+  titleColor,
+  meta,
+  metaBg,
+  metaColor,
+  onPress,
 }: {
-  label: string;
-  value: string;
-  suffix: string;
+  bg: string;
+  eyebrow: string;
+  eyebrowColor: string;
+  title: string;
+  titleColor: string;
+  meta?: string;
+  metaBg: string;
+  metaColor: string;
+  onPress: () => void;
 }): React.ReactElement {
   return (
-    <View style={styles.statCard}>
-      <ZoneText variant="caption" color={colors.text.muted} style={styles.statLabel}>
-        {label}
+    <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={[styles.gridCard, { backgroundColor: bg }]}>
+      <ZoneText style={[styles.gridEyebrow, { color: eyebrowColor }]}>{eyebrow.toUpperCase()}</ZoneText>
+      <ZoneText style={[styles.gridTitle, { color: titleColor }]} numberOfLines={2}>
+        {title}
       </ZoneText>
-      <ZoneText variant="number" style={styles.statValue}>
-        {value}
-      </ZoneText>
-      <ZoneText variant="caption" color={colors.text.muted}>
-        {suffix}
-      </ZoneText>
-    </View>
+      {meta ? (
+        <View style={[styles.gridBadge, { backgroundColor: metaBg }]}>
+          <ZoneText style={[styles.gridBadgeText, { color: metaColor }]} numberOfLines={1}>
+            {meta}
+          </ZoneText>
+        </View>
+      ) : null}
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 },
-  header: { marginBottom: 20 },
-  headerDate: { marginTop: 4 },
-  hero: {
-    alignItems: 'center',
-    backgroundColor: colors.bg.cardTop,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 24,
-    paddingVertical: 32,
-    paddingHorizontal: 20,
-  },
-  heroPrompt: { borderColor: colors.accent.gold, borderWidth: 1.5 },
-  heroPromptText: { marginTop: 16 },
-  score: { fontSize: 80, lineHeight: 86, marginTop: 16 },
-  heroMsg: { marginTop: 6, textAlign: 'center', lineHeight: 17, paddingHorizontal: 12 },
-  bilansBlock: { marginTop: 16, marginHorizontal: -20 },
-  sessionCard: {
-    marginTop: 16,
-    backgroundColor: colors.bg.card,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.accent.gold,
-    borderRadius: 16,
-    padding: 20,
-  },
-  sessionHeaderRow: {
+  content: { paddingHorizontal: H_PADDING, paddingTop: 8, paddingBottom: 32 },
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 20,
   },
-  sportPill: {
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  greeting: { fontSize: 15 },
+  scoreBlock: {
+    borderRadius: radius.xl,
+    padding: 20,
+    marginBottom: 24,
+  },
+  scoreEyebrow: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+    letterSpacing: 1.5,
+  },
+  scoreMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    gap: 18,
+  },
+  scoreValue: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 52,
+    lineHeight: 56,
+  },
+  scoreLabelWrap: { flex: 1 },
+  scoreLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  sectionLabel: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+    letterSpacing: 1.5,
+    color: colors.textMuted,
+    marginBottom: 12,
+  },
+  sectionLabelSpaced: { marginTop: 24 },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: GAP,
+  },
+  gridCard: {
+    width: CARD_W,
+    minHeight: 124,
+    borderRadius: radius.lg,
+    padding: 16,
+    justifyContent: 'space-between',
+  },
+  gridEyebrow: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 10,
+    letterSpacing: 0.6,
+  },
+  gridTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 15,
+    marginTop: 8,
+    flex: 1,
+  },
+  gridBadge: {
     alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderRadius: 999,
+    borderRadius: radius.full,
     paddingHorizontal: 10,
     paddingVertical: 4,
+    marginTop: 10,
   },
-  sportPillText: { fontFamily: 'Inter-Bold', letterSpacing: 0.5 },
-  sessionInfoBtn: { padding: 4 },
-  sessionName: { marginTop: 2 },
-  sessionMeta: { marginTop: 4 },
-  sessionExtra: {
-    marginTop: 6,
-    fontFamily: 'Inter-Bold',
-    letterSpacing: 1,
-    fontSize: 10,
+  gridBadgeText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
   },
-  sessionBtn: { marginTop: 16 },
-  restCard: {
-    marginTop: 16,
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 16,
-    padding: 20,
-  },
-  bonusGhost: {
-    marginTop: 12,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: colors.accent.gold,
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-  },
-  statsRow: { flexDirection: 'row', marginTop: 20, gap: 10 },
-  statCard: {
-    flex: 1,
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-  },
-  statLabel: { fontSize: 11, textAlign: 'center' },
-  statValue: { fontSize: 34, color: colors.text.primary, marginTop: 6, lineHeight: 38 },
+  bilansBlock: { marginTop: 24, marginHorizontal: -H_PADDING },
 });

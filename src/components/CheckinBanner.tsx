@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/Button';
 /**
  * Prominent banner prompting the user to do today's check-in.
  *
- * Renders a gold pulsing border, French copy and a primary CTA that
+ * Renders an accent pulsing border, French copy and a primary CTA that
  * routes to the check-in flow. Hidden by the parent when a check-in is
  * already saved for today.
  */
@@ -32,7 +32,7 @@ export function CheckinBanner(): React.ReactElement {
   }, [pulse]);
 
   const borderStyle = useAnimatedStyle(() => ({
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
     opacity: pulse.value,
   }));
 
@@ -40,7 +40,7 @@ export function CheckinBanner(): React.ReactElement {
     <View style={styles.wrap}>
       <Animated.View style={[styles.pulse, borderStyle]} pointerEvents="none" />
       <View style={styles.card}>
-        <ZoneText variant="label" size={16} color={colors.accent.gold} style={styles.title}>
+        <ZoneText variant="label" size={16} color={colors.scoreGreen} style={styles.title}>
           🌅 Check-in du jour
         </ZoneText>
         <ZoneText variant="body" size={13} color={colors.text.primary} style={styles.body}>
@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: colors.bg.card,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
     borderWidth: 1,
     borderRadius: 14,
     padding: 16,

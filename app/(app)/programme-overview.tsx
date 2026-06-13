@@ -189,12 +189,12 @@ function HeroCard({ data }: { data: ProgrammeDescription }): React.ReactElement 
       </ZoneText>
       <View style={styles.pillRow}>
         <View style={styles.pill}>
-          <ZoneText variant="caption" color={colors.accent.gold} style={styles.pillText}>
+          <ZoneText variant="caption" color={colors.scoreGreen} style={styles.pillText}>
             {data.duration}
           </ZoneText>
         </View>
         <View style={styles.pill}>
-          <ZoneText variant="caption" color={colors.accent.gold} style={styles.pillText}>
+          <ZoneText variant="caption" color={colors.scoreGreen} style={styles.pillText}>
             {data.sessionsPerWeek}
           </ZoneText>
         </View>
@@ -213,7 +213,7 @@ function ScienceCard({
 }): React.ReactElement {
   return (
     <View style={styles.scienceCard}>
-      <ZoneText variant="caption" color={colors.accent.gold} style={styles.sectionEyebrow}>
+      <ZoneText variant="caption" color={colors.scoreGreen} style={styles.sectionEyebrow}>
         LA SCIENCE DERRIÈRE
       </ZoneText>
       <ZoneText variant="heading" style={styles.scienceMethod}>
@@ -341,7 +341,7 @@ function BenefitsSection({ items }: { items: string[] }): React.ReactElement | n
           <View key={`${it}-${i}`} style={styles.listRow}>
             <ZoneText
               variant="label"
-              color={colors.accent.gold}
+              color={colors.scoreGreen}
               style={styles.benefitMark}
             >
               ✓
@@ -490,7 +490,7 @@ function buildFallbackDescription(sport: ProSport): ProgrammeDescription {
         volume: 'Optimal',
         goal: 'Pousser le stimulus pour générer des adaptations.',
         sessionDuration: '50 à 70 min',
-        color: '#C9A84C',
+        color: '#1BCA82',
       },
       {
         name: 'BLOC 3 · PIC',
@@ -538,9 +538,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: colors.accent.goldDark,
+    borderColor: colors.scoreGreen,
   },
-  pillText: { fontSize: 11, fontFamily: 'Inter-Medium' },
+  pillText: { fontSize: 11, fontFamily: 'Inter_500Medium' },
   heroObjective: { marginTop: 16, lineHeight: 22, fontSize: 15 },
   scienceCard: {
     marginHorizontal: 24,
@@ -550,11 +550,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderLeftWidth: 3,
-    borderLeftColor: colors.accent.gold,
+    borderLeftColor: colors.scoreGreen,
     borderRadius: 14,
     padding: 16,
   },
-  sectionEyebrow: { letterSpacing: 2, fontSize: 11, fontFamily: 'Inter-Bold' },
+  sectionEyebrow: { letterSpacing: 2, fontSize: 11, fontFamily: 'Inter_700Bold' },
   scienceMethod: {
     fontSize: 20,
     marginTop: 8,
@@ -574,7 +574,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 14,
   },
-  blockEyebrow: { letterSpacing: 1, fontSize: 11, fontFamily: 'Inter-Bold' },
+  blockEyebrow: { letterSpacing: 1, fontSize: 11, fontFamily: 'Inter_700Bold' },
   blockWeeks: { marginTop: 4, fontSize: 13 },
   blockRow: { flexDirection: 'row', marginTop: 8 },
   blockRowLabel: { width: 72, fontSize: 11 },
@@ -587,7 +587,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.scoreGreen,
   },
   timelineLine: {
     width: 2,
@@ -614,13 +614,13 @@ const styles = StyleSheet.create({
     width: 22,
     fontSize: 16,
     lineHeight: 20,
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Inter_700Bold',
   },
   warningMark: {
     width: 22,
     fontSize: 16,
     lineHeight: 20,
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Inter_700Bold',
   },
   faqList: { marginTop: 12 },
   faqRow: {
@@ -635,7 +635,7 @@ const styles = StyleSheet.create({
   faqQuestion: { flex: 1, fontSize: 14, lineHeight: 18 },
   faqAnswer: { marginTop: 10, lineHeight: 20, fontSize: 14 },
   restartLink: { alignSelf: 'center', marginTop: 28, paddingVertical: 12 },
-  restartText: { fontSize: 12, fontFamily: 'Inter-Medium', textDecorationLine: 'underline' },
+  restartText: { fontSize: 12, fontFamily: 'Inter_500Medium', textDecorationLine: 'underline' },
   footer: {
     paddingHorizontal: 24,
     paddingTop: 8,

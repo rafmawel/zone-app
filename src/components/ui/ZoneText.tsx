@@ -18,44 +18,44 @@ export interface ZoneTextProps extends TextProps {
 }
 
 const variantStyles: Record<ZoneTextVariant, TextStyle> = {
-  // Section titles / screen headers (Syne).
+  // Section titles / screen headers.
   heading: {
-    fontFamily: 'Syne-Bold',
+    fontFamily: 'Inter_700Bold',
     fontSize: 24,
     color: colors.text.primary,
     letterSpacing: 0.3,
   },
   title: {
-    fontFamily: 'Syne-Bold',
+    fontFamily: 'Inter_700Bold',
     fontSize: 20,
     color: colors.text.primary,
     letterSpacing: 0.3,
   },
   titleSm: {
-    fontFamily: 'Syne-SemiBold',
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 16,
     color: colors.text.primary,
     letterSpacing: 0.2,
   },
-  // Large numbers only (score, weight, timer) — Bebas.
+  // Large numbers (score, weight, timer).
   number: {
-    fontFamily: 'BebasNeue-Regular',
+    fontFamily: 'Inter_700Bold',
     fontSize: 32,
     color: colors.text.primary,
     letterSpacing: 1,
   },
   body: {
-    fontFamily: 'Inter-Regular',
+    fontFamily: 'Inter_400Regular',
     fontSize: 16,
     color: colors.text.primary,
   },
   label: {
-    fontFamily: 'Inter-Medium',
+    fontFamily: 'Inter_500Medium',
     fontSize: 14,
     color: colors.text.primary,
   },
   caption: {
-    fontFamily: 'Inter-Regular',
+    fontFamily: 'Inter_400Regular',
     fontSize: 12,
     color: colors.text.muted,
   },

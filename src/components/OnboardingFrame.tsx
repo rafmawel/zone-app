@@ -33,7 +33,7 @@ export function OnboardingFrame({
     <SafeScreen>
       <View style={styles.header}>
         <ProgressBar current={step} total={total} />
-        <ZoneText variant="label" color={colors.accent.gold} style={styles.stepLabel}>
+        <ZoneText variant="label" color={colors.scoreGreen} style={styles.stepLabel}>
           Étape {step}/{total}
         </ZoneText>
       </View>
@@ -66,7 +66,7 @@ export function OnboardingFrame({
 
 const styles = StyleSheet.create({
   header: { paddingHorizontal: 24, paddingTop: 16 },
-  stepLabel: { fontFamily: 'Inter-Medium', letterSpacing: 1, marginTop: 8 },
+  stepLabel: { fontFamily: 'Inter_500Medium', letterSpacing: 1, marginTop: 8 },
   scroll: { flex: 1 },
   content: { padding: 24, paddingBottom: 24 },
   title: { fontSize: 30, marginTop: 16, marginBottom: 8, color: colors.text.primary },

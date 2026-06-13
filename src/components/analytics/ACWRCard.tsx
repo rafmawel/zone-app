@@ -103,7 +103,7 @@ export function ACWRCard({
           <ZoneText variant="label" color={colors.text.primary}>
             Il te reste cette semaine
           </ZoneText>
-          <ZoneText variant="label" color={colors.accent.gold}>
+          <ZoneText variant="label" color={colors.scoreGreen}>
             {Math.max(0, budget.remainingBudget)} points d’énergie
           </ZoneText>
         </View>
@@ -116,7 +116,7 @@ export function ACWRCard({
               styles.progressFill,
               {
                 width: `${Math.min(100, Math.max(0, budgetPercent))}%`,
-                backgroundColor: budgetPercent > 100 ? colors.danger : colors.accent.gold,
+                backgroundColor: budgetPercent > 100 ? colors.danger : colors.scoreGreen,
               },
             ]}
           />

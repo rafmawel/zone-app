@@ -127,7 +127,7 @@ export default function ExerciseDetailScreen(): React.ReactElement {
             <View style={styles.muscleTagsRow}>
               {exercise.muscles_primary.map((m) => (
                 <View key={`p-${m}`} style={[styles.muscleTag, styles.musclePrimary]}>
-                  <ZoneText variant="caption" color={colors.accent.gold} style={styles.muscleTagText}>
+                  <ZoneText variant="caption" color={colors.scoreGreen} style={styles.muscleTagText}>
                     {MUSCLE_LABELS[m]}
                   </ZoneText>
                 </View>
@@ -152,7 +152,7 @@ export default function ExerciseDetailScreen(): React.ReactElement {
         <SectionCard title="EXÉCUTION">
           {steps.map((s, i) => (
             <View key={i} style={styles.numberedRow}>
-              <ZoneText variant="label" color={colors.accent.gold} style={styles.stepNumber}>
+              <ZoneText variant="label" color={colors.scoreGreen} style={styles.stepNumber}>
                 {i + 1}
               </ZoneText>
               <ZoneText variant="body" color={colors.text.primary} style={styles.stepText}>
@@ -176,7 +176,7 @@ export default function ExerciseDetailScreen(): React.ReactElement {
         <SectionCard title="RESSENTI ATTENDU">
           <ZoneText
             variant="body"
-            color={colors.accent.goldLight}
+            color={colors.scoreGreen}
             style={styles.feelingText}
           >
             {exercise.feeling}
@@ -319,7 +319,7 @@ const styles = StyleSheet.create({
   numberedRow: { flexDirection: 'row', marginBottom: 10 },
   stepNumber: {
     width: 22,
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Inter_700Bold',
     fontSize: 14,
     marginRight: 8,
     lineHeight: 22,
@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.scoreGreen,
     marginRight: 10,
   },
   bulletText: { flex: 1, lineHeight: 22 },
@@ -350,7 +350,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   paramLabel: { fontSize: 11, letterSpacing: 1 },
-  paramValue: { fontSize: 28, color: colors.accent.gold, marginTop: 2, lineHeight: 32 },
+  paramValue: { fontSize: 28, color: colors.scoreGreen, marginTop: 2, lineHeight: 32 },
   repeatRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 16 },
   repeatText: { marginLeft: 6, fontSize: 11 },
   notFound: { flex: 1, alignItems: 'center', justifyContent: 'center' },

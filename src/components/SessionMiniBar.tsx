@@ -15,7 +15,7 @@ export function SessionMiniBar(): React.ReactElement | null {
   if (!activeSession) return null;
   if (pathname && pathname.includes('/session/')) return null;
 
-  const accent = activeSession.zoneColor || colors.accent.gold;
+  const accent = activeSession.zoneColor || colors.scoreGreen;
 
   return (
     <View style={[styles.bar, { borderTopColor: accent }]}>
@@ -79,7 +79,7 @@ const styles = StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
   exerciseName: {
     color: colors.text.primary,
-    fontFamily: 'Inter-Medium',
+    fontFamily: 'Inter_500Medium',
     fontSize: 13,
     flexShrink: 1,
   },
@@ -89,28 +89,28 @@ const styles = StyleSheet.create({
   restLabel: { fontSize: 10, letterSpacing: 1, marginTop: 2 },
   inProgressBadge: {
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
   },
   inProgressText: {
-    color: colors.accent.gold,
+    color: colors.scoreGreen,
     fontSize: 10,
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Inter_700Bold',
     letterSpacing: 1,
   },
   resumeBtn: {
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 7,
     marginLeft: 4,
   },
   resumeText: {
-    color: colors.accent.gold,
-    fontFamily: 'Inter-Bold',
+    color: colors.scoreGreen,
+    fontFamily: 'Inter_700Bold',
     fontSize: 10,
     letterSpacing: 1,
   },

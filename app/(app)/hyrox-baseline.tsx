@@ -146,7 +146,7 @@ export default function HyroxBaselineScreen(): React.ReactElement {
       </View>
 
       <View style={styles.heroRow}>
-        <ZoneText variant="caption" color={colors.accent.gold} style={styles.eyebrow}>
+        <ZoneText variant="caption" color={colors.scoreGreen} style={styles.eyebrow}>
           Station {step + 1}/{STEPS.length}
         </ZoneText>
         <ZoneText variant="heading" style={styles.heroTitle}>
@@ -161,7 +161,7 @@ export default function HyroxBaselineScreen(): React.ReactElement {
               key={i}
               style={[
                 styles.dot,
-                { backgroundColor: i <= step ? colors.accent.gold : colors.border },
+                { backgroundColor: i <= step ? colors.scoreGreen : colors.border },
               ]}
             />
           ))}
@@ -346,7 +346,7 @@ function RepsStep({
             hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
             style={styles.pickerBtn}
           >
-            <Minus size={26} color={colors.accent.gold} />
+            <Minus size={26} color={colors.scoreGreen} />
           </TouchableOpacity>
           <View style={styles.pickerValueWrap}>
             <TextInput
@@ -356,8 +356,8 @@ function RepsStep({
               onSubmitEditing={commit}
               keyboardType="number-pad"
               returnKeyType="done"
-              selectionColor={colors.accent.gold}
-              cursorColor={colors.accent.gold}
+              selectionColor={colors.scoreGreen}
+              cursorColor={colors.scoreGreen}
               style={styles.pickerInput}
               maxLength={3}
             />
@@ -368,7 +368,7 @@ function RepsStep({
             hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
             style={styles.pickerBtn}
           >
-            <Plus size={26} color={colors.accent.gold} />
+            <Plus size={26} color={colors.scoreGreen} />
           </TouchableOpacity>
         </View>
         {usedDefault ? (
@@ -408,7 +408,7 @@ function PaceBlock({
         hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
         style={styles.paceBlockBtn}
       >
-        <Plus size={26} color={colors.accent.gold} />
+        <Plus size={26} color={colors.scoreGreen} />
       </TouchableOpacity>
       <ZoneText variant="heading" style={styles.paceBlockValue}>
         {format ? format(value) : value}
@@ -419,7 +419,7 @@ function PaceBlock({
         hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
         style={styles.paceBlockBtn}
       >
-        <Minus size={26} color={colors.accent.gold} />
+        <Minus size={26} color={colors.scoreGreen} />
       </TouchableOpacity>
       <ZoneText variant="caption" color={colors.text.muted} style={styles.paceBlockLabel}>
         {label}
@@ -431,7 +431,7 @@ function PaceBlock({
 const styles = StyleSheet.create({
   backRow: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 4 },
   heroRow: { paddingHorizontal: 24, paddingTop: 4, paddingBottom: 12 },
-  eyebrow: { letterSpacing: 2, fontFamily: 'Inter-Medium' },
+  eyebrow: { letterSpacing: 2, fontFamily: 'Inter_500Medium' },
   heroTitle: { fontSize: 24, marginTop: 4, letterSpacing: 1 },
   heroSubtitle: { marginTop: 6, lineHeight: 18 },
   dotsRow: { flexDirection: 'row', marginTop: 12 },
@@ -461,7 +461,7 @@ const styles = StyleSheet.create({
   },
   paceBlockValue: {
     fontSize: 64,
-    color: colors.accent.gold,
+    color: colors.scoreGreen,
     minWidth: 90,
     textAlign: 'center',
     lineHeight: 70,
@@ -471,7 +471,7 @@ const styles = StyleSheet.create({
   paceColon: { fontSize: 48, color: colors.text.muted, marginHorizontal: 6, lineHeight: 52 },
   paceBig: {
     fontSize: 48,
-    color: colors.accent.gold,
+    color: colors.scoreGreen,
     marginTop: 16,
     lineHeight: 52,
     textAlign: 'center',
@@ -491,8 +491,8 @@ const styles = StyleSheet.create({
   pickerInput: {
     minWidth: 120,
     textAlign: 'center',
-    color: colors.accent.gold,
-    fontFamily: 'BebasNeue',
+    color: colors.scoreGreen,
+    fontFamily: 'Inter_700Bold',
     fontSize: 64,
     lineHeight: 70,
     paddingVertical: 0,

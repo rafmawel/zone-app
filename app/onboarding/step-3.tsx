@@ -191,7 +191,7 @@ export default function Step3Screen(): React.ReactElement {
 
 const styles = StyleSheet.create({
   block: { marginBottom: 24 },
-  blockTitle: { fontSize: 26, marginBottom: 12, color: colors.accent.gold },
+  blockTitle: { fontSize: 26, marginBottom: 12, color: colors.scoreGreen },
   fieldLabel: { marginTop: 16, marginBottom: 8 },
   sliderWrap: { marginTop: 16 },
 });

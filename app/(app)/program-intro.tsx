@@ -117,7 +117,7 @@ export default function ProgramIntroScreen(): React.ReactElement {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <ZoneText variant="heading" size={36} color={colors.accent.gold} style={styles.title}>
+        <ZoneText variant="heading" size={36} color={colors.scoreGreen} style={styles.title}>
           TON PROGRAMME · 12 SEMAINES
         </ZoneText>
         <ZoneText variant="label" color={colors.text.secondary} style={styles.subtitle}>
@@ -132,7 +132,7 @@ export default function ProgramIntroScreen(): React.ReactElement {
           {BLOCKS.map((b) => (
             <View key={b.title} style={styles.blockCard}>
               <ZoneText style={styles.blockIcon}>{b.icon}</ZoneText>
-              <ZoneText variant="heading" size={18} color={colors.accent.gold} style={styles.blockTitle}>
+              <ZoneText variant="heading" size={18} color={colors.scoreGreen} style={styles.blockTitle}>
                 {b.title}
               </ZoneText>
               <ZoneText variant="caption" color={colors.text.muted} style={styles.blockWeeks}>
@@ -155,7 +155,7 @@ export default function ProgramIntroScreen(): React.ReactElement {
         </ScrollView>
 
         <View style={styles.infoCard}>
-          <ZoneText variant="label" color={colors.accent.gold} style={styles.infoTitle}>
+          <ZoneText variant="label" color={colors.scoreGreen} style={styles.infoTitle}>
             Pourquoi ma première séance est courte ?
           </ZoneText>
           <ZoneText variant="body" size={13} color={colors.text.primary} style={styles.infoBody}>
@@ -175,7 +175,7 @@ export default function ProgramIntroScreen(): React.ReactElement {
             </ZoneText>
             {firstSession.exercises.map((ex) => (
               <View key={ex.exerciseId} style={styles.exerciseRow}>
-                <ZoneText variant="body" size={13} color={colors.accent.gold}>
+                <ZoneText variant="body" size={13} color={colors.scoreGreen}>
                   •
                 </ZoneText>
                 <ZoneText variant="body" size={13} color={colors.text.primary} style={styles.exerciseText}>
@@ -223,7 +223,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
     backgroundColor: 'rgba(201,168,76,0.08)',
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
     borderRadius: 16,
     padding: 16,
   },

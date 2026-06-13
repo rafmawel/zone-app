@@ -83,7 +83,7 @@ export function ZoneSparkline({ checkins, width }: ZoneSparklineProps): React.Re
           <Polyline
             points={polyline}
             fill="none"
-            stroke={colors.accent.gold}
+            stroke={colors.scoreGreen}
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"

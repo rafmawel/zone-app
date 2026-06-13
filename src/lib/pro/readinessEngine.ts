@@ -147,7 +147,7 @@ function tierFor(score: number): Tier {
   if (score >= 55) {
     return {
       label: 'CORRECT',
-      color: '#C9A84C',
+      color: '#1BCA82',
       headline:
         "Conditions correctes avec quelques signaux à surveiller.",
       detail:

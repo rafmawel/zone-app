@@ -28,7 +28,7 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
     <View
       style={[
         styles.wrapper,
-        { borderColor: focused ? colors.accent.gold : colors.border },
+        { borderColor: focused ? colors.scoreGreen : colors.border },
         containerStyle,
       ]}
     >
@@ -37,8 +37,8 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
         {...rest}
         secureTextEntry={effectiveSecure}
         placeholderTextColor={colors.text.muted}
-        selectionColor={colors.accent.gold}
-        cursorColor={colors.accent.gold}
+        selectionColor={colors.scoreGreen}
+        cursorColor={colors.scoreGreen}
         onFocus={(e) => {
           setFocused(true);
           onFocus?.(e);
@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     color: colors.text.primary,
-    fontFamily: 'Inter-Regular',
+    fontFamily: 'Inter_400Regular',
     fontSize: 16,
     paddingVertical: 0,
   },

@@ -30,7 +30,7 @@ export function Button({
   onPress,
 }: ButtonProps): React.ReactElement {
   const isDisabled = disabled || loading;
-  const textColor = variant === 'primary' ? colors.bg.primary : colors.accent.gold;
+  const textColor = variant === 'primary' ? colors.bg.primary : colors.scoreGreen;
 
   return (
     <TouchableOpacity
@@ -67,11 +67,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   fullWidth: { alignSelf: 'stretch' },
-  primary: { backgroundColor: colors.accent.gold },
+  primary: { backgroundColor: colors.scoreGreen },
   secondary: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
   },
   ghost: { backgroundColor: 'transparent' },
   disabled: { opacity: 0.4 },

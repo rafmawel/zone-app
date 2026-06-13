@@ -1,31 +1,31 @@
 /**
- * Zone typography scale.
+ * Zone typography scale — Inter exclusively.
  *
- * - Bebas Neue is reserved for large numbers (score, weight, timer).
- * - Syne is the display face for titles and section headers.
- * - Inter carries all body copy.
+ * - Inter_700Bold is the display face (titles, large numbers).
+ * - Inter_600SemiBold carries labels, badges and sub-titles.
+ * - Inter_400Regular / Inter_500Medium carry body copy.
  *
  * Font family keys must match those registered in app/_layout.tsx.
  */
 export const typography = {
-  // Large numbers only (score, weight, timer).
-  number: { fontFamily: 'BebasNeue-Regular' },
+  // Large numbers (score, weight, timer).
+  number: { fontFamily: 'Inter_700Bold' },
 
   // Section titles, screen headers.
-  title: { fontFamily: 'Syne-Bold' },
-  titleMd: { fontFamily: 'Syne-Bold', fontSize: 20 },
-  titleSm: { fontFamily: 'Syne-SemiBold', fontSize: 16 },
+  title: { fontFamily: 'Inter_700Bold' },
+  titleMd: { fontFamily: 'Inter_700Bold', fontSize: 20 },
+  titleSm: { fontFamily: 'Inter_600SemiBold', fontSize: 16 },
 
   // Body text.
-  body: { fontFamily: 'Inter-Regular' },
-  bodyMd: { fontFamily: 'Inter-Medium' },
-  bodyBold: { fontFamily: 'Inter-Bold' },
-  caption: { fontFamily: 'Inter-Regular', fontSize: 12 },
+  body: { fontFamily: 'Inter_400Regular' },
+  bodyMd: { fontFamily: 'Inter_500Medium' },
+  bodyBold: { fontFamily: 'Inter_700Bold' },
+  caption: { fontFamily: 'Inter_400Regular', fontSize: 12 },
 } as const;
 
-/** Section header style: Syne-Bold 13px, wide tracking, muted. */
+/** Section header style: Inter 700 13px, wide tracking. */
 export const sectionHeader = {
-  fontFamily: 'Syne-Bold',
+  fontFamily: 'Inter_700Bold',
   fontSize: 13,
   letterSpacing: 1.5,
 } as const;

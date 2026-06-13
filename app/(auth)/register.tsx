@@ -111,14 +111,14 @@ export default function RegisterScreen(): React.ReactElement {
                     style={[
                       styles.genderChip,
                       active
-                        ? { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold }
+                        ? { backgroundColor: colors.scoreGreen, borderColor: colors.scoreGreen }
                         : { backgroundColor: 'transparent', borderColor: colors.border },
                     ]}
                   >
                     <ZoneText
                       style={{
                         color: active ? colors.bg.primary : colors.text.secondary,
-                        fontFamily: 'Inter-Bold',
+                        fontFamily: 'Inter_700Bold',
                         fontSize: 12,
                       }}
                     >
@@ -176,7 +176,7 @@ export default function RegisterScreen(): React.ReactElement {
             </ZoneText>
             <ZoneText
               variant="caption"
-              color={colors.accent.gold}
+              color={colors.scoreGreen}
               style={styles.footerLink}
               onPress={() => router.push('/(auth)/login')}
             >
@@ -217,5 +217,5 @@ const styles = StyleSheet.create({
     marginTop: 32,
     alignItems: 'center',
   },
-  footerLink: { fontFamily: 'Inter-Medium' },
+  footerLink: { fontFamily: 'Inter_500Medium' },
 });
