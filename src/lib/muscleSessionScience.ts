@@ -106,7 +106,7 @@ export interface SRAZoneInfo {
  * Classify a muscle's accumulated weekly sets onto the SRA curve.
  *
  * < MEV   -> recovery (grey)   : not enough to grow
- * MEV-MAV -> stimulus (gold)   : building
+ * MEV-MAV -> stimulus (accent)   : building
  * MAV-MRV -> fatigue (orange)  : recovery required
  * >= MRV  -> overreach (red)   : counter-productive
  */
@@ -122,7 +122,7 @@ export function sraZoneForSets(sets: number, landmark: VolumeLandmark): SRAZoneI
   if (sets < landmark.MAV) {
     return {
       zone: 'stimulus',
-      color: colors.accent.gold,
+      color: colors.scoreGreen,
       tag: 'STIMULUS',
       message: 'Tu construis.',
     };
@@ -447,7 +447,7 @@ export function computeHypertrophyScore(params: {
     color = colors.orbe.amber;
   } else if (score < 85) {
     grade = 'SÉANCE PRODUCTIVE';
-    color = colors.accent.gold;
+    color = colors.scoreGreen;
   } else {
     grade = 'SÉANCE OPTIMALE';
     color = colors.orbe.green;

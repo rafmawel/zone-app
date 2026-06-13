@@ -414,13 +414,13 @@ export default function StrengthTestScreen(): React.ReactElement {
         {sessionHeader ? (
           <View style={styles.sessionHeaderRow}>
             <View style={styles.sessionHeaderBar} />
-            <ZoneText variant="label" color={colors.accent.gold} style={styles.sessionHeaderText}>
+            <ZoneText variant="label" color={colors.scoreGreen} style={styles.sessionHeaderText}>
               {sessionHeader}
             </ZoneText>
           </View>
         ) : null}
 
-        <ZoneText variant="caption" color={colors.accent.gold} style={styles.eyebrow}>
+        <ZoneText variant="caption" color={colors.scoreGreen} style={styles.eyebrow}>
           TEST DE FORCE
           {guided ? ` · ${liftIndex + 1}/${liftQueue.length}` : ''}
         </ZoneText>
@@ -567,7 +567,7 @@ function BriefingView({
             {shortDescription}
           </ZoneText>
           <TouchableOpacity onPress={onOpenDetail} hitSlop={8} style={styles.detailLink}>
-            <ZoneText variant="caption" color={colors.accent.gold}>
+            <ZoneText variant="caption" color={colors.scoreGreen}>
               Voir la technique complète
             </ZoneText>
           </TouchableOpacity>
@@ -651,7 +651,7 @@ function WarmupView({
   const weight = roundToBar(estimatedMax * current.percent);
   return (
     <View style={styles.body}>
-      <ZoneText variant="caption" color={colors.accent.gold} style={styles.stepLabel}>
+      <ZoneText variant="caption" color={colors.scoreGreen} style={styles.stepLabel}>
         Échauffement {currentIndex + 1}/{warmups.length}
       </ZoneText>
       <ZoneText variant="label" color={colors.text.primary} style={styles.stepName}>
@@ -718,7 +718,7 @@ function WorkingView({
 }): React.ReactElement {
   return (
     <View style={styles.body}>
-      <ZoneText variant="caption" color={colors.accent.gold} style={styles.stepLabel}>
+      <ZoneText variant="caption" color={colors.scoreGreen} style={styles.stepLabel}>
         Série de travail {workingSets.length + 1}/{MAX_WORKING_SETS}
       </ZoneText>
 
@@ -825,7 +825,7 @@ function ResultView({
   const hasResult = estimatedOneRm > 0;
   return (
     <View style={styles.body}>
-      <ZoneText variant="caption" color={colors.accent.gold} style={styles.stepLabel}>
+      <ZoneText variant="caption" color={colors.scoreGreen} style={styles.stepLabel}>
         Résultat
       </ZoneText>
       <View style={styles.resultCard}>
@@ -895,7 +895,7 @@ function RestPanel({
         <View style={[styles.restFill, { width: `${Math.round(pct * 100)}%` }]} />
       </View>
       <TouchableOpacity onPress={onSkip} hitSlop={10} style={styles.restSkip}>
-        <ZoneText variant="caption" color={colors.accent.gold}>
+        <ZoneText variant="caption" color={colors.scoreGreen}>
           Passer le repos
         </ZoneText>
       </TouchableOpacity>
@@ -944,7 +944,7 @@ const styles = StyleSheet.create({
   headerRow: { paddingHorizontal: 20, paddingVertical: 12 },
   scroll: { paddingHorizontal: 20, paddingBottom: 40 },
   sessionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
-  sessionHeaderBar: { width: 4, height: 18, borderRadius: 2, backgroundColor: colors.accent.gold },
+  sessionHeaderBar: { width: 4, height: 18, borderRadius: 2, backgroundColor: colors.scoreGreen },
   sessionHeaderText: { letterSpacing: 1.5 },
   gateChecking: { marginTop: 24 },
   gateCard: {
@@ -964,7 +964,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: colors.bg.elevated,
     borderLeftWidth: 3,
-    borderLeftColor: colors.accent.gold,
+    borderLeftColor: colors.scoreGreen,
   },
   rationaleText: { lineHeight: 17, fontStyle: 'italic' },
   eyebrow: { letterSpacing: 2 },
@@ -981,7 +981,7 @@ const styles = StyleSheet.create({
   },
   exerciseCardName: { fontSize: 16, marginBottom: 8 },
   equipBadge: {
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.scoreGreen,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -1020,7 +1020,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     alignItems: 'flex-start',
   },
-  bigValue: { fontSize: 36, lineHeight: 40, color: colors.accent.gold, marginVertical: 4 },
+  bigValue: { fontSize: 36, lineHeight: 40, color: colors.scoreGreen, marginVertical: 4 },
   stepLabel: { letterSpacing: 1.4 },
   stepName: { marginTop: 4 },
   setCard: {
@@ -1061,7 +1061,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 6,
   },
-  restValue: { fontSize: 36, lineHeight: 40, color: colors.accent.gold },
+  restValue: { fontSize: 36, lineHeight: 40, color: colors.scoreGreen },
   restTrack: {
     width: '100%',
     height: 4,
@@ -1069,7 +1069,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     overflow: 'hidden',
   },
-  restFill: { height: '100%', backgroundColor: colors.accent.gold },
+  restFill: { height: '100%', backgroundColor: colors.scoreGreen },
   restSkip: { marginTop: 4 },
   history: {
     padding: 12,
@@ -1083,8 +1083,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: colors.bg.card,
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
     alignItems: 'flex-start',
   },
-  resultValue: { fontSize: 56, lineHeight: 64, color: colors.accent.gold, marginVertical: 6 },
+  resultValue: { fontSize: 56, lineHeight: 64, color: colors.scoreGreen, marginVertical: 6 },
 });

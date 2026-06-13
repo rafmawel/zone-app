@@ -9,7 +9,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
-import { Lock, Minus, Plus, X } from 'lucide-react-native';
+import { Minus, Plus, X } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
 import {
   completeSession,
@@ -31,7 +31,6 @@ import {
 import { estimateOneRepMax } from '@/lib/programEngine';
 import { getMuscleProfile } from '@/lib/firestore';
 import { readCurrentWeek, readProgrammeQueue, recordSessionComplete, startWeek } from '@/lib/weekTracking';
-import { usePro } from '@/hooks/usePro';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { getExerciseById } from '@/data/exercises';
 import { useSession, formatRestMS } from '@/context/SessionContext';
@@ -113,7 +112,7 @@ function WeightInput({
       onSubmitEditing={commit}
       keyboardType="decimal-pad"
       returnKeyType="done"
-      selectionColor={colors.accent.gold}
+      selectionColor={colors.muscu}
       style={styles.weightInput}
       maxLength={6}
     />
@@ -122,7 +121,6 @@ function WeightInput({
 
 export default function MuscleSessionScreen(): React.ReactElement {
   const router = useRouter();
-  const { isPro } = usePro();
   const params = useLocalSearchParams<{ id: string }>();
   const sessionId = params.id ?? '';
   const { activeSession, startSession, updateSessionProgress, endSession } = useSession();
@@ -184,7 +182,7 @@ export default function MuscleSessionScreen(): React.ReactElement {
 
   const zoneScore = state.session?.zone_score_at_start ?? null;
   const zoneLevel = useMemo(() => (zoneScore !== null ? getZoneLevel(zoneScore) : null), [zoneScore]);
-  const accentColor = zoneLevel?.color ?? colors.accent.gold;
+  const accentColor = zoneLevel?.color ?? colors.muscu;
 
   // In light mode, trim the final set of each exercise.
   const exercises: SessionExercise[] = useMemo(() => {
@@ -478,11 +476,6 @@ export default function MuscleSessionScreen(): React.ReactElement {
         <ZoneText variant="caption" numberOfLines={2} style={styles.zoneStripText}>
           {lightMode ? 'SÉANCE LÉGÈRE · 60 % charge, sans échec' : state.session.zone_message ?? 'En route.'}
         </ZoneText>
-        <View style={[styles.proBadge, { borderColor: isPro ? colors.accent.gold : colors.bg.primary }]}>
-          <ZoneText style={[styles.proBadgeText, { color: isPro ? colors.accent.gold : colors.bg.primary }]}>
-            {isPro ? 'PRO' : 'FREE'}
-          </ZoneText>
-        </View>
       </View>
 
       <View style={styles.headerRow}>
@@ -500,7 +493,6 @@ export default function MuscleSessionScreen(): React.ReactElement {
           remaining={activeSession?.restSecondsRemaining ?? 0}
           total={activeSession?.restTotalSeconds ?? 0}
           ringProgress={ringProgress}
-          isPro={isPro}
           onSkip={() => updateSessionProgress({ isResting: false, restSecondsRemaining: 0 })}
         />
       ) : (
@@ -521,13 +513,9 @@ export default function MuscleSessionScreen(): React.ReactElement {
               <ZoneText variant="caption" style={styles.bannerStrong}>
                 {muscleLabel(fatigueDebt.muscle)} entraîné il y a {fatigueDebt.hours}h
               </ZoneText>
-              {isPro ? (
-                <ZoneText variant="caption" color={colors.text.secondary} style={styles.bannerBody}>
-                  Stimulus possible mais récupération incomplète. Suggéré : -1 série, arrête à RIR 2 minimum.
-                </ZoneText>
-              ) : (
-                <LockedHint />
-              )}
+              <ZoneText variant="caption" color={colors.text.secondary} style={styles.bannerBody}>
+                Stimulus possible mais récupération incomplète. Suggéré : -1 série, arrête à RIR 2 minimum.
+              </ZoneText>
             </View>
           ) : null}
 
@@ -536,15 +524,11 @@ export default function MuscleSessionScreen(): React.ReactElement {
               <ZoneText variant="caption" style={[styles.bannerStrong, { color: colors.orbe.red }]}>
                 Volume maximum atteint · {muscleLabel(mrvHit.muscle)}
               </ZoneText>
-              {isPro ? (
-                <ZoneText variant="caption" color={colors.text.secondary} style={styles.bannerBody}>
-                  Continuer ne génèrera plus de croissance aujourd’hui, uniquement de la fatigue.
-                </ZoneText>
-              ) : (
-                <LockedHint />
-              )}
+              <ZoneText variant="caption" color={colors.text.secondary} style={styles.bannerBody}>
+                Continuer ne génèrera plus de croissance aujourd’hui, uniquement de la fatigue.
+              </ZoneText>
               <TouchableOpacity onPress={skipToNextExercise} style={styles.skipExerciseBtn} activeOpacity={0.8}>
-                <ZoneText variant="caption" color={colors.orbe.red} style={{ fontFamily: 'Inter-Bold' }}>
+                <ZoneText variant="caption" color={colors.orbe.red} style={{ fontFamily: 'Inter_700Bold' }}>
                   Passer au groupe suivant
                 </ZoneText>
               </TouchableOpacity>
@@ -559,7 +543,7 @@ export default function MuscleSessionScreen(): React.ReactElement {
                 style={styles.weightBtn}
                 activeOpacity={0.7}
               >
-                <Minus size={24} color={colors.accent.gold} />
+                <Minus size={24} color={colors.muscu} />
               </TouchableOpacity>
               <View style={styles.weightValueWrap}>
                 <WeightInput value={actualWeight} onChange={(n) => setActualWeight(Math.max(0, n))} />
@@ -573,7 +557,7 @@ export default function MuscleSessionScreen(): React.ReactElement {
                 style={styles.weightBtn}
                 activeOpacity={0.7}
               >
-                <Plus size={24} color={colors.accent.gold} />
+                <Plus size={24} color={colors.muscu} />
               </TouchableOpacity>
             </View>
             <ZoneText variant="caption" color={colors.text.muted} style={styles.objective}>
@@ -618,12 +602,12 @@ export default function MuscleSessionScreen(): React.ReactElement {
                       style={[
                         styles.rirCell,
                         {
-                          backgroundColor: active ? colors.accent.gold : colors.bg.card,
-                          borderColor: active ? colors.accent.gold : colors.border,
+                          backgroundColor: active ? colors.muscu : colors.bg.card,
+                          borderColor: active ? colors.muscu : colors.border,
                         },
                       ]}
                     >
-                      <ZoneText style={{ color: active ? colors.bg.primary : colors.text.secondary, fontFamily: 'Inter-Bold', fontSize: 13 }}>
+                      <ZoneText style={{ color: active ? colors.bg.primary : colors.text.secondary, fontFamily: 'Inter_700Bold', fontSize: 13 }}>
                         {n}
                       </ZoneText>
                     </TouchableOpacity>
@@ -641,18 +625,14 @@ export default function MuscleSessionScreen(): React.ReactElement {
                 </ZoneText>
                 <ZoneText
                   variant="label"
-                  color={velocity.inOptimalZone ? colors.orbe.green : velocity.tooLight ? colors.orbe.amber : colors.accent.gold}
+                  color={velocity.inOptimalZone ? colors.orbe.green : velocity.tooLight ? colors.orbe.amber : colors.muscu}
                 >
                   {velocity.label}
                 </ZoneText>
               </View>
-              {isPro ? (
-                <ZoneText variant="caption" color={colors.text.secondary} style={styles.feedbackBody}>
-                  {velocity.message}
-                </ZoneText>
-              ) : (
-                <LockedHint />
-              )}
+              <ZoneText variant="caption" color={colors.text.secondary} style={styles.feedbackBody}>
+                {velocity.message}
+              </ZoneText>
             </View>
           ) : null}
 
@@ -674,13 +654,9 @@ export default function MuscleSessionScreen(): React.ReactElement {
                   −{decay.dropPercent}%
                 </ZoneText>
               </View>
-              {isPro ? (
-                <ZoneText variant="caption" color={colors.text.secondary} style={styles.feedbackBody}>
-                  {decay.message}
-                </ZoneText>
-              ) : (
-                <LockedHint />
-              )}
+              <ZoneText variant="caption" color={colors.text.secondary} style={styles.feedbackBody}>
+                {decay.message}
+              </ZoneText>
             </View>
           ) : null}
 
@@ -737,17 +713,6 @@ async function reconcileMaxes(uid: string, sets: CompletedSet[], maxes: Exercise
   }
 }
 
-function LockedHint(): React.ReactElement {
-  return (
-    <View style={styles.lockedRow}>
-      <Lock size={11} color={colors.accent.gold} />
-      <ZoneText variant="caption" color={colors.accent.gold} style={styles.lockedText}>
-        Coaching Pro
-      </ZoneText>
-    </View>
-  );
-}
-
 function SRADot({ color }: { color: string }): React.ReactElement {
   const pulse = useSharedValue(1);
   useEffect(() => {
@@ -795,13 +760,13 @@ function Stepper({
       </ZoneText>
       <View style={styles.stepperControl}>
         <TouchableOpacity onPress={() => onChange(+(value - step).toFixed(2))} hitSlop={12} style={styles.stepperBtn}>
-          <Minus size={18} color={colors.accent.gold} />
+          <Minus size={18} color={colors.muscu} />
         </TouchableOpacity>
         <ZoneText variant="heading" style={styles.stepperValue}>
           {Number.isInteger(value) ? value : value.toFixed(1)}
         </ZoneText>
         <TouchableOpacity onPress={() => onChange(+(value + step).toFixed(2))} hitSlop={12} style={styles.stepperBtn}>
-          <Plus size={18} color={colors.accent.gold} />
+          <Plus size={18} color={colors.muscu} />
         </TouchableOpacity>
       </View>
     </View>
@@ -853,14 +818,12 @@ function RestView({
   remaining,
   total,
   ringProgress,
-  isPro,
   onSkip,
 }: {
   accentColor: string;
   remaining: number;
   total: number;
   ringProgress: ReturnType<typeof useSharedValue<number>>;
-  isPro: boolean;
   onSkip: () => void;
 }): React.ReactElement {
   const size = 220;
@@ -898,8 +861,8 @@ function RestView({
           </ZoneText>
         </View>
       </View>
-      <ZoneText variant="caption" color={isPro ? colors.text.secondary : colors.text.muted} style={styles.restNote}>
-        {isPro ? 'Repos calculé selon ta fatigue et ton état Zone' : 'Repos standard'}
+      <ZoneText variant="caption" color={colors.text.secondary} style={styles.restNote}>
+        Repos calculé selon ta fatigue et ton état Zone
       </ZoneText>
       <TouchableOpacity onPress={onSkip} activeOpacity={0.85} style={styles.restSkip}>
         <ZoneText style={styles.restSkipText}>PASSER</ZoneText>
@@ -954,9 +917,9 @@ const styles = StyleSheet.create({
   errorTitle: { fontSize: 22, color: colors.text.muted, textAlign: 'center' },
   errorAction: { marginTop: 24, alignSelf: 'stretch' },
   zoneStrip: { paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  zoneStripText: { flex: 1, color: colors.bg.primary, fontFamily: 'Inter-Bold', fontSize: 12, letterSpacing: 0.3 },
+  zoneStripText: { flex: 1, color: colors.bg.primary, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 0.3 },
   proBadge: { borderWidth: 1, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 3, marginLeft: 8 },
-  proBadgeText: { fontFamily: 'Inter-Bold', fontSize: 8, letterSpacing: 1 },
+  proBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 8, letterSpacing: 1 },
   headerRow: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   closeBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22 },
   scroll: { paddingHorizontal: 24, paddingBottom: 40 },
@@ -964,7 +927,7 @@ const styles = StyleSheet.create({
   exerciseName: { fontSize: 24, letterSpacing: 1, color: colors.text.primary },
   sraDot: { width: 12, height: 12, borderRadius: 6 },
   banner: { marginTop: 14, padding: 12, borderRadius: 12, borderLeftWidth: 3, backgroundColor: colors.bg.card },
-  bannerStrong: { fontFamily: 'Inter-Bold', color: colors.text.primary, fontSize: 12 },
+  bannerStrong: { fontFamily: 'Inter_700Bold', color: colors.text.primary, fontSize: 12 },
   bannerBody: { marginTop: 4, lineHeight: 16 },
   skipExerciseBtn: { marginTop: 10, alignSelf: 'flex-start' },
   inputCard: { marginTop: 16, backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 16 },
@@ -991,8 +954,8 @@ const styles = StyleSheet.create({
   weightInput: {
     minWidth: 120,
     textAlign: 'center',
-    color: colors.accent.gold,
-    fontFamily: 'BebasNeue-Regular',
+    color: colors.muscu,
+    fontFamily: 'Inter_700Bold',
     fontSize: 60,
     lineHeight: 66,
     paddingVertical: 0,
@@ -1009,7 +972,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  repCellActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
+  repCellActive: { backgroundColor: colors.muscu, borderColor: colors.muscu },
   repsCaption: { textAlign: 'center', marginTop: 8 },
   stepperRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 },
   stepperLabel: { letterSpacing: 1, fontSize: 11 },
@@ -1031,19 +994,19 @@ const styles = StyleSheet.create({
   volBarFill: { height: 8, borderRadius: 4 },
   volCount: { width: 118, textAlign: 'right', fontSize: 10 },
   lockedRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
-  lockedText: { fontFamily: 'Inter-Bold', fontSize: 11, letterSpacing: 0.5 },
+  lockedText: { fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 0.5 },
   workFooter: { marginTop: 22 },
   restWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
-  restEyebrow: { letterSpacing: 3, fontFamily: 'Inter-Bold', marginBottom: 16 },
+  restEyebrow: { letterSpacing: 3, fontFamily: 'Inter_700Bold', marginBottom: 16 },
   ringWrap: { width: 220, height: 220, alignItems: 'center', justifyContent: 'center' },
   ringContent: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   ringValue: { fontSize: 56, lineHeight: 60 },
   restNote: { textAlign: 'center', marginTop: 18, marginHorizontal: 20, lineHeight: 16 },
-  restSkip: { marginTop: 24, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: colors.accent.gold, borderRadius: 12 },
-  restSkipText: { color: colors.bg.primary, fontFamily: 'Inter-Bold', letterSpacing: 1 },
+  restSkip: { marginTop: 24, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: colors.muscu, borderRadius: 12 },
+  restSkipText: { color: colors.bg.primary, fontFamily: 'Inter_700Bold', letterSpacing: 1 },
   gateWrap: { flex: 1, padding: 20 },
   gateCard: { marginTop: 12, backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.orbe.red, borderRadius: 16, padding: 20 },
-  gateEyebrow: { letterSpacing: 2, fontFamily: 'Inter-Bold' },
+  gateEyebrow: { letterSpacing: 2, fontFamily: 'Inter_700Bold' },
   gateTitle: { fontSize: 26, color: colors.text.primary, marginTop: 8 },
   gateBody: { marginTop: 12, lineHeight: 20 },
   gateActions: { marginTop: 22 },
@@ -1055,7 +1018,7 @@ const styles = StyleSheet.create({
   compLabel: { width: 120, fontSize: 11 },
   compBarTrack: { flex: 1, height: 8, borderRadius: 4, backgroundColor: colors.bg.elevated, overflow: 'hidden', marginHorizontal: 8 },
   compBarFill: { height: 8, borderRadius: 4 },
-  compValue: { width: 44, textAlign: 'right', fontSize: 11, fontFamily: 'Inter-Bold' },
+  compValue: { width: 44, textAlign: 'right', fontSize: 11, fontFamily: 'Inter_700Bold' },
   refs: { marginTop: 24, textAlign: 'center', fontSize: 10, lineHeight: 15 },
   summaryFooter: { padding: 24, paddingTop: 8 },
 });

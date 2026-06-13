@@ -80,7 +80,7 @@ export function FormFatigueCard({ metrics, formStatus }: FormFatigueCardProps): 
               guides={[{ y: 0, color: colors.text.muted, dashed: true }]}
               xLabels={xLabels}
               series={[
-                { values: ctlSeries, color: colors.accent.gold, strokeWidth: 2.5 },
+                { values: ctlSeries, color: colors.scoreGreen, strokeWidth: 2.5 },
                 {
                   values: atlSeries,
                   color: colors.danger,
@@ -101,14 +101,14 @@ export function FormFatigueCard({ metrics, formStatus }: FormFatigueCardProps): 
       </View>
 
       <View style={styles.legend}>
-        <LegendItem color={colors.accent.gold} label="Énergie accumulée" />
+        <LegendItem color={colors.scoreGreen} label="Énergie accumulée" />
         <LegendItem color={colors.danger} label="Fatigue récente" />
         <LegendItem color={colors.orbe.blue} label="Forme du moment" />
         <LegendItem color={colors.success} label="Zone idéale" />
       </View>
 
       <View style={styles.metrics}>
-        <Metric label="ÉNERGIE" value={current?.ctl ?? 0} delta={weeklyDelta.ctl} color={colors.accent.gold} />
+        <Metric label="ÉNERGIE" value={current?.ctl ?? 0} delta={weeklyDelta.ctl} color={colors.scoreGreen} />
         <Metric label="FATIGUE" value={current?.atl ?? 0} delta={weeklyDelta.atl} color={colors.danger} />
         <Metric label="FORME" value={current?.tsb ?? 0} delta={weeklyDelta.tsb} color={colors.orbe.blue} signed />
       </View>

@@ -20,7 +20,7 @@ import { ZoneText } from '@/components/ui/ZoneText';
 export function TreadmillInclineCard(): React.ReactElement {
   return (
     <View style={styles.card}>
-      <ZoneText variant="caption" color={colors.accent.gold} style={styles.eyebrow}>
+      <ZoneText variant="caption" color={colors.scoreGreen} style={styles.eyebrow}>
         TAPIS ROULANT · RÉGLAGE IMPORTANT
       </ZoneText>
       <ZoneText variant="label" color={colors.text.primary} style={styles.headline}>
@@ -41,15 +41,15 @@ export function TreadmillInclineCard(): React.ReactElement {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: `${colors.accent.gold}12`,
+    backgroundColor: `${colors.scoreGreen}12`,
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
     borderLeftWidth: 3,
     borderRadius: 14,
     padding: 16,
     marginBottom: 14,
   },
-  eyebrow: { letterSpacing: 2, fontFamily: 'Inter-Bold', fontSize: 11 },
+  eyebrow: { letterSpacing: 2, fontFamily: 'Inter_700Bold', fontSize: 11 },
   headline: { fontSize: 14, marginTop: 10, lineHeight: 19 },
   body: { marginTop: 10, lineHeight: 21 },
   warn: { marginTop: 10, lineHeight: 21 },

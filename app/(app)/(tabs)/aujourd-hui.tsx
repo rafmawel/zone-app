@@ -364,7 +364,7 @@ export default function ProgrammeScreen(): React.ReactElement {
         </View>
 
         {raceWeeks !== null ? (
-          <ZoneText variant="caption" color={colors.accent.gold} style={styles.raceLineTop}>
+          <ZoneText variant="caption" color={colors.scoreGreen} style={styles.raceLineTop}>
             🏁 Course dans {raceWeeks} semaine{raceWeeks > 1 ? 's' : ''} · pense à alléger en fin de cycle
           </ZoneText>
         ) : null}
@@ -472,7 +472,7 @@ export default function ProgrammeScreen(): React.ReactElement {
               Une séance courte et complémentaire à ton programme.
             </ZoneText>
             <TouchableOpacity onPress={() => setBonusVisible(true)} activeOpacity={0.8} style={styles.bonusBtn}>
-              <ZoneText variant="label" color={colors.accent.gold}>SÉANCE BONUS</ZoneText>
+              <ZoneText variant="label" color={colors.scoreGreen}>SÉANCE BONUS</ZoneText>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -513,7 +513,7 @@ export default function ProgrammeScreen(): React.ReactElement {
             <View style={styles.sheetHandle} />
             {previewItem ? (
               <>
-                <ZoneText variant="caption" color={colors.accent.gold} style={styles.previewEyebrow}>
+                <ZoneText variant="caption" color={colors.scoreGreen} style={styles.previewEyebrow}>
                   APERÇU · {SPORT_LABEL[previewItem.sport].toUpperCase()}
                 </ZoneText>
                 <ZoneText variant="title" size={20} style={styles.sheetTitle}>
@@ -623,8 +623,8 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, paddingBottom: 8 },
   title: { fontSize: 24, letterSpacing: 0.5 },
-  blockBadge: { backgroundColor: colors.accent.gold, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
-  blockBadgeText: { fontFamily: 'Inter-Bold', letterSpacing: 0.3 },
+  blockBadge: { backgroundColor: colors.scoreGreen, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
+  blockBadgeText: { fontFamily: 'Inter_700Bold', letterSpacing: 0.3 },
   zoneStrip: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4, marginBottom: 16 },
   zoneStripOrb: { width: 22, height: 22, borderRadius: 11 },
   zoneStripScore: { color: colors.text.primary },
@@ -640,12 +640,12 @@ const styles = StyleSheet.create({
   sportHeaderIcon: { fontSize: 20 },
   sportHeaderLabel: {
     color: colors.text.primary,
-    fontFamily: 'Syne-Bold',
+    fontFamily: 'Inter_700Bold',
     letterSpacing: 1,
   },
   weekBlock: { marginTop: 8 },
   weekHeader: {
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Inter_700Bold',
     fontSize: 11,
     letterSpacing: 1.2,
     color: colors.text.muted,
@@ -655,12 +655,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 3,
     borderRadius: 16, padding: 16, marginBottom: 10,
   },
-  qCardAvailable: { borderColor: colors.accent.gold },
+  qCardAvailable: { borderColor: colors.scoreGreen },
   qCardDone: { opacity: 0.55 },
   qCardHead: { flexDirection: 'row', alignItems: 'center' },
   qIcon: { fontSize: 16, marginRight: 10 },
   qMain: { flex: 1 },
-  qStatusLabel: { fontFamily: 'Inter-Bold', letterSpacing: 0.5, marginLeft: 8 },
+  qStatusLabel: { fontFamily: 'Inter_700Bold', letterSpacing: 0.5, marginLeft: 8 },
   qActions: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
   qSkipFullBtn: {
     flex: 1,
@@ -671,16 +671,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   deloadCard: { marginTop: 16, marginBottom: 4, backgroundColor: colors.bg.card, borderWidth: 1, borderRadius: 16, padding: 16 },
-  deloadEyebrow: { letterSpacing: 1, fontSize: 11, fontFamily: 'Inter-Bold' },
+  deloadEyebrow: { letterSpacing: 1, fontSize: 11, fontFamily: 'Inter_700Bold' },
   deloadBody: { marginTop: 8, lineHeight: 19 },
   deloadCta: { marginTop: 14 },
   bonusCard: { marginTop: 16, backgroundColor: colors.bg.elevated, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 16 },
   bonusSub: { marginTop: 4, lineHeight: 16 },
-  bonusBtn: { marginTop: 12, alignSelf: 'flex-start', borderWidth: 1, borderColor: colors.accent.gold, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9 },
+  bonusBtn: { marginTop: 12, alignSelf: 'flex-start', borderWidth: 1, borderColor: colors.scoreGreen, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9 },
   emptyCard: { backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 20, alignItems: 'center', marginTop: 16 },
   addLinks: { marginTop: 24, gap: 4, alignItems: 'center' },
   addLink: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8 },
-  addLinkText: { fontFamily: 'Inter-Medium' },
+  addLinkText: { fontFamily: 'Inter_500Medium' },
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: colors.bg.elevated, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 36, overflow: 'hidden' },
   sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 14 },
@@ -688,8 +688,8 @@ const styles = StyleSheet.create({
   bonusWarn: { backgroundColor: 'rgba(255,183,77,0.10)', borderRadius: 10, padding: 10, marginBottom: 12 },
   bonusOption: { backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 14, marginBottom: 10 },
   bonusOptDesc: { marginTop: 4, lineHeight: 16 },
-  bonusOptBtn: { marginTop: 12, backgroundColor: colors.accent.gold, borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
-  previewEyebrow: { letterSpacing: 2, fontFamily: 'Inter-Bold', fontSize: 11, marginBottom: 6 },
+  bonusOptBtn: { marginTop: 12, backgroundColor: colors.scoreGreen, borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
+  previewEyebrow: { letterSpacing: 2, fontFamily: 'Inter_700Bold', fontSize: 11, marginBottom: 6 },
   previewMeta: { marginBottom: 14, fontSize: 13 },
   previewExList: {
     backgroundColor: colors.bg.elevated,

@@ -16,7 +16,7 @@ export interface PulsingOrbProps {
 
 export function PulsingOrb({
   size = 120,
-  color = colors.accent.gold,
+  color = colors.scoreGreen,
 }: PulsingOrbProps): React.ReactElement {
   const scale = useSharedValue(1);
 
@@ -45,7 +45,7 @@ export function PulsingOrb({
 
 const styles = StyleSheet.create({
   orb: {
-    shadowColor: colors.accent.gold,
+    shadowColor: colors.scoreGreen,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6,
     shadowRadius: 30,

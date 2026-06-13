@@ -77,7 +77,7 @@ export function MonthCalendar({ value, minDate, onChange }: MonthCalendarProps):
           activeOpacity={0.7}
           style={styles.navBtn}
         >
-          <ChevronLeft size={20} color={colors.accent.gold} />
+          <ChevronLeft size={20} color={colors.scoreGreen} />
         </TouchableOpacity>
         <ZoneText variant="titleSm" color={colors.text.primary}>
           {frenchMonthYear(view)}
@@ -88,7 +88,7 @@ export function MonthCalendar({ value, minDate, onChange }: MonthCalendarProps):
           activeOpacity={0.7}
           style={styles.navBtn}
         >
-          <ChevronRight size={20} color={colors.accent.gold} />
+          <ChevronRight size={20} color={colors.scoreGreen} />
         </TouchableOpacity>
       </View>
 
@@ -130,7 +130,7 @@ export function MonthCalendar({ value, minDate, onChange }: MonthCalendarProps):
                     : isPast
                       ? colors.text.muted
                       : colors.text.primary,
-                  fontFamily: isSelected ? 'Inter-Bold' : 'Inter-Medium',
+                  fontFamily: isSelected ? 'Inter_700Bold' : 'Inter_500Medium',
                 }}
               >
                 {d.getDate()}
@@ -174,7 +174,7 @@ const styles = StyleSheet.create({
   dayLabel: {
     flex: 1,
     textAlign: 'center',
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Inter_700Bold',
     fontSize: 11,
     letterSpacing: 1,
   },
@@ -194,6 +194,6 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
   },
   cellSelected: {
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.scoreGreen,
   },
 });

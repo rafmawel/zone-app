@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Lock } from 'lucide-react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { auth } from '@/lib/firebase';
 import {
   getCompletedSessions,
@@ -38,13 +36,9 @@ import {
   type WorkloadDataPoint,
   type WorkloadSport,
 } from '@/lib/pro';
-import { useProSports } from '@/hooks/useProSports';
-import { SPORT_LABELS, SPORT_PRICES, type ProSport } from '@/types/subscription';
 import { EXERCISES } from '@/data/exercises';
-import { colors } from '@/theme/colors';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { SafeScreen } from '@/components/ui/SafeScreen';
-import { LockedAnalytics } from '@/components/analytics/LockedAnalytics';
 import { AnalyticsSkeleton } from '@/components/analytics/AnalyticsSkeleton';
 import { CheckinBanner } from '@/components/CheckinBanner';
 import { ProReadinessCard } from '@/components/analytics/ProReadinessCard';
@@ -76,8 +70,6 @@ interface ComputedState {
 }
 
 export default function AnalyticsScreen(): React.ReactElement {
-  const router = useRouter();
-  const { hasProBase, isProSport, loading: proLoading } = useProSports();
   const [state, setState] = useState<AnalyticsState>({
     loaded: false,
     workloadHistory: [],
@@ -90,7 +82,6 @@ export default function AnalyticsScreen(): React.ReactElement {
   });
 
   useEffect(() => {
-    if (!hasProBase) return;
     const user = auth.currentUser;
     if (!user) {
       setState((prev) => ({ ...prev, loaded: true }));
@@ -128,23 +119,7 @@ export default function AnalyticsScreen(): React.ReactElement {
     return () => {
       cancelled = true;
     };
-  }, [hasProBase]);
-
-  if (proLoading) {
-    return (
-      <SafeScreen>
-        <AnalyticsSkeleton />
-      </SafeScreen>
-    );
-  }
-
-  if (!hasProBase) {
-    return (
-      <SafeScreen>
-        <LockedAnalytics />
-      </SafeScreen>
-    );
-  }
+  }, []);
 
   if (!state.loaded) {
     return (
@@ -155,16 +130,7 @@ export default function AnalyticsScreen(): React.ReactElement {
   }
 
   const computed = computeAnalytics(state);
-  const hasCheckinToday = state.checkins.some(
-    (c) => c.date === todayDateString(),
-  );
-  // Sport progression and predictions are gated per-sport module.
-  const subscribedSports = computed.activeSports.filter((s) =>
-    isProSport(s as ProSport),
-  );
-  const lockedSports = computed.activeSports.filter(
-    (s) => !isProSport(s as ProSport),
-  );
+  const hasCheckinToday = state.checkins.some((c) => c.date === todayDateString());
 
   return (
     <SafeScreen>
@@ -172,6 +138,9 @@ export default function AnalyticsScreen(): React.ReactElement {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+        <ZoneText variant="heading" style={styles.title}>
+          ANALYSE
+        </ZoneText>
         {!hasCheckinToday ? <CheckinBanner /> : null}
         <ProReadinessCard
           readiness={computed.readiness}
@@ -197,11 +166,11 @@ export default function AnalyticsScreen(): React.ReactElement {
           budget={computed.budget}
           workloadHistory={state.workloadHistory}
         />
-        {subscribedSports.length > 0 ? (
+        {computed.activeSports.length > 0 ? (
           <>
             <View style={styles.gap} />
             <SportProgressionCard
-              activeSports={subscribedSports}
+              activeSports={computed.activeSports}
               workloadHistory={state.workloadHistory}
               exerciseMaxes={state.maxes}
               completedSessions={state.completedSessions}
@@ -210,22 +179,13 @@ export default function AnalyticsScreen(): React.ReactElement {
             />
             <View style={styles.gap} />
             <PredictionsCard
-              activeSports={subscribedSports}
+              activeSports={computed.activeSports}
               metrics={computed.metrics}
               runningProfile={state.runningProfile}
               exerciseMaxes={state.maxes}
             />
           </>
         ) : null}
-        {lockedSports.map((sport) => (
-          <View key={sport}>
-            <View style={styles.gap} />
-            <LockedSportSection
-              sport={sport as ProSport}
-              onUnlock={() => router.push('/(app)/paywall')}
-            />
-          </View>
-        ))}
         <View style={styles.gap} />
         <CoachZoneCard
           acwr={computed.acwr}
@@ -235,33 +195,6 @@ export default function AnalyticsScreen(): React.ReactElement {
         />
       </ScrollView>
     </SafeScreen>
-  );
-}
-
-function LockedSportSection({
-  sport,
-  onUnlock,
-}: {
-  sport: ProSport;
-  onUnlock: () => void;
-}): React.ReactElement {
-  return (
-    <View style={styles.lockedSport}>
-      <View style={styles.lockedSportHeader}>
-        <Lock size={16} color={colors.accent.gold} />
-        <ZoneText variant="label" color={colors.text.primary}>
-          Zone Pro {SPORT_LABELS[sport]}
-        </ZoneText>
-      </View>
-      <ZoneText variant="caption" color={colors.text.muted} style={styles.lockedSportBody}>
-        Débloquez Zone Pro {SPORT_LABELS[sport]} pour accéder à cette analyse.
-      </ZoneText>
-      <TouchableOpacity onPress={onUnlock} activeOpacity={0.85} style={styles.lockedSportCta}>
-        <ZoneText variant="label" size={13} color={colors.bg.primary} style={styles.lockedSportCtaText}>
-          {SPORT_PRICES[sport]}/mois · AJOUTER CE SPORT
-        </ZoneText>
-      </TouchableOpacity>
-    </View>
   );
 }
 
@@ -365,33 +298,13 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 32,
   },
+  title: {
+    fontSize: 26,
+    letterSpacing: 0.5,
+    marginBottom: 16,
+    marginLeft: 4,
+  },
   gap: {
     height: 16,
-  },
-  lockedSport: {
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 16,
-    padding: 16,
-  },
-  lockedSportHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  lockedSportBody: {
-    marginTop: 8,
-    lineHeight: 17,
-  },
-  lockedSportCta: {
-    marginTop: 14,
-    backgroundColor: colors.accent.gold,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  lockedSportCtaText: {
-    letterSpacing: 0.5,
   },
 });

@@ -150,7 +150,7 @@ export default function RaceGoalScreen(): React.ReactElement {
       return { color: colors.orbe.amber, message: 'Objectif très ambitieux pour ce délai' };
     }
     if (vdotGap > 8) {
-      return { color: colors.accent.gold, message: 'Objectif ambitieux mais atteignable' };
+      return { color: colors.scoreGreen, message: 'Objectif ambitieux mais atteignable' };
     }
     return { color: colors.orbe.green, message: 'Objectif réaliste' };
   }, [vdotGap, targetVdot]);
@@ -161,7 +161,7 @@ export default function RaceGoalScreen(): React.ReactElement {
       return { color: colors.orbe.amber, message: 'Peu de temps — objectif ajusté' };
     }
     if (weeksAvailable <= 16) {
-      return { color: colors.accent.gold, message: 'Bon timing' };
+      return { color: colors.scoreGreen, message: 'Bon timing' };
     }
     if (weeksAvailable <= 32) {
       return { color: colors.orbe.green, message: 'Excellent — programme complet' };
@@ -236,7 +236,7 @@ export default function RaceGoalScreen(): React.ReactElement {
         >
           <ArrowLeft size={24} color={colors.text.primary} />
         </TouchableOpacity>
-        <ZoneText variant="caption" color={colors.accent.gold} style={styles.eyebrow}>
+        <ZoneText variant="caption" color={colors.scoreGreen} style={styles.eyebrow}>
           MON OBJECTIF DE COURSE
         </ZoneText>
         <View style={{ width: 24 }} />
@@ -263,14 +263,14 @@ export default function RaceGoalScreen(): React.ReactElement {
                   style={[
                     styles.chip,
                     active
-                      ? { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold }
+                      ? { backgroundColor: colors.scoreGreen, borderColor: colors.scoreGreen }
                       : { backgroundColor: 'transparent', borderColor: colors.border },
                   ]}
                 >
                   <ZoneText
                     style={{
                       color: active ? colors.bg.primary : colors.text.secondary,
-                      fontFamily: 'Inter-Bold',
+                      fontFamily: 'Inter_700Bold',
                       fontSize: 13,
                     }}
                   >
@@ -400,7 +400,7 @@ export default function RaceGoalScreen(): React.ReactElement {
                 hitSlop={12}
                 style={styles.vdotStep}
               >
-                <Minus size={20} color={colors.accent.gold} />
+                <Minus size={20} color={colors.scoreGreen} />
               </TouchableOpacity>
               <View style={styles.vdotPickerCenter}>
                 <ZoneText style={styles.vdotPickerValue}>{currentVdot}</ZoneText>
@@ -414,7 +414,7 @@ export default function RaceGoalScreen(): React.ReactElement {
                 hitSlop={12}
                 style={styles.vdotStep}
               >
-                <Plus size={20} color={colors.accent.gold} />
+                <Plus size={20} color={colors.scoreGreen} />
               </TouchableOpacity>
             </View>
             <TouchableOpacity
@@ -422,7 +422,7 @@ export default function RaceGoalScreen(): React.ReactElement {
               activeOpacity={0.7}
               style={styles.testLink}
             >
-              <ZoneText variant="caption" color={colors.accent.gold}>
+              <ZoneText variant="caption" color={colors.scoreGreen}>
                 Utiliser un test de niveau →
               </ZoneText>
             </TouchableOpacity>
@@ -492,7 +492,7 @@ function TimePiece({
         returnKeyType="done"
         maxLength={2}
         style={styles.timeInput}
-        selectionColor={colors.accent.gold}
+        selectionColor={colors.scoreGreen}
       />
       <ZoneText variant="caption" color={colors.text.muted} style={styles.timeSuffix}>
         {suffix}
@@ -521,12 +521,12 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 4,
   },
-  eyebrow: { letterSpacing: 2, fontFamily: 'Inter-Bold' },
+  eyebrow: { letterSpacing: 2, fontFamily: 'Inter_700Bold' },
   scroll: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 120 },
   sectionLabel: {
     letterSpacing: 1,
     fontSize: 11,
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Inter_700Bold',
     marginTop: 24,
     marginBottom: 10,
   },
@@ -552,14 +552,14 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 12,
   },
-  hintCaption: { marginTop: 6, fontFamily: 'Inter-Bold' },
+  hintCaption: { marginTop: 6, fontFamily: 'Inter_700Bold' },
   hintBody: { marginTop: 6, lineHeight: 16 },
   timeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
   timePiece: { flexDirection: 'row', alignItems: 'center', marginRight: 12 },
   timeInput: {
     width: 56,
-    color: colors.accent.gold,
-    fontFamily: 'BebasNeue',
+    color: colors.scoreGreen,
+    fontFamily: 'Inter_700Bold',
     fontSize: 38,
     lineHeight: 42,
     textAlign: 'center',
@@ -572,7 +572,7 @@ const styles = StyleSheet.create({
   timeSuffix: { marginLeft: 4, fontSize: 12 },
   goalClear: { marginLeft: 8, paddingVertical: 8, paddingHorizontal: 6 },
   vdotRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
-  vdotValue: { color: colors.accent.gold, fontFamily: 'Inter-Bold', fontSize: 22 },
+  vdotValue: { color: colors.scoreGreen, fontFamily: 'Inter_700Bold', fontSize: 22 },
   vdotPickerCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,
@@ -593,8 +593,8 @@ const styles = StyleSheet.create({
   vdotPickerCenter: { alignItems: 'center', flex: 1 },
   vdotPickerValue: {
     fontSize: 52,
-    fontFamily: 'BebasNeue',
-    color: colors.accent.gold,
+    fontFamily: 'Inter_700Bold',
+    color: colors.scoreGreen,
     lineHeight: 58,
   },
   vdotPickerLevel: { marginTop: 4 },
@@ -606,7 +606,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   paceRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  paceValue: { color: colors.accent.gold, fontFamily: 'Inter-Bold', fontSize: 13 },
+  paceValue: { color: colors.scoreGreen, fontFamily: 'Inter_700Bold', fontSize: 13 },
   error: { marginTop: 12, textAlign: 'center' },
   loading: { marginTop: 12, textAlign: 'center' },
   footer: {

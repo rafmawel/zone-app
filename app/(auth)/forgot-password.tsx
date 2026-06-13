@@ -91,7 +91,7 @@ export default function ForgotPasswordScreen(): React.ReactElement {
           <View style={styles.footer}>
             <ZoneText
               variant="caption"
-              color={colors.accent.gold}
+              color={colors.scoreGreen}
               style={styles.footerLink}
               onPress={() => router.push('/(auth)/login')}
             >
@@ -119,5 +119,5 @@ const styles = StyleSheet.create({
   message: { marginTop: 4, marginBottom: 8, textAlign: 'center' },
   submit: { marginTop: 8 },
   footer: { alignItems: 'center', marginTop: 24 },
-  footerLink: { fontFamily: 'Inter-Medium' },
+  footerLink: { fontFamily: 'Inter_500Medium' },
 });

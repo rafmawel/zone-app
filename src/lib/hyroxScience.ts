@@ -40,7 +40,7 @@ export function lactateStatus(total: number): LactateStatus {
     return { total: t, color: colors.orbe.blue, message: 'Accumulation lactique modérée. Respiration contrôlée.' };
   }
   if (t < 30) {
-    return { total: t, color: colors.accent.gold, message: 'Zone rouge approche. Le prochain run sera difficile.' };
+    return { total: t, color: colors.scoreGreen, message: 'Zone rouge approche. Le prochain run sera difficile.' };
   }
   if (t < 40) {
     return { total: t, color: colors.orbe.amber, message: 'Acidose métabolique. Ralentis immédiatement.' };
@@ -280,10 +280,10 @@ export function zoneAdjustedTarget(targetSec: number, adaptation: HyroxZoneRaceA
 // ---------------------------------------------------------------------------
 
 export function roundTimerColor(elapsedSec: number, targetSec: number): string {
-  if (targetSec <= 0) return colors.accent.gold;
+  if (targetSec <= 0) return colors.scoreGreen;
   const ratio = elapsedSec / targetSec;
   if (ratio <= 0.95) return colors.orbe.green;
-  if (ratio <= 1.05) return colors.accent.gold;
+  if (ratio <= 1.05) return colors.scoreGreen;
   if (ratio <= 1.15) return colors.orbe.amber;
   return colors.orbe.red;
 }

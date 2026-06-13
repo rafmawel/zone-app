@@ -4,26 +4,18 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
-import { Check, ChevronRight, Sparkles } from 'lucide-react-native';
+import { ChevronRight, Sparkles } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
-import { showManageSubscriptions } from '@/lib/subscriptions';
 import {
   connectHealthConnect,
   openHealthConnect,
   type HealthConnectStatus,
 } from '@/lib/healthConnect';
-import { useProSports } from '@/hooks/useProSports';
-import {
-  ALL_PRO_SPORTS,
-  SPORT_LABELS,
-  type ProSport,
-} from '@/types/subscription';
 import {
   deleteAllUserData,
   getAllTimeStats,
@@ -36,7 +28,6 @@ import {
   getUserSports,
   getVacationState,
   resetSportProfile,
-  saveSubscription,
   saveUserProgram,
   updateUserProfile,
   type AllTimeStats,
@@ -70,7 +61,6 @@ import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { Button } from '@/components/ui/Button';
 import { ZoneExplainerModal } from '@/components/ZoneExplainerModal';
 import {
   cancelCheckinReminder,
@@ -87,9 +77,6 @@ const LEVEL_LABEL: Record<string, string> = {
   avance: 'Avancé',
   confirme: 'Confirmé',
 };
-
-
-const VALID_PROMO_CODES: string[] = ['ZONE-DEV', 'ZONE-BETA', 'ZONE-PRO-2026', 'RAPHAEL'];
 
 function formatVolume(kg: number): string {
   if (!Number.isFinite(kg)) return '0 kg';
@@ -168,11 +155,6 @@ function avatarInitials(email: string | null | undefined): string {
 
 export default function ProfileScreen(): React.ReactElement {
   const router = useRouter();
-  const { subscription, hasProBase, proSports, refresh } = useProSports();
-  const [promoVisible, setPromoVisible] = useState<boolean>(false);
-  const [promoCode, setPromoCode] = useState<string>('');
-  const [promoError, setPromoError] = useState<string | null>(null);
-  const [promoSaving, setPromoSaving] = useState<boolean>(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [program, setProgram] = useState<UserProgram | null>(null);
   const [sports, setSports] = useState<UserSport[]>([]);
@@ -445,35 +427,6 @@ export default function ProfileScreen(): React.ReactElement {
     }
   };
 
-  const onSubmitPromo = async (): Promise<void> => {
-    const user = auth.currentUser;
-    if (!user) return;
-    const normalized = promoCode.trim().toUpperCase();
-    if (!VALID_PROMO_CODES.includes(normalized)) {
-      setPromoError('Code invalide.');
-      return;
-    }
-    setPromoSaving(true);
-    setPromoError(null);
-    try {
-      await saveSubscription(user.uid, {
-        hasProBase: true,
-        proSports: [...ALL_PRO_SPORTS],
-        plan: 'bundle',
-        expiresAt: '2099-12-31',
-        source: 'promo',
-      });
-      await refresh();
-      setPromoVisible(false);
-      setPromoCode('');
-      Alert.alert('Zone Pro', 'Accès Pro activé. Bienvenue dans la zone.');
-    } catch {
-      setPromoError("Activation impossible. Réessaie.");
-    } finally {
-      setPromoSaving(false);
-    }
-  };
-
   const onResetAll = (): void => {
     Alert.alert(
       'Réinitialiser mes données',
@@ -512,14 +465,6 @@ export default function ProfileScreen(): React.ReactElement {
     : '-';
   const primarySport = sports[0];
 
-  // Sports the user has actually configured in the app.
-  const configuredSports: ProSport[] = [
-    program ? ('weightlifting' as const) : null,
-    runningProfile ? ('running' as const) : null,
-    muscleProfile ? ('musculation' as const) : null,
-    hyroxProfile ? ('hyrox' as const) : null,
-  ].filter((s): s is ProSport => s !== null);
-
   return (
     <SafeScreen>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -540,112 +485,6 @@ export default function ProfileScreen(): React.ReactElement {
           <ZoneText variant="caption" color={colors.text.muted} style={styles.memberSince}>
             Membre depuis {memberSince}
           </ZoneText>
-        </View>
-
-        <View style={styles.section}>
-          <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
-            MON ABONNEMENT
-          </ZoneText>
-          {hasProBase ? (
-            <View style={styles.subscriptionCardPro}>
-              <View style={styles.subscriptionHeader}>
-                <View style={styles.subscriptionTitleRow}>
-                  <Sparkles size={18} color={colors.accent.gold} />
-                  <ZoneText variant="heading" style={styles.subscriptionTitleGold}>
-                    ZONE PRO · ACTIF
-                  </ZoneText>
-                </View>
-                <Check size={18} color={colors.accent.gold} />
-              </View>
-
-              <View style={styles.sportPills}>
-                {proSports.map((sport) => (
-                  <View key={sport} style={styles.sportPill}>
-                    <Check size={12} color={colors.success} />
-                    <ZoneText variant="caption" color={colors.success} style={styles.sportPillText}>
-                      {SPORT_LABELS[sport]}
-                    </ZoneText>
-                  </View>
-                ))}
-              </View>
-
-              <ZoneText variant="caption" color={colors.text.muted} style={styles.baseIncluded}>
-                Base incluse : ✦ Risque blessure · Readiness · Coach Zone
-              </ZoneText>
-
-              {subscription.expiresAt && subscription.expiresAt !== '2099-12-31' ? (
-                <ZoneText variant="caption" color={colors.text.muted} style={styles.subscriptionMeta}>
-                  Renouvellement le {frenchShortDate(subscription.expiresAt)}
-                </ZoneText>
-              ) : null}
-
-              <View style={styles.proLinksRow}>
-                {proSports.length < ALL_PRO_SPORTS.length ? (
-                  <TouchableOpacity
-                    onPress={() => router.push('/(app)/paywall')}
-                    hitSlop={8}
-                  >
-                    <ZoneText variant="caption" color={colors.accent.gold}>
-                      Ajouter un sport
-                    </ZoneText>
-                  </TouchableOpacity>
-                ) : null}
-                <TouchableOpacity
-                  onPress={() => {
-                    void showManageSubscriptions();
-                  }}
-                  hitSlop={8}
-                >
-                  <ZoneText variant="caption" color={colors.text.secondary}>
-                    Gérer l'abonnement
-                  </ZoneText>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <View style={styles.subscriptionCard}>
-              <ZoneText variant="heading" style={styles.subscriptionTitleMuted}>
-                Zone Gratuit
-              </ZoneText>
-              <ZoneText variant="caption" color={colors.text.muted} style={styles.subscriptionMeta}>
-                Débloque l'analyse complète et le coach hebdomadaire.
-              </ZoneText>
-              {configuredSports.length > 0 ? (
-                <View style={styles.sportPills}>
-                  {configuredSports.map((sport) => (
-                    <View key={sport} style={styles.sportChip}>
-                      <ZoneText variant="caption" color={colors.text.secondary}>
-                        {SPORT_LABELS[sport]}
-                      </ZoneText>
-                    </View>
-                  ))}
-                </View>
-              ) : null}
-              <Button
-                title="PASSER À PRO"
-                variant="primary"
-                onPress={() => router.push('/(app)/paywall')}
-                fullWidth={false}
-                style={styles.upgradeBtn}
-              />
-            </View>
-          )}
-
-          {!hasProBase ? (
-            <TouchableOpacity
-              onPress={() => {
-                setPromoError(null);
-                setPromoCode('');
-                setPromoVisible(true);
-              }}
-              hitSlop={8}
-              style={styles.promoLink}
-            >
-              <ZoneText variant="caption" color={colors.accent.gold}>
-                J'ai un code promo
-              </ZoneText>
-            </TouchableOpacity>
-          ) : null}
         </View>
 
         <View style={styles.section}>
@@ -737,7 +576,7 @@ export default function ProfileScreen(): React.ReactElement {
                 activeOpacity={0.85}
                 style={styles.vacationCta}
               >
-                <ZoneText variant="label" color={colors.accent.gold} style={styles.vacationCtaText}>
+                <ZoneText variant="label" color={colors.scoreGreen} style={styles.vacationCtaText}>
                   ACTIVER LE MODE VACANCES
                 </ZoneText>
               </TouchableOpacity>
@@ -768,7 +607,7 @@ export default function ProfileScreen(): React.ReactElement {
               hitSlop={8}
             >
               <ZoneText
-                color={colors.accent.gold}
+                color={colors.scoreGreen}
                 style={styles.modifyLink}
               >
                 Modifier
@@ -829,7 +668,7 @@ export default function ProfileScreen(): React.ReactElement {
                 </ZoneText>
               </View>
               <TouchableOpacity onPress={() => openHealthConnect()} hitSlop={8}>
-                <ZoneText variant="caption" color={colors.accent.gold}>
+                <ZoneText variant="caption" color={colors.scoreGreen}>
                   Gérer
                 </ZoneText>
               </TouchableOpacity>
@@ -934,7 +773,7 @@ export default function ProfileScreen(): React.ReactElement {
               <View
                 style={[
                   styles.switchTrack,
-                  { backgroundColor: notifEnabled ? colors.accent.gold : colors.border },
+                  { backgroundColor: notifEnabled ? colors.scoreGreen : colors.border },
                 ]}
               >
                 <View
@@ -977,7 +816,7 @@ export default function ProfileScreen(): React.ReactElement {
           style={styles.zoneInfoLink}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <Sparkles size={14} color={colors.accent.gold} />
+          <Sparkles size={14} color={colors.scoreGreen} />
           <ZoneText style={styles.zoneInfoText}>Qu’est-ce que la Zone ?</ZoneText>
         </TouchableOpacity>
 
@@ -991,61 +830,6 @@ export default function ProfileScreen(): React.ReactElement {
         </TouchableOpacity>
       </ScrollView>
       <ZoneExplainerModal visible={zoneInfoVisible} onClose={() => setZoneInfoVisible(false)} />
-
-      <Modal
-        visible={promoVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPromoVisible(false)}
-      >
-        <View style={styles.promoBackdrop}>
-          <View style={styles.promoCard}>
-            <ZoneText variant="heading" style={styles.promoTitle}>
-              Entre ton code d'accès
-            </ZoneText>
-            <TextInput
-              value={promoCode}
-              onChangeText={(t) => {
-                setPromoCode(t);
-                if (promoError) setPromoError(null);
-              }}
-              placeholder="ZONE-..."
-              placeholderTextColor={colors.text.muted}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              style={styles.promoInput}
-            />
-            {promoError ? (
-              <ZoneText variant="caption" color={colors.danger} style={styles.promoErrorText}>
-                {promoError}
-              </ZoneText>
-            ) : null}
-            <View style={styles.promoActions}>
-              <TouchableOpacity
-                onPress={() => setPromoVisible(false)}
-                style={styles.promoCancel}
-                hitSlop={8}
-              >
-                <ZoneText variant="label" color={colors.text.muted}>
-                  Annuler
-                </ZoneText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  void onSubmitPromo();
-                }}
-                disabled={promoSaving}
-                style={styles.promoSubmit}
-                hitSlop={8}
-              >
-                <ZoneText variant="label" color={colors.bg.primary} style={styles.promoSubmitText}>
-                  {promoSaving ? '...' : 'Valider'}
-                </ZoneText>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* Vacation duration sheet */}
       <Modal
@@ -1094,7 +878,7 @@ export default function ProfileScreen(): React.ReactElement {
                 activeOpacity={0.7}
                 style={styles.vacStepBtn}
               >
-                <ZoneText variant="label" color={colors.accent.gold}>
+                <ZoneText variant="label" color={colors.scoreGreen}>
                   −
                 </ZoneText>
               </TouchableOpacity>
@@ -1111,7 +895,7 @@ export default function ProfileScreen(): React.ReactElement {
                 activeOpacity={0.7}
                 style={styles.vacStepBtn}
               >
-                <ZoneText variant="label" color={colors.accent.gold}>
+                <ZoneText variant="label" color={colors.scoreGreen}>
                   +
                 </ZoneText>
               </TouchableOpacity>
@@ -1275,7 +1059,7 @@ function SportRow({
         disabled={loading}
       >
         <ZoneText
-          color={loading ? colors.text.muted : colors.accent.gold}
+          color={loading ? colors.text.muted : colors.scoreGreen}
           style={styles.reconfigureLink}
         >
           {loading ? 'En cours' : 'Reconfigurer'}
@@ -1350,7 +1134,7 @@ function SportProgressRow({
         </ZoneText>
         {onRestart ? (
           <TouchableOpacity onPress={onRestart} hitSlop={8} activeOpacity={0.7}>
-            <ZoneText variant="caption" color={colors.accent.gold} style={styles.sportProgRestart}>
+            <ZoneText variant="caption" color={colors.scoreGreen} style={styles.sportProgRestart}>
               Recommencer
             </ZoneText>
           </TouchableOpacity>
@@ -1366,7 +1150,7 @@ function SportProgressRow({
                 styles.sportProgSeg,
                 {
                   backgroundColor:
-                    idx <= totalWeek ? colors.accent.gold : colors.border,
+                    idx <= totalWeek ? colors.scoreGreen : colors.border,
                 },
               ]}
             />
@@ -1406,7 +1190,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: colors.bg.card,
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
   },
   subscriptionHeader: {
     flexDirection: 'row',
@@ -1418,9 +1202,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  subscriptionTitleGold: {
+  subscriptionTitleAccent: {
     fontSize: 18,
-    color: colors.accent.gold,
+    color: colors.scoreGreen,
     letterSpacing: 1.2,
   },
   subscriptionTitleMuted: {
@@ -1452,7 +1236,7 @@ const styles = StyleSheet.create({
     borderColor: colors.success,
     backgroundColor: 'rgba(76,175,80,0.10)',
   },
-  sportPillText: { fontFamily: 'Inter-Medium' },
+  sportPillText: { fontFamily: 'Inter_500Medium' },
   sportChip: {
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -1491,7 +1275,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.card,
     borderWidth: 1,
     borderLeftWidth: 3,
-    borderLeftColor: colors.accent.gold,
+    borderLeftColor: colors.scoreGreen,
     borderColor: colors.border,
     borderRadius: 14,
     padding: 16,
@@ -1501,14 +1285,14 @@ const styles = StyleSheet.create({
   vacationCta: {
     marginTop: 14,
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
     borderRadius: 999,
     paddingVertical: 12,
     alignItems: 'center',
   },
-  vacationCtaText: { letterSpacing: 1, fontFamily: 'Inter-Bold', fontSize: 12 },
+  vacationCtaText: { letterSpacing: 1, fontFamily: 'Inter_700Bold', fontSize: 12 },
   vacationCancel: { marginTop: 12, alignSelf: 'flex-start' },
-  vacationCancelText: { fontFamily: 'Inter-Medium', fontSize: 12 },
+  vacationCancelText: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.bg.elevated,
@@ -1526,7 +1310,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   vacSheetTitle: { fontSize: 22, marginBottom: 16, letterSpacing: 1 },
-  vacSheetLabel: { letterSpacing: 2, fontFamily: 'Inter-Bold', fontSize: 11, marginBottom: 8 },
+  vacSheetLabel: { letterSpacing: 2, fontFamily: 'Inter_700Bold', fontSize: 11, marginBottom: 8 },
   vacPresetRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   vacPreset: {
     flex: 1,
@@ -1537,8 +1321,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
   },
-  vacPresetActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
-  vacPresetText: { fontFamily: 'Inter-Bold' },
+  vacPresetActive: { backgroundColor: colors.scoreGreen, borderColor: colors.scoreGreen },
+  vacPresetText: { fontFamily: 'Inter_700Bold' },
   vacCustomRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
   vacStepBtn: {
     width: 44,
@@ -1558,7 +1342,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  vacCustomLabel: { letterSpacing: 2, fontFamily: 'Inter-Bold', fontSize: 10 },
+  vacCustomLabel: { letterSpacing: 2, fontFamily: 'Inter_700Bold', fontSize: 10 },
   vacCustomValue: { fontSize: 22, lineHeight: 26, marginTop: 2 },
   vacReturnRow: {
     flexDirection: 'row',
@@ -1571,18 +1355,18 @@ const styles = StyleSheet.create({
   },
   vacReturnDate: { fontSize: 14 },
   vacActivateBtn: {
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.scoreGreen,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
   },
-  vacActivateText: { letterSpacing: 1, fontFamily: 'Inter-Bold' },
+  vacActivateText: { letterSpacing: 1, fontFamily: 'Inter_700Bold' },
   welcomeCard: {
     width: '100%',
     backgroundColor: colors.bg.elevated,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
     padding: 22,
   },
   welcomeTitle: { fontSize: 24, letterSpacing: 1, textAlign: 'center' },
@@ -1606,7 +1390,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     color: colors.text.primary,
-    fontFamily: 'Inter-Regular',
+    fontFamily: 'Inter_400Regular',
     fontSize: 16,
     letterSpacing: 1,
   },
@@ -1620,7 +1404,7 @@ const styles = StyleSheet.create({
   },
   promoCancel: { paddingVertical: 10, paddingHorizontal: 8 },
   promoSubmit: {
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.scoreGreen,
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 20,
@@ -1631,7 +1415,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.scoreGreen,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1642,13 +1426,13 @@ const styles = StyleSheet.create({
   section: { marginTop: 22 },
   eyebrow: { letterSpacing: 2, fontSize: 11, marginBottom: 8 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  modifyLink: { fontFamily: 'Inter-Medium', fontSize: 12 },
+  modifyLink: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   programCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,
     borderColor: colors.border,
     borderLeftWidth: 3,
-    borderLeftColor: colors.accent.gold,
+    borderLeftColor: colors.scoreGreen,
     borderRadius: 12,
     padding: 14,
   },
@@ -1668,7 +1452,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderLeftWidth: 3,
-    borderLeftColor: colors.accent.gold,
+    borderLeftColor: colors.scoreGreen,
     borderRadius: 12,
     padding: 12,
   },
@@ -1678,7 +1462,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  sportProgRestart: { fontFamily: 'Inter-Medium', fontSize: 11 },
+  sportProgRestart: { fontFamily: 'Inter_500Medium', fontSize: 11 },
   sportProgTitle: { fontSize: 13, letterSpacing: 0.5 },
   sportProgBar: { flexDirection: 'row', gap: 2 },
   sportProgSeg: { flex: 1, height: 6, borderRadius: 2 },
@@ -1710,7 +1494,7 @@ const styles = StyleSheet.create({
   },
   maxMain: { flex: 1 },
   maxName: { fontSize: 14, color: colors.text.primary },
-  maxWeight: { fontSize: 22, color: colors.accent.gold, lineHeight: 26 },
+  maxWeight: { fontSize: 22, color: colors.scoreGreen, lineHeight: 26 },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1740,9 +1524,9 @@ const styles = StyleSheet.create({
   sportMain: { flex: 1 },
   sportName: { color: colors.text.primary, fontSize: 14 },
   sportSummary: { fontSize: 11, marginTop: 2 },
-  reconfigureLink: { fontFamily: 'Inter-Medium', fontSize: 12 },
+  reconfigureLink: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   infoValueRow: { flexDirection: 'row', alignItems: 'center' },
-  infoValue: { color: colors.text.primary, fontFamily: 'Inter-Medium', fontSize: 13, marginRight: 6 },
+  infoValue: { color: colors.text.primary, fontFamily: 'Inter_500Medium', fontSize: 13, marginRight: 6 },
   empty: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,
@@ -1760,7 +1544,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 8,
   },
-  zoneInfoText: { color: colors.accent.gold, fontFamily: 'Inter-Medium', fontSize: 14 },
+  zoneInfoText: { color: colors.scoreGreen, fontFamily: 'Inter_500Medium', fontSize: 14 },
   notifCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,
@@ -1795,7 +1579,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepperSign: { color: colors.accent.gold, fontFamily: 'Inter-Bold', fontSize: 16 },
+  stepperSign: { color: colors.scoreGreen, fontFamily: 'Inter_700Bold', fontSize: 16 },
   stepperValue: { fontSize: 22, color: colors.text.primary, minWidth: 32, textAlign: 'center' },
   logoutBtn: { marginTop: 12, alignItems: 'center', paddingVertical: 14 },
   resetBtn: {
@@ -1808,11 +1592,11 @@ const styles = StyleSheet.create({
   },
   resetText: {
     color: colors.danger,
-    fontFamily: 'Inter-Medium',
+    fontFamily: 'Inter_500Medium',
     fontSize: 13,
     letterSpacing: 0.5,
   },
-  logoutText: { color: colors.danger, fontFamily: 'Inter-Medium', fontSize: 14 },
+  logoutText: { color: colors.danger, fontFamily: 'Inter_500Medium', fontSize: 14 },
   healthRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1826,7 +1610,7 @@ const styles = StyleSheet.create({
   healthDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.success },
   healthConnectBtn: {
     marginTop: 12,
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.scoreGreen,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',

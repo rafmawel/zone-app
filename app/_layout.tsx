@@ -2,7 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useFonts } from 'expo-font';
-import { Syne_600SemiBold, Syne_700Bold } from '@expo-google-fonts/syne';
+import {
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+} from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -12,7 +17,6 @@ import '../global.css';
 
 import { useAuth } from '@/hooks/useAuth';
 import { db } from '@/lib/firebase';
-import { initializePurchases } from '@/lib/subscriptions';
 import { getTodayHealthData } from '@/lib/healthConnect';
 import * as Notifications from 'expo-notifications';
 import {
@@ -43,7 +47,7 @@ function SplashView(): React.ReactElement {
       <ZoneOrbeSplash />
       <ZoneText
         variant="heading"
-        style={{ marginTop: 28, fontSize: 32, color: colors.accent.gold, letterSpacing: 4 }}
+        style={{ marginTop: 28, fontSize: 32, color: colors.scoreGreen, letterSpacing: 4 }}
       >
         ZONE
       </ZoneText>
@@ -124,7 +128,6 @@ function RootNavigator(): React.ReactElement {
       setOnboardingChecked(true);
       return;
     }
-    void initializePurchases(user.uid);
     void syncHealthData(user.uid);
     setOnboardingChecked(false);
     const unsubscribe = onSnapshot(
@@ -183,13 +186,10 @@ function RootNavigator(): React.ReactElement {
 
 export default function RootLayout(): React.ReactElement | null {
   const [fontsLoaded, fontError] = useFonts({
-    BebasNeue: require('../assets/fonts/BebasNeue-Regular.ttf'),
-    'BebasNeue-Regular': require('../assets/fonts/BebasNeue-Regular.ttf'),
-    'Inter-Regular': require('../assets/fonts/Inter-Regular.ttf'),
-    'Inter-Medium': require('../assets/fonts/Inter-Medium.ttf'),
-    'Inter-Bold': require('../assets/fonts/Inter-Bold.ttf'),
-    'Syne-Bold': Syne_700Bold,
-    'Syne-SemiBold': Syne_600SemiBold,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
   });
 
   useEffect(() => {
@@ -217,10 +217,10 @@ export default function RootLayout(): React.ReactElement | null {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg.primary },
+  root: { flex: 1, backgroundColor: colors.background },
   splash: {
     flex: 1,
-    backgroundColor: colors.bg.primary,
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },

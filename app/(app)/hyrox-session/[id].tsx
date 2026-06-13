@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Lock, X } from 'lucide-react-native';
+import { X } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
 import {
   getHyroxProfile,
@@ -18,7 +18,6 @@ import {
   type HyroxStationResult,
 } from '@/lib/firestore';
 import { hyroxStationTimeFactor, wallBallWeightKg } from '@/lib/genderProfiles';
-import { usePro } from '@/hooks/usePro';
 import { getZoneLevel } from '@/lib/zoneScore';
 import {
   getHyroxStation,
@@ -70,7 +69,6 @@ function mmss(sec: number): string {
 
 export default function HyroxSessionScreen(): React.ReactElement {
   const router = useRouter();
-  const { isPro } = usePro();
   const params = useLocalSearchParams<{ id: string; type?: string; block?: string; queueKey?: string }>();
   const sessionType = (params.type ?? 'station_work') as HyroxSessionTypeKey;
   const blockPhase = Math.max(1, Math.min(4, parseInt(params.block ?? '2', 10) || 2));
@@ -102,7 +100,7 @@ export default function HyroxSessionScreen(): React.ReactElement {
     [zoneScore],
   );
   const zoneLevel = useMemo(() => (zoneScore !== null ? getZoneLevel(zoneScore) : null), [zoneScore]);
-  const accent = zoneLevel?.color ?? colors.accent.gold;
+  const accent = zoneLevel?.color ?? colors.hyrox;
 
   useEffect(() => {
     let cancelled = false;
@@ -288,7 +286,6 @@ export default function HyroxSessionScreen(): React.ReactElement {
         sessionType={sessionType}
         results={results}
         lactate={lactate}
-        isPro={isPro}
         onClose={onClose}
       />
     );
@@ -325,13 +322,11 @@ export default function HyroxSessionScreen(): React.ReactElement {
           {station?.name ?? 'Station'} · Round {currentRound ? currentRound.roundNumber : 0}/
           {currentRound?.totalRounds ?? 0}
         </ZoneText>
-        {isPro ? (
-          <View style={[styles.lactateBadge, { borderColor: lactateInfo.color }]}>
-            <ZoneText style={[styles.lactateBadgeText, { color: lactateInfo.color }]}>
-              LAC {lactateInfo.total}
-            </ZoneText>
-          </View>
-        ) : null}
+        <View style={[styles.lactateBadge, { borderColor: lactateInfo.color }]}>
+          <ZoneText style={[styles.lactateBadgeText, { color: lactateInfo.color }]}>
+            LAC {lactateInfo.total}
+          </ZoneText>
+        </View>
       </View>
 
       <View style={styles.headerRow}>
@@ -355,13 +350,9 @@ export default function HyroxSessionScreen(): React.ReactElement {
             <ZoneText variant="body" color={colors.text.primary} style={styles.feedbackText}>
               {roundFeedback}
             </ZoneText>
-            {isPro ? (
-              <ZoneText variant="caption" color={colors.text.secondary} style={styles.restNote}>
-                FC estimée ~165 bpm · Zone 4 · {lactateInfo.message}
-              </ZoneText>
-            ) : (
-              <LockedHint label="Lactate et FC en Pro" />
-            )}
+            <ZoneText variant="caption" color={colors.text.secondary} style={styles.restNote}>
+              FC estimée ~165 bpm · Zone 4 · {lactateInfo.message}
+            </ZoneText>
             <View style={styles.restBtn}>
               <Button title="Round suivant" onPress={skipRest} />
             </View>
@@ -404,7 +395,7 @@ export default function HyroxSessionScreen(): React.ReactElement {
                     / {currentRound?.targetReps ?? station?.reps ?? 0} reps · appuie
                   </ZoneText>
                 </TouchableOpacity>
-                {reps > 0 && isPro ? (
+                {reps > 0 ? (
                   <ZoneText variant="caption" color={colors.text.muted} style={styles.projection}>
                     À ce rythme: {mmss(Math.round((elapsed / reps) * (currentRound?.targetReps ?? reps)))}
                   </ZoneText>
@@ -505,17 +496,6 @@ function aggregateStations(results: RoundResult[]): HyroxStationResult[] {
     });
   }
   return out;
-}
-
-function LockedHint({ label }: { label: string }): React.ReactElement {
-  return (
-    <View style={styles.lockedRow}>
-      <Lock size={11} color={colors.accent.gold} />
-      <ZoneText variant="caption" color={colors.accent.gold} style={styles.lockedText}>
-        {label}
-      </ZoneText>
-    </View>
-  );
 }
 
 function GateView({
@@ -640,14 +620,12 @@ function SummaryView({
   sessionType,
   results,
   lactate,
-  isPro,
   onClose,
 }: {
   accent: string;
   sessionType: HyroxSessionTypeKey;
   results: RoundResult[];
   lactate: number;
-  isPro: boolean;
   onClose: () => void;
 }): React.ReactElement {
   const stations = aggregateStations(results);
@@ -692,7 +670,7 @@ function SummaryView({
           })}
         </View>
 
-        {isPro && bottlenecks.length > 0 ? (
+        {bottlenecks.length > 0 ? (
           <View style={styles.bottleneckCard}>
             <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
               STATIONS LES PLUS COÛTEUSES
@@ -705,13 +683,9 @@ function SummaryView({
           </View>
         ) : null}
 
-        {isPro ? (
-          <ZoneText variant="caption" color={colors.text.muted} style={styles.lactateSummary}>
-            Charge métabolique cumulée: {Math.round(lactate * 10) / 10}
-          </ZoneText>
-        ) : (
-          <LockedHint label="Analyse lactate et bottlenecks en Pro" />
-        )}
+        <ZoneText variant="caption" color={colors.text.muted} style={styles.lactateSummary}>
+          Charge métabolique cumulée: {Math.round(lactate * 10) / 10}
+        </ZoneText>
 
         <ZoneText variant="caption" color={colors.text.muted} style={styles.refs}>
           Tschakert & Hofmann (2013) · Billat (2003) · NSCA work:rest 1:2
@@ -727,13 +701,13 @@ function SummaryView({
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   topStrip: { paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  topStripText: { flex: 1, color: colors.bg.primary, fontFamily: 'Inter-Bold', fontSize: 12, letterSpacing: 0.3 },
+  topStripText: { flex: 1, color: colors.bg.primary, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 0.3 },
   lactateBadge: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, marginLeft: 8 },
-  lactateBadgeText: { fontFamily: 'Inter-Bold', fontSize: 10, letterSpacing: 0.5 },
+  lactateBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 0.5 },
   headerRow: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   closeBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22 },
   scroll: { paddingHorizontal: 24, paddingBottom: 40, alignItems: 'center' },
-  eyebrow: { letterSpacing: 2, fontFamily: 'Inter-Bold' },
+  eyebrow: { letterSpacing: 2, fontFamily: 'Inter_700Bold' },
   timer: { fontSize: 84, lineHeight: 90, marginTop: 18 },
   cue: { textAlign: 'center', marginTop: 12, marginHorizontal: 12, minHeight: 40 },
   repWrap: { alignItems: 'center', marginTop: 16 },
@@ -747,7 +721,7 @@ const styles = StyleSheet.create({
   restNote: { textAlign: 'center', marginTop: 10, lineHeight: 16 },
   restBtn: { marginTop: 20, alignSelf: 'stretch' },
   lockedRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10 },
-  lockedText: { fontFamily: 'Inter-Bold', fontSize: 11, letterSpacing: 0.5 },
+  lockedText: { fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 0.5 },
   gateWrap: { flex: 1, padding: 20 },
   gateCard: { marginTop: 12, backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.orbe.red, borderRadius: 16, padding: 20 },
   gateTitle: { fontSize: 26, color: colors.text.primary, marginTop: 8 },

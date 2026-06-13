@@ -26,7 +26,7 @@ export function ProgrammeCompleteCard({
   const unit = volumeUnit ?? 'kg';
   return (
     <View style={styles.card}>
-      <ZoneText variant="caption" color={colors.accent.gold} style={styles.trophy}>
+      <ZoneText variant="caption" color={colors.scoreGreen} style={styles.trophy}>
         PROGRAMME TERMINÉ · {labelForSport(sport).toUpperCase()}
       </ZoneText>
       <ZoneText variant="body" color={colors.text.primary} style={styles.line}>
@@ -50,11 +50,11 @@ const styles = StyleSheet.create({
     marginTop: 12,
     backgroundColor: colors.bg.card,
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
     borderRadius: 14,
     padding: 16,
   },
-  trophy: { letterSpacing: 1, fontSize: 12, fontFamily: 'Inter-Bold' },
+  trophy: { letterSpacing: 1, fontSize: 12, fontFamily: 'Inter_700Bold' },
   line: { fontSize: 14, marginTop: 8 },
   actions: { flexDirection: 'row', marginTop: 14, gap: 10 },
   actionHalf: { flex: 1 },

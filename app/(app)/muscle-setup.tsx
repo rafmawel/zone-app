@@ -124,7 +124,7 @@ export default function MuscleSetupScreen(): React.ReactElement {
         </TouchableOpacity>
       </View>
       <View style={styles.heroRow}>
-        <ZoneText variant="caption" color={colors.accent.gold} style={styles.eyebrow}>
+        <ZoneText variant="caption" color={colors.scoreGreen} style={styles.eyebrow}>
           Étape {step + 1}/{TOTAL_STEPS}
         </ZoneText>
         <View style={styles.dotsRow}>
@@ -133,7 +133,7 @@ export default function MuscleSetupScreen(): React.ReactElement {
               key={i}
               style={[
                 styles.dot,
-                { backgroundColor: i <= step ? colors.accent.gold : colors.border },
+                { backgroundColor: i <= step ? colors.scoreGreen : colors.border },
               ]}
             />
           ))}
@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   backRow: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 4 },
   closeBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22 },
   heroRow: { paddingHorizontal: 24, paddingTop: 4, paddingBottom: 12 },
-  eyebrow: { letterSpacing: 2, fontFamily: 'Inter-Medium' },
+  eyebrow: { letterSpacing: 2, fontFamily: 'Inter_500Medium' },
   dotsRow: { flexDirection: 'row', marginTop: 8 },
   dot: { width: 30, height: 4, borderRadius: 2, marginRight: 6 },
   body: { flex: 1, paddingHorizontal: 24 },

@@ -282,7 +282,7 @@ function WarmupStep({ onDone }: { onDone: () => void }): React.ReactElement {
         </ZoneText>
         <ZoneText
           variant="body"
-          color={inFirstHalf ? colors.accent.gold : colors.orbe.green}
+          color={inFirstHalf ? colors.scoreGreen : colors.orbe.green}
           style={styles.warmupPhase}
         >
           {inFirstHalf ? '🚶 5 min marche rapide' : '🏃 5 min footing très léger'}
@@ -307,7 +307,7 @@ function WarmupStep({ onDone }: { onDone: () => void }): React.ReactElement {
         ) : null}
         <View style={styles.skipRow}>
           <TouchableOpacity onPress={onDone} hitSlop={8} activeOpacity={0.7}>
-            <ZoneText variant="caption" color={colors.accent.gold}>
+            <ZoneText variant="caption" color={colors.scoreGreen}>
               {remaining === 0 ? "J'ai fini l'échauffement →" : 'Passer (déconseillé) →'}
             </ZoneText>
           </TouchableOpacity>
@@ -373,7 +373,7 @@ function CooperStep({
         </ZoneText>
         <ZoneText
           variant="body"
-          color={done ? colors.orbe.green : colors.accent.gold}
+          color={done ? colors.orbe.green : colors.scoreGreen}
           style={styles.warmupPhase}
         >
           {done ? 'STOP — note ta distance' : 'Cours aussi loin que possible'}
@@ -591,7 +591,7 @@ function TimeTrialStep({
             <Switch
               value={useGps}
               onValueChange={setUseGps}
-              trackColor={{ false: colors.border, true: colors.accent.gold }}
+              trackColor={{ false: colors.border, true: colors.scoreGreen }}
               thumbColor={colors.bg.primary}
             />
           </View>
@@ -610,7 +610,7 @@ function TimeTrialStep({
         ) : (
           <ZoneText
             variant="body"
-            color={done ? colors.orbe.green : colors.accent.gold}
+            color={done ? colors.orbe.green : colors.scoreGreen}
             style={styles.warmupPhase}
           >
             {done
@@ -712,7 +712,7 @@ function ResultStep({
         <ZoneText variant="caption" color={colors.text.muted} style={styles.vdotLabel}>
           VDOT
         </ZoneText>
-        <ZoneText variant="body" color={colors.accent.gold} style={styles.levelLabel}>
+        <ZoneText variant="body" color={colors.scoreGreen} style={styles.levelLabel}>
           {friendlyLabel} · {label}
         </ZoneText>
       </View>
@@ -789,7 +789,7 @@ function Estimate({
 function Bullet({ text }: { text: string }): React.ReactElement {
   return (
     <View style={styles.bulletRow}>
-      <ZoneText variant="label" color={colors.accent.gold} style={styles.bulletDot}>
+      <ZoneText variant="label" color={colors.scoreGreen} style={styles.bulletDot}>
         •
       </ZoneText>
       <ZoneText
@@ -866,7 +866,7 @@ const styles = StyleSheet.create({
   back: { padding: 8, minWidth: 44 },
   title: { fontSize: 22, flex: 1, textAlign: 'center', letterSpacing: 1 },
   body: { paddingHorizontal: 24, paddingBottom: 40, paddingTop: 4 },
-  eyebrow: { letterSpacing: 2, fontSize: 11, fontFamily: 'Inter-Bold', marginBottom: 12 },
+  eyebrow: { letterSpacing: 2, fontSize: 11, fontFamily: 'Inter_700Bold', marginBottom: 12 },
   card: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,
@@ -875,7 +875,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
   },
-  cardActive: { borderColor: colors.accent.gold, borderWidth: 2 },
+  cardActive: { borderColor: colors.scoreGreen, borderWidth: 2 },
   cardTitle: { fontSize: 18, letterSpacing: 1 },
   cardBody: { marginTop: 8, lineHeight: 21 },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
@@ -887,8 +887,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  pillActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
-  pillText: { fontFamily: 'Inter-Medium', fontSize: 13 },
+  pillActive: { backgroundColor: colors.scoreGreen, borderColor: colors.scoreGreen },
+  pillText: { fontFamily: 'Inter_500Medium', fontSize: 13 },
   cta: { marginTop: 22 },
   gpsToggleRow: {
     flexDirection: 'row',
@@ -908,7 +908,7 @@ const styles = StyleSheet.create({
   confirmCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
     borderLeftWidth: 3,
     borderRadius: 14,
     padding: 16,
@@ -926,7 +926,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   bigTimer: { fontSize: 64, letterSpacing: 2, lineHeight: 68 },
-  warmupPhase: { marginTop: 10, fontFamily: 'Inter-Medium', fontSize: 14 },
+  warmupPhase: { marginTop: 10, fontFamily: 'Inter_500Medium', fontSize: 14 },
   instructions: { marginTop: 4 },
   bulletRow: { flexDirection: 'row', marginVertical: 4, alignItems: 'flex-start' },
   bulletDot: { width: 16, fontSize: 16, lineHeight: 22 },
@@ -935,7 +935,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, marginTop: 8, marginBottom: 6 },
   input: {
     color: colors.text.primary,
-    fontFamily: 'Inter-Regular',
+    fontFamily: 'Inter_400Regular',
     fontSize: 18,
     backgroundColor: colors.bg.elevated,
     borderRadius: 12,
@@ -946,7 +946,7 @@ const styles = StyleSheet.create({
   resultCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
     borderLeftWidth: 3,
     borderRadius: 14,
     padding: 22,
@@ -954,7 +954,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   vdotNumber: { fontSize: 72, lineHeight: 80, letterSpacing: 1 },
-  vdotLabel: { fontFamily: 'Inter-Bold', letterSpacing: 2 },
+  vdotLabel: { fontFamily: 'Inter_700Bold', letterSpacing: 2 },
   levelLabel: { marginTop: 6, fontSize: 16 },
   paceCard: {
     backgroundColor: colors.bg.card,

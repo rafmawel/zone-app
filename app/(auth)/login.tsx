@@ -103,7 +103,7 @@ export default function LoginScreen(): React.ReactElement {
             </ZoneText>
             <ZoneText
               variant="caption"
-              color={colors.accent.gold}
+              color={colors.scoreGreen}
               style={styles.footerLink}
               onPress={() => router.push('/(auth)/register')}
             >
@@ -136,5 +136,5 @@ const styles = StyleSheet.create({
     marginTop: 32,
     alignItems: 'center',
   },
-  footerLink: { fontFamily: 'Inter-Medium' },
+  footerLink: { fontFamily: 'Inter_500Medium' },
 });

@@ -233,7 +233,7 @@ export default function BonusCardioScreen(): React.ReactElement {
 function Bullet({ text }: { text: string }): React.ReactElement {
   return (
     <View style={styles.bulletRow}>
-      <ZoneText variant="label" color={colors.accent.gold} style={styles.bulletDot}>
+      <ZoneText variant="label" color={colors.scoreGreen} style={styles.bulletDot}>
         •
       </ZoneText>
       <ZoneText variant="body" color={colors.text.secondary} style={styles.bulletText}>
@@ -264,18 +264,18 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   bigTimer: { fontSize: 64, letterSpacing: 2, lineHeight: 68 },
-  timerSub: { marginTop: 10, fontFamily: 'Inter-Medium' },
+  timerSub: { marginTop: 10, fontFamily: 'Inter_500Medium' },
   suggestCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,
     borderColor: colors.border,
     borderLeftWidth: 3,
-    borderLeftColor: colors.accent.gold,
+    borderLeftColor: colors.scoreGreen,
     borderRadius: 14,
     padding: 16,
     marginBottom: 16,
   },
-  suggestEyebrow: { letterSpacing: 2, fontFamily: 'Inter-Bold', fontSize: 11 },
+  suggestEyebrow: { letterSpacing: 2, fontFamily: 'Inter_700Bold', fontSize: 11 },
   suggestPace: { fontSize: 28, marginTop: 6, letterSpacing: 1, lineHeight: 32 },
   suggestText: { marginTop: 10, lineHeight: 20 },
   instructions: { marginTop: 6 },

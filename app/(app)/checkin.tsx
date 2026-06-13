@@ -212,7 +212,7 @@ export default function CheckinScreen(): React.ReactElement {
                 styles.dot,
                 {
                   backgroundColor:
-                    i <= stepIdx ? colors.accent.gold : colors.border,
+                    i <= stepIdx ? colors.scoreGreen : colors.border,
                 },
               ]}
             />
@@ -339,7 +339,7 @@ function SleepDurationStep({
       </ZoneText>
       <View style={styles.pickerRow}>
         <TouchableOpacity onPress={dec} activeOpacity={0.7} style={styles.pickerButton}>
-          <Minus size={28} color={colors.accent.gold} />
+          <Minus size={28} color={colors.scoreGreen} />
         </TouchableOpacity>
         <View style={styles.pickerValueWrap}>
           <ZoneText variant="number" style={styles.pickerValue}>
@@ -347,7 +347,7 @@ function SleepDurationStep({
           </ZoneText>
         </View>
         <TouchableOpacity onPress={inc} activeOpacity={0.7} style={styles.pickerButton}>
-          <Plus size={28} color={colors.accent.gold} />
+          <Plus size={28} color={colors.scoreGreen} />
         </TouchableOpacity>
       </View>
     </View>
@@ -402,7 +402,7 @@ function EmojiStep({
               style={[
                 styles.emojiCard,
                 {
-                  borderColor: active ? colors.accent.gold : colors.border,
+                  borderColor: active ? colors.scoreGreen : colors.border,
                   backgroundColor: active ? colors.bg.elevated : colors.bg.card,
                 },
               ]}
@@ -412,7 +412,7 @@ function EmojiStep({
               </ZoneText>
               <ZoneText
                 variant="caption"
-                color={active ? colors.accent.gold : colors.text.secondary}
+                color={active ? colors.scoreGreen : colors.text.secondary}
                 style={styles.emojiLabel}
               >
                 {opt.label}
@@ -452,8 +452,8 @@ function FeelingStep({
               style={[
                 styles.feelingCell,
                 {
-                  backgroundColor: active ? colors.accent.gold : colors.bg.card,
-                  borderColor: active ? colors.accent.gold : colors.border,
+                  backgroundColor: active ? colors.scoreGreen : colors.bg.card,
+                  borderColor: active ? colors.scoreGreen : colors.border,
                 },
               ]}
             />
@@ -499,7 +499,7 @@ function CardStep({
               style={[
                 styles.optionCard,
                 {
-                  borderColor: active ? colors.accent.gold : colors.border,
+                  borderColor: active ? colors.scoreGreen : colors.border,
                   backgroundColor: active ? colors.bg.elevated : colors.bg.card,
                 },
               ]}
@@ -507,7 +507,7 @@ function CardStep({
               <ZoneText
                 variant="label"
                 style={{
-                  color: active ? colors.accent.gold : colors.text.primary,
+                  color: active ? colors.scoreGreen : colors.text.primary,
                   fontSize: 16,
                 }}
               >
@@ -551,7 +551,7 @@ const styles = StyleSheet.create({
   healthDetail: { marginTop: 6, marginBottom: 12 },
   healthActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   healthPrimary: {
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.scoreGreen,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 10,
@@ -568,7 +568,7 @@ const styles = StyleSheet.create({
   intro: { alignItems: 'center', paddingHorizontal: 24, paddingTop: 8, paddingBottom: 12 },
   introTitle: {
     color: colors.text.primary,
-    fontFamily: 'Inter-Medium',
+    fontFamily: 'Inter_500Medium',
     fontSize: 16,
     textAlign: 'center',
     marginTop: 12,
@@ -589,7 +589,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pickerValueWrap: { minWidth: 160, alignItems: 'center' },
-  pickerValue: { fontSize: 72, color: colors.accent.gold, lineHeight: 80 },
+  pickerValue: { fontSize: 72, color: colors.scoreGreen, lineHeight: 80 },
   emojiRow: { flexDirection: 'row', justifyContent: 'space-between', alignSelf: 'stretch' },
   emojiCard: {
     flex: 1,
@@ -601,7 +601,7 @@ const styles = StyleSheet.create({
   },
   emojiGlyph: { fontSize: 32, marginBottom: 8 },
   emojiLabel: { textAlign: 'center', fontSize: 11 },
-  feelingValue: { fontSize: 96, color: colors.accent.gold, marginBottom: 24, lineHeight: 100 },
+  feelingValue: { fontSize: 96, color: colors.scoreGreen, marginBottom: 24, lineHeight: 100 },
   feelingRow: { flexDirection: 'row', alignSelf: 'stretch', justifyContent: 'space-between' },
   feelingCell: {
     flex: 1,
@@ -628,6 +628,6 @@ const styles = StyleSheet.create({
   footer: { padding: 24, paddingTop: 8 },
   resultRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   resultScore: { fontSize: 96, marginTop: 32, lineHeight: 100 },
-  resultLabel: { fontFamily: 'Inter-Bold', fontSize: 14, letterSpacing: 3, marginTop: 4 },
+  resultLabel: { fontFamily: 'Inter_700Bold', fontSize: 14, letterSpacing: 3, marginTop: 4 },
   resultMessage: { marginTop: 16, textAlign: 'center', maxWidth: 320 },
 });

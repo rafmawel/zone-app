@@ -211,7 +211,7 @@ function colorFor(status: MuscleVolumeStatusKind): string {
     case 'below_mev':
       return '#64B5F6';
     case 'suboptimal':
-      return '#C9A84C';
+      return '#1BCA82';
     case 'optimal':
       return '#4CAF50';
     case 'approaching_mrv':

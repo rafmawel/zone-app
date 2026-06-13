@@ -6,7 +6,7 @@ import { ZoneText } from './ui/ZoneText';
 import type { MuscleGroup } from '@/data/exercises';
 
 const COLOR_INACTIVE = colors.border;
-const COLOR_PRIMARY = colors.accent.gold;
+const COLOR_PRIMARY = colors.scoreGreen;
 const COLOR_SECONDARY = colors.orbe.blue;
 const SECONDARY_OPACITY = 0.6;
 const OUTLINE = colors.bg.elevated;

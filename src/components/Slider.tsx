@@ -33,7 +33,7 @@ export function Slider({ min, max, value, onChange, label }: SliderProps): React
               style={[
                 styles.pill,
                 {
-                  borderColor: active ? colors.accent.gold : colors.border,
+                  borderColor: active ? colors.scoreGreen : colors.border,
                   backgroundColor: active ? colors.bg.elevated : colors.bg.card,
                 },
               ]}
@@ -41,8 +41,8 @@ export function Slider({ min, max, value, onChange, label }: SliderProps): React
               <ZoneText
                 variant="label"
                 style={{
-                  color: active ? colors.accent.gold : colors.text.primary,
-                  fontFamily: 'Inter-Bold',
+                  color: active ? colors.scoreGreen : colors.text.primary,
+                  fontFamily: 'Inter_700Bold',
                 }}
               >
                 {n}

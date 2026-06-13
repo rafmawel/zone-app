@@ -15,7 +15,7 @@ function TabLabel({ label, focused }: { label: string; focused: boolean }): Reac
     <ZoneText
       variant="caption"
       size={10}
-      color={focused ? colors.accent.gold : colors.text.muted}
+      color={focused ? colors.scoreGreen : colors.text.muted}
       style={styles.tabLabel}
     >
       {label}
@@ -23,7 +23,7 @@ function TabLabel({ label, focused }: { label: string; focused: boolean }): Reac
   );
 }
 
-/** Center action tab: gold circle with a white play glyph. */
+/** Center action tab: accent circle with a white play glyph. */
 function CenterIcon(): React.ReactElement {
   return (
     <View style={styles.centerCircle}>
@@ -42,7 +42,7 @@ export default function AppLayout(): React.ReactElement {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: colors.accent.gold,
+          tabBarActiveTintColor: colors.scoreGreen,
           tabBarInactiveTintColor: colors.text.muted,
           tabBarStyle: {
             backgroundColor: colors.bg.card,
@@ -106,16 +106,16 @@ export default function AppLayout(): React.ReactElement {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg.primary },
-  tabLabel: { fontFamily: 'Inter-Medium', marginTop: 2, textAlign: 'center' },
+  tabLabel: { fontFamily: 'Inter_500Medium', marginTop: 2, textAlign: 'center' },
   centerCircle: {
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.scoreGreen,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: -14,
-    shadowColor: colors.accent.gold,
+    shadowColor: colors.scoreGreen,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 10,

@@ -288,7 +288,7 @@ function SessionRow({
     >
       <View style={styles.sessionMain}>
         <View style={styles.sessionRow}>
-          <ZoneText variant="label" color={colors.accent.gold} style={styles.sessionDate}>
+          <ZoneText variant="label" color={colors.scoreGreen} style={styles.sessionDate}>
             {frenchShortDate(session.date)}
           </ZoneText>
           {zone !== null ? (
@@ -335,7 +335,7 @@ function RunRow({ run }: { run: RunSession }): React.ReactElement {
     <View style={[styles.sessionCard, { borderLeftColor: color }]}>
       <View style={styles.sessionMain}>
         <View style={styles.sessionRow}>
-          <ZoneText variant="label" color={colors.accent.gold} style={styles.sessionDate}>
+          <ZoneText variant="label" color={colors.scoreGreen} style={styles.sessionDate}>
             {frenchShortDate(run.date)}
           </ZoneText>
           <View style={[styles.scoreBubble, { backgroundColor: color }]}>
@@ -363,7 +363,7 @@ function HyroxRow({ record }: { record: HyroxSessionRecord }): React.ReactElemen
     <View style={[styles.sessionCard, { borderLeftColor: colors.orbe.amber }]}>
       <View style={styles.sessionMain}>
         <View style={styles.sessionRow}>
-          <ZoneText variant="label" color={colors.accent.gold} style={styles.sessionDate}>
+          <ZoneText variant="label" color={colors.scoreGreen} style={styles.sessionDate}>
             {frenchShortDate(record.date)}
           </ZoneText>
           <View style={styles.hyroxBadge}>
@@ -476,8 +476,8 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: colors.orbe.amber,
   },
-  hyroxBadgeText: { color: colors.bg.primary, fontFamily: 'Inter-Bold', fontSize: 10, letterSpacing: 1 },
-  scoreBubbleText: { color: colors.bg.primary, fontFamily: 'Inter-Bold', fontSize: 11 },
+  hyroxBadgeText: { color: colors.bg.primary, fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 1 },
+  scoreBubbleText: { color: colors.bg.primary, fontFamily: 'Inter_700Bold', fontSize: 11 },
   sessionMetaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   sessionMetaText: { fontSize: 11, marginLeft: 4 },
   runMeta: { fontSize: 11, marginTop: 4 },
@@ -494,7 +494,7 @@ const styles = StyleSheet.create({
   },
   prMain: { flex: 1 },
   prName: { fontSize: 14, color: colors.text.primary },
-  prWeight: { fontSize: 24, color: colors.accent.gold, lineHeight: 26 },
+  prWeight: { fontSize: 24, color: colors.scoreGreen, lineHeight: 26 },
   empty: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,

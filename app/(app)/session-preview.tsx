@@ -239,7 +239,7 @@ export default function SessionPreviewScreen(): React.ReactElement {
           <ArrowLeft size={24} color={colors.text.primary} />
         </TouchableOpacity>
         <View style={styles.sportBadge}>
-          <ZoneText variant="caption" color={colors.accent.gold} style={styles.sportBadgeText}>
+          <ZoneText variant="caption" color={colors.haltero} style={styles.sportBadgeText}>
             {computed?.sportLabel ?? ''} · APERÇU
           </ZoneText>
         </View>
@@ -285,8 +285,8 @@ export default function SessionPreviewScreen(): React.ReactElement {
                       style={styles.techLink}
                       hitSlop={8}
                     >
-                      <Info size={14} color={colors.accent.gold} />
-                      <ZoneText variant="caption" color={colors.accent.gold} style={styles.techText}>
+                      <Info size={14} color={colors.haltero} />
+                      <ZoneText variant="caption" color={colors.haltero} style={styles.techText}>
                         Voir la technique
                       </ZoneText>
                     </TouchableOpacity>
@@ -297,7 +297,7 @@ export default function SessionPreviewScreen(): React.ReactElement {
 
             {computed.prilepin ? (
               <View style={styles.scienceCard}>
-                <ZoneText variant="body" size={13} color={colors.accent.goldLight} style={styles.scienceText}>
+                <ZoneText variant="body" size={13} color={colors.haltero} style={styles.scienceText}>
                   {computed.prilepin}
                 </ZoneText>
               </View>
@@ -336,12 +336,12 @@ const styles = StyleSheet.create({
   },
   sportBadge: {
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.haltero,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 5,
   },
-  sportBadgeText: { fontFamily: 'Inter-Bold', letterSpacing: 0.5 },
+  sportBadgeText: { fontFamily: 'Inter_700Bold', letterSpacing: 0.5 },
   headerSpacer: { width: 24 },
   scroll: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 120 },
   skelGap: { marginTop: 12 },
@@ -358,12 +358,12 @@ const styles = StyleSheet.create({
   exName: { letterSpacing: 0.3 },
   exLine: { marginTop: 6 },
   techLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
-  techText: { fontFamily: 'Inter-Medium' },
+  techText: { fontFamily: 'Inter_500Medium' },
   scienceCard: {
     marginTop: 8,
     backgroundColor: 'rgba(201,168,76,0.08)',
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.haltero,
     borderRadius: 16,
     padding: 16,
   },

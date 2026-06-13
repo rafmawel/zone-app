@@ -23,7 +23,7 @@ const SPORT_LABELS: Record<WorkloadSport, string> = {
 };
 
 const WEIGHTLIFTING_KEY_LIFTS: { id: string; name: string; color: string }[] = [
-  { id: 'snatch', name: 'Arraché', color: colors.accent.gold },
+  { id: 'snatch', name: 'Arraché', color: colors.scoreGreen },
   { id: 'clean_and_jerk', name: 'Épaulé-jeté', color: colors.orbe.blue },
   { id: 'front_squat', name: 'Squat avant', color: colors.success },
 ];
@@ -67,15 +67,15 @@ export function SportProgressionCard({
               style={[
                 styles.chip,
                 active && {
-                  borderColor: colors.accent.gold,
-                  backgroundColor: `${colors.accent.gold}1F`,
+                  borderColor: colors.scoreGreen,
+                  backgroundColor: `${colors.scoreGreen}1F`,
                 },
               ]}
             >
               <ZoneText
                 variant="label"
                 size={12}
-                color={active ? colors.accent.gold : colors.text.muted}
+                color={active ? colors.scoreGreen : colors.text.muted}
               >
                 {SPORT_LABELS[sport]}
               </ZoneText>
@@ -207,7 +207,7 @@ function WeightliftingProgression({
         <ZoneText variant="caption" color={colors.text.muted}>
           Sessions dans la zone Prilepin ce mois
         </ZoneText>
-        <ZoneText variant="heading" size={36} color={colors.accent.gold}>
+        <ZoneText variant="heading" size={36} color={colors.scoreGreen}>
           {compliance.total > 0
             ? `${Math.round((compliance.inZone / compliance.total) * 100)}%`
             : '—'}
@@ -234,7 +234,7 @@ function WeightliftingProgression({
               <ZoneText variant="label" color={colors.text.primary}>
                 {pr.exercise_id}
               </ZoneText>
-              <ZoneText variant="heading" size={22} color={colors.accent.gold}>
+              <ZoneText variant="heading" size={22} color={colors.scoreGreen}>
                 {pr.weight_kg} kg
               </ZoneText>
               <ZoneText variant="caption" color={colors.text.muted}>
@@ -348,7 +348,7 @@ function RunningProgression({
             series={[
               {
                 values: [...vdotHistory, ...new Array(8).fill(Number.NaN)],
-                color: colors.accent.gold,
+                color: colors.scoreGreen,
                 strokeWidth: 2.5,
               },
               {
@@ -383,7 +383,7 @@ function RunningProgression({
           thickness={16}
           segments={[
             { value: compliance.easyMin, color: colors.orbe.blue },
-            { value: compliance.qualityMin, color: colors.accent.gold },
+            { value: compliance.qualityMin, color: colors.scoreGreen },
           ]}
           centerLabel={hasRun ? `${Math.round(easyPct * 100)}%` : '—'}
           centerSub={hasRun ? 'facile' : 'pas de données'}
@@ -470,7 +470,7 @@ function PaceRow({
       <ZoneText variant="caption" color={colors.text.primary} style={styles.paceColMid}>
         {current}
       </ZoneText>
-      <ZoneText variant="caption" color={colors.accent.gold} style={styles.paceColEnd}>
+      <ZoneText variant="caption" color={colors.scoreGreen} style={styles.paceColEnd}>
         {projected}
       </ZoneText>
     </View>
@@ -510,7 +510,7 @@ function MusculationProgression({
           total += entry.tss;
         }
       }
-      out.push({ value: total, color: colors.accent.gold });
+      out.push({ value: total, color: colors.scoreGreen });
     }
     return out;
   }, [workloadHistory]);
@@ -533,7 +533,7 @@ function MusculationProgression({
       </View>
       {muscleVolumeStatus.length > 8 ? (
         <TouchableOpacity onPress={() => setExpanded((v) => !v)} style={styles.expandBtn}>
-          <ZoneText variant="caption" color={colors.accent.gold}>
+          <ZoneText variant="caption" color={colors.scoreGreen}>
             {expanded ? 'Réduire' : 'Voir tout'}
           </ZoneText>
         </TouchableOpacity>

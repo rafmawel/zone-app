@@ -387,7 +387,7 @@ export default function EntrainerScreen(): React.ReactElement {
       <View style={styles.runningTail}>
         {distance && raceDate && weeks !== null ? (
           <View style={styles.racePill}>
-            <ZoneText variant="caption" color={colors.accent.gold} style={styles.racePillText}>
+            <ZoneText variant="caption" color={colors.scoreGreen} style={styles.racePillText}>
               🏁 {raceLabel(distance)} · Dans {weeks} sem
               {goalSeconds > 0 ? ` · Objectif ${formatGoal(goalSeconds, showHours)}` : ''}
             </ZoneText>
@@ -399,7 +399,7 @@ export default function EntrainerScreen(): React.ReactElement {
           activeOpacity={0.7}
           style={styles.goalLink}
         >
-          <ZoneText variant="caption" color={colors.accent.gold} style={styles.goalLinkText}>
+          <ZoneText variant="caption" color={colors.scoreGreen} style={styles.goalLinkText}>
             {raceDate ? 'Modifier mon objectif →' : 'Configurer mon objectif →'}
           </ZoneText>
         </TouchableOpacity>
@@ -434,8 +434,8 @@ export default function EntrainerScreen(): React.ReactElement {
               </ZoneText>
             </View>
             <View style={styles.resumeBtn}>
-              <Play size={16} color={colors.accent.gold} fill={colors.accent.gold} />
-              <ZoneText variant="caption" color={colors.accent.gold} style={styles.resumeBtnText}>
+              <Play size={16} color={colors.scoreGreen} fill={colors.scoreGreen} />
+              <ZoneText variant="caption" color={colors.scoreGreen} style={styles.resumeBtnText}>
                 REPRENDRE
               </ZoneText>
             </View>
@@ -566,7 +566,7 @@ export default function EntrainerScreen(): React.ReactElement {
             RÉCENT
           </ZoneText>
           <TouchableOpacity onPress={() => router.push('/(app)/history')} hitSlop={8}>
-            <ZoneText variant="caption" color={colors.accent.gold}>
+            <ZoneText variant="caption" color={colors.scoreGreen}>
               Voir tout l'historique →
             </ZoneText>
           </TouchableOpacity>
@@ -610,7 +610,7 @@ export default function EntrainerScreen(): React.ReactElement {
             BIBLIOTHÈQUE
           </ZoneText>
           <TouchableOpacity onPress={() => router.push('/(app)/library')} hitSlop={8}>
-            <ZoneText variant="caption" color={colors.accent.gold}>
+            <ZoneText variant="caption" color={colors.scoreGreen}>
               Voir tout →
             </ZoneText>
           </TouchableOpacity>
@@ -709,7 +709,7 @@ export default function EntrainerScreen(): React.ReactElement {
             <View style={styles.sheetHandle} />
             {previewItem ? (
               <>
-                <ZoneText variant="caption" color={colors.accent.gold} style={styles.previewEyebrow}>
+                <ZoneText variant="caption" color={colors.scoreGreen} style={styles.previewEyebrow}>
                   APERÇU · {SPORT_LABEL[previewItem.sport as Sport].toUpperCase()}
                 </ZoneText>
                 <ZoneText variant="title" size={20} style={styles.sheetTitle}>
@@ -763,7 +763,7 @@ export default function EntrainerScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
   screenTitle: { fontSize: 26, letterSpacing: 0.5, marginBottom: 16 },
-  section: { fontFamily: 'Syne-Bold', fontSize: 13, letterSpacing: 1.5, color: colors.text.muted },
+  section: { fontFamily: 'Inter_700Bold', fontSize: 13, letterSpacing: 1.5, color: colors.text.muted },
   sectionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -774,13 +774,13 @@ const styles = StyleSheet.create({
   resumeBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.scoreGreen,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
   },
   resumeMain: { flex: 1 },
-  resumeEyebrow: { fontFamily: 'Inter-Bold', letterSpacing: 1, opacity: 0.8 },
+  resumeEyebrow: { fontFamily: 'Inter_700Bold', letterSpacing: 1, opacity: 0.8 },
   resumeTitle: { marginTop: 2 },
   resumeBtn: {
     flexDirection: 'row',
@@ -791,7 +791,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  resumeBtnText: { fontFamily: 'Inter-Bold', letterSpacing: 0.5 },
+  resumeBtnText: { fontFamily: 'Inter_700Bold', letterSpacing: 0.5 },
   emptyCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,
@@ -810,30 +810,30 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 10,
   },
-  qCardAvailable: { borderColor: colors.accent.gold },
+  qCardAvailable: { borderColor: colors.scoreGreen },
   qCardDone: { opacity: 0.55 },
   qCardHead: { flexDirection: 'row', alignItems: 'center' },
   qIcon: { fontSize: 16, marginRight: 10 },
   qMain: { flex: 1 },
-  urgencyNote: { marginTop: 4, fontFamily: 'Inter-Bold' },
+  urgencyNote: { marginTop: 4, fontFamily: 'Inter_700Bold' },
   qActions: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
-  qStartBtn: { flex: 1, backgroundColor: colors.accent.gold, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
+  qStartBtn: { flex: 1, backgroundColor: colors.scoreGreen, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   qSkipBtn: { paddingHorizontal: 14, paddingVertical: 10 },
   runningTail: { marginTop: 12 },
   racePill: {
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
     alignSelf: 'flex-start',
   },
-  racePillText: { fontSize: 11, fontFamily: 'Inter-Bold', letterSpacing: 0.5 },
+  racePillText: { fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.5 },
   goalLink: { marginTop: 8, paddingVertical: 2 },
-  goalLinkText: { fontSize: 11, fontFamily: 'Inter-Medium' },
+  goalLinkText: { fontSize: 11, fontFamily: 'Inter_500Medium' },
   addLinks: { marginTop: 12, gap: 4, alignItems: 'center' },
   addLink: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8 },
-  addLinkText: { fontFamily: 'Inter-Medium' },
+  addLinkText: { fontFamily: 'Inter_500Medium' },
   recentRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -861,7 +861,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     color: colors.text.primary,
-    fontFamily: 'Inter-Regular',
+    fontFamily: 'Inter_400Regular',
     fontSize: 14,
     paddingVertical: 0,
   },
@@ -889,7 +889,7 @@ const styles = StyleSheet.create({
   sheetTitle: { letterSpacing: 1, marginBottom: 12, color: colors.text.primary },
   sheetBody: { lineHeight: 21, marginBottom: 18 },
   ghostBtn: { alignSelf: 'center', marginTop: 12, paddingVertical: 8 },
-  previewEyebrow: { letterSpacing: 2, fontFamily: 'Inter-Bold', fontSize: 11, marginBottom: 6 },
+  previewEyebrow: { letterSpacing: 2, fontFamily: 'Inter_700Bold', fontSize: 11, marginBottom: 6 },
   previewMeta: { marginBottom: 14, fontSize: 13 },
   previewExList: {
     backgroundColor: colors.bg.elevated,

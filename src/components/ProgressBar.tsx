@@ -25,7 +25,7 @@ const styles = StyleSheet.create({
   },
   fill: {
     height: '100%',
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.scoreGreen,
     borderRadius: 2,
   },
 });

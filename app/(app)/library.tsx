@@ -254,14 +254,14 @@ function ExerciseRow({
           <View style={styles.metaSpacer} />
           {visible.map((m) => (
             <View key={m} style={styles.musclePill}>
-              <ZoneText color={colors.accent.gold} style={styles.musclePillText}>
+              <ZoneText color={colors.scoreGreen} style={styles.musclePillText}>
                 {MUSCLE_LABELS[m]}
               </ZoneText>
             </View>
           ))}
           {overflow > 0 ? (
             <View style={styles.musclePill}>
-              <ZoneText color={colors.accent.gold} style={styles.musclePillText}>
+              <ZoneText color={colors.scoreGreen} style={styles.musclePillText}>
                 +{overflow}
               </ZoneText>
             </View>
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 10,
     color: colors.text.primary,
-    fontFamily: 'Inter-Regular',
+    fontFamily: 'Inter_400Regular',
     fontSize: 14,
     paddingVertical: 0,
   },
@@ -318,10 +318,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  chipActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
+  chipActive: { backgroundColor: colors.scoreGreen, borderColor: colors.scoreGreen },
   chipInactive: { backgroundColor: 'transparent', borderColor: colors.border },
-  chipText: { fontSize: 13, letterSpacing: 0.5, fontFamily: 'Inter-Medium' },
-  chipTextActive: { color: colors.bg.primary, fontFamily: 'Inter-Bold' },
+  chipText: { fontSize: 13, letterSpacing: 0.5, fontFamily: 'Inter_500Medium' },
+  chipTextActive: { color: colors.bg.primary, fontFamily: 'Inter_700Bold' },
   chipTextInactive: { color: colors.text.secondary },
   listContent: { paddingHorizontal: 24, paddingBottom: 32 },
   row: {
@@ -351,6 +351,6 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
     marginLeft: 4,
   },
-  musclePillText: { fontSize: 10, fontFamily: 'Inter-Medium' },
+  musclePillText: { fontSize: 10, fontFamily: 'Inter_500Medium' },
   empty: { padding: 24, alignItems: 'center' },
 });

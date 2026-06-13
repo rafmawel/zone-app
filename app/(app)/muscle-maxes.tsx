@@ -181,7 +181,7 @@ export default function MuscleMaxesScreen(): React.ReactElement {
       </View>
 
       <View style={styles.heroRow}>
-        <ZoneText variant="caption" color={colors.accent.gold} style={styles.eyebrow}>
+        <ZoneText variant="caption" color={colors.scoreGreen} style={styles.eyebrow}>
           Exercice {stepIdx + 1}/{KEY_LIFTS.length}
         </ZoneText>
         <View style={styles.dotsRow}>
@@ -190,7 +190,7 @@ export default function MuscleMaxesScreen(): React.ReactElement {
               key={i}
               style={[
                 styles.dot,
-                { backgroundColor: i <= stepIdx ? colors.accent.gold : colors.border },
+                { backgroundColor: i <= stepIdx ? colors.scoreGreen : colors.border },
               ]}
             />
           ))}
@@ -253,15 +253,15 @@ export default function MuscleMaxesScreen(): React.ReactElement {
                         style={[
                           styles.repsCell,
                           {
-                            backgroundColor: active ? colors.accent.gold : colors.bg.card,
-                            borderColor: active ? colors.accent.gold : colors.border,
+                            backgroundColor: active ? colors.scoreGreen : colors.bg.card,
+                            borderColor: active ? colors.scoreGreen : colors.border,
                           },
                         ]}
                       >
                         <ZoneText
                           style={{
                             color: active ? colors.bg.primary : colors.text.secondary,
-                            fontFamily: 'Inter-Bold',
+                            fontFamily: 'Inter_700Bold',
                             fontSize: 13,
                           }}
                         >
@@ -300,7 +300,7 @@ export default function MuscleMaxesScreen(): React.ReactElement {
               style={styles.testLinkRow}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <ZoneText variant="caption" color={colors.accent.gold} style={styles.testLinkText}>
+              <ZoneText variant="caption" color={colors.scoreGreen} style={styles.testLinkText}>
                 Je veux faire un test
               </ZoneText>
             </TouchableOpacity>
@@ -324,7 +324,7 @@ export default function MuscleMaxesScreen(): React.ReactElement {
                     activeOpacity={0.7}
                     style={styles.guidedChip}
                   >
-                    <ZoneText variant="caption" color={colors.accent.gold}>
+                    <ZoneText variant="caption" color={colors.scoreGreen}>
                       Test guidé · Séance 1
                     </ZoneText>
                   </TouchableOpacity>
@@ -338,7 +338,7 @@ export default function MuscleMaxesScreen(): React.ReactElement {
                     activeOpacity={0.7}
                     style={styles.guidedChip}
                   >
-                    <ZoneText variant="caption" color={colors.accent.gold}>
+                    <ZoneText variant="caption" color={colors.scoreGreen}>
                       Séance 2 · 48h après
                     </ZoneText>
                   </TouchableOpacity>
@@ -402,7 +402,7 @@ function WeightPicker({
           hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
           style={styles.pickerBtn}
         >
-          <Minus size={26} color={colors.accent.gold} />
+          <Minus size={26} color={colors.scoreGreen} />
         </TouchableOpacity>
         <View style={styles.pickerValueWrap}>
           <TextInput
@@ -412,8 +412,8 @@ function WeightPicker({
             onSubmitEditing={commit}
             keyboardType="decimal-pad"
             returnKeyType="done"
-            selectionColor={colors.accent.gold}
-            cursorColor={colors.accent.gold}
+            selectionColor={colors.scoreGreen}
+            cursorColor={colors.scoreGreen}
             style={styles.pickerInput}
             maxLength={6}
           />
@@ -424,7 +424,7 @@ function WeightPicker({
           hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
           style={styles.pickerBtn}
         >
-          <Plus size={26} color={colors.accent.gold} />
+          <Plus size={26} color={colors.scoreGreen} />
         </TouchableOpacity>
       </View>
     </View>
@@ -447,14 +447,14 @@ function ToggleChip({
       style={[
         styles.toggleChip,
         active
-          ? { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold }
+          ? { backgroundColor: colors.scoreGreen, borderColor: colors.scoreGreen }
           : { backgroundColor: 'transparent', borderColor: colors.border },
       ]}
     >
       <ZoneText
         style={{
           color: active ? colors.bg.primary : colors.text.secondary,
-          fontFamily: active ? 'Inter-Bold' : 'Inter-Medium',
+          fontFamily: active ? 'Inter_700Bold' : 'Inter_500Medium',
           fontSize: 13,
         }}
       >
@@ -467,7 +467,7 @@ function ToggleChip({
 const styles = StyleSheet.create({
   backRow: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 4 },
   heroRow: { paddingHorizontal: 24, paddingTop: 4, paddingBottom: 16 },
-  eyebrow: { letterSpacing: 2, fontFamily: 'Inter-Medium' },
+  eyebrow: { letterSpacing: 2, fontFamily: 'Inter_500Medium' },
   heroSubtitle: { marginTop: 8, fontSize: 13, lineHeight: 18 },
   dotsRow: { flexDirection: 'row', marginTop: 8 },
   dot: { width: 22, height: 4, borderRadius: 2, marginRight: 6 },
@@ -504,8 +504,8 @@ const styles = StyleSheet.create({
   pickerInput: {
     minWidth: 140,
     textAlign: 'center',
-    color: colors.accent.gold,
-    fontFamily: 'BebasNeue',
+    color: colors.scoreGreen,
+    fontFamily: 'Inter_700Bold',
     fontSize: 64,
     lineHeight: 70,
     paddingVertical: 0,
@@ -538,7 +538,7 @@ const styles = StyleSheet.create({
   guidedRow: { flexDirection: 'row', gap: 10, marginTop: 16, justifyContent: 'center' },
   guidedChip: {
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.scoreGreen,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,

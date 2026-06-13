@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
   eyebrow: { letterSpacing: 1, fontSize: 11 },
   eyebrowGroup: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   infoBtn: { marginLeft: 6, padding: 2 },
-  tag: { letterSpacing: 1, fontSize: 11, fontFamily: 'Inter-Bold' },
+  tag: { letterSpacing: 1, fontSize: 11, fontFamily: 'Inter_700Bold' },
   primary: { fontSize: 16, marginTop: 8 },
   adjustment: { marginTop: 6, lineHeight: 17 },
   note: { marginTop: 10, lineHeight: 17 },

@@ -285,7 +285,7 @@ export default function RunningSetupScreen(): React.ReactElement {
         </TouchableOpacity>
       </View>
       <View style={styles.heroRow}>
-        <ZoneText variant="caption" color={colors.accent.gold} style={styles.eyebrow}>
+        <ZoneText variant="caption" color={colors.scoreGreen} style={styles.eyebrow}>
           Étape {step + 1}/{TOTAL_STEPS}
         </ZoneText>
         <View style={styles.dotsRow}>
@@ -294,7 +294,7 @@ export default function RunningSetupScreen(): React.ReactElement {
               key={i}
               style={[
                 styles.dot,
-                { backgroundColor: i <= step ? colors.accent.gold : colors.border },
+                { backgroundColor: i <= step ? colors.scoreGreen : colors.border },
               ]}
             />
           ))}
@@ -500,7 +500,7 @@ function PaceStep({
             returnKeyType="done"
             placeholder="MM:SS"
             placeholderTextColor={colors.text.muted}
-            selectionColor={colors.accent.gold}
+            selectionColor={colors.scoreGreen}
             maxLength={5}
             style={styles.paceBigInput}
           />
@@ -535,7 +535,7 @@ function TestNivLink(): React.ReactElement {
       activeOpacity={0.7}
       style={styles.testNivLink}
     >
-      <ZoneText variant="caption" color={colors.accent.gold} style={styles.testNivText}>
+      <ZoneText variant="caption" color={colors.scoreGreen} style={styles.testNivText}>
         Je veux faire un test de niveau →
       </ZoneText>
     </TouchableOpacity>
@@ -563,7 +563,7 @@ function PaceBlock({
         hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
         style={styles.paceBlockBtn}
       >
-        <Plus size={26} color={colors.accent.gold} />
+        <Plus size={26} color={colors.scoreGreen} />
       </TouchableOpacity>
       <ZoneText variant="heading" style={styles.paceBlockValue}>
         {format ? format(value) : value}
@@ -574,7 +574,7 @@ function PaceBlock({
         hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
         style={styles.paceBlockBtn}
       >
-        <Minus size={26} color={colors.accent.gold} />
+        <Minus size={26} color={colors.scoreGreen} />
       </TouchableOpacity>
       <ZoneText variant="caption" color={colors.text.muted} style={styles.paceBlockLabel}>
         {label}
@@ -658,14 +658,14 @@ function ReferenceStep({
                   style={[
                     styles.distChip,
                     active
-                      ? { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold }
+                      ? { backgroundColor: colors.scoreGreen, borderColor: colors.scoreGreen }
                       : { backgroundColor: 'transparent', borderColor: colors.border },
                   ]}
                 >
                   <ZoneText
                     style={{
                       color: active ? colors.bg.primary : colors.text.secondary,
-                      fontFamily: 'Inter-Bold',
+                      fontFamily: 'Inter_700Bold',
                       fontSize: 12,
                     }}
                   >
@@ -769,7 +769,7 @@ function TimePiece({
         returnKeyType="done"
         maxLength={2}
         style={styles.timeInput}
-        selectionColor={colors.accent.gold}
+        selectionColor={colors.scoreGreen}
       />
       <ZoneText variant="caption" color={colors.text.muted} style={styles.timeSuffix}>
         {suffix}
@@ -827,15 +827,15 @@ function OrganizeStep({
               style={[
                 styles.sessionsCell,
                 {
-                  backgroundColor: active ? colors.accent.gold : colors.bg.elevated,
-                  borderColor: active ? colors.accent.gold : colors.border,
+                  backgroundColor: active ? colors.scoreGreen : colors.bg.elevated,
+                  borderColor: active ? colors.scoreGreen : colors.border,
                 },
               ]}
             >
               <ZoneText
                 style={{
                   color: active ? colors.bg.primary : colors.text.secondary,
-                  fontFamily: 'Inter-Bold',
+                  fontFamily: 'Inter_700Bold',
                   fontSize: 16,
                 }}
               >
@@ -860,14 +860,14 @@ function OrganizeStep({
               style={[
                 styles.longRunChip,
                 active
-                  ? { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold }
+                  ? { backgroundColor: colors.scoreGreen, borderColor: colors.scoreGreen }
                   : { backgroundColor: 'transparent', borderColor: colors.border },
               ]}
             >
               <ZoneText
                 style={{
                   color: active ? colors.bg.primary : colors.text.secondary,
-                  fontFamily: 'Inter-Bold',
+                  fontFamily: 'Inter_700Bold',
                   fontSize: 12,
                 }}
               >
@@ -961,7 +961,7 @@ function RaceGoalSummary({
           </>
         )}
       </View>
-      <ChevronRight size={18} color={colors.accent.gold} />
+      <ChevronRight size={18} color={colors.scoreGreen} />
     </TouchableOpacity>
   );
 }
@@ -982,14 +982,14 @@ function SmallChip({
       style={[
         styles.smallChip,
         active
-          ? { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold }
+          ? { backgroundColor: colors.scoreGreen, borderColor: colors.scoreGreen }
           : { backgroundColor: 'transparent', borderColor: colors.border },
       ]}
     >
       <ZoneText
         style={{
           color: active ? colors.bg.primary : colors.text.secondary,
-          fontFamily: active ? 'Inter-Bold' : 'Inter-Medium',
+          fontFamily: active ? 'Inter_700Bold' : 'Inter_500Medium',
           fontSize: 13,
         }}
       >
@@ -1003,7 +1003,7 @@ const styles = StyleSheet.create({
   backRow: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 4 },
   closeBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22 },
   heroRow: { paddingHorizontal: 24, paddingTop: 4, paddingBottom: 12 },
-  eyebrow: { letterSpacing: 2, fontFamily: 'Inter-Medium' },
+  eyebrow: { letterSpacing: 2, fontFamily: 'Inter_500Medium' },
   dotsRow: { flexDirection: 'row', marginTop: 8 },
   dot: { width: 30, height: 4, borderRadius: 2, marginRight: 6 },
   body: { flex: 1, paddingHorizontal: 24 },
@@ -1032,7 +1032,7 @@ const styles = StyleSheet.create({
   },
   paceBlockValue: {
     fontSize: 64,
-    color: colors.accent.gold,
+    color: colors.scoreGreen,
     minWidth: 90,
     textAlign: 'center',
     lineHeight: 70,
@@ -1042,7 +1042,7 @@ const styles = StyleSheet.create({
   paceColon: { fontSize: 48, color: colors.text.muted, marginHorizontal: 6, lineHeight: 52 },
   paceBig: {
     fontSize: 48,
-    color: colors.accent.gold,
+    color: colors.scoreGreen,
     marginTop: 20,
     lineHeight: 52,
     textAlign: 'center',
@@ -1051,8 +1051,8 @@ const styles = StyleSheet.create({
     fontSize: 48,
     lineHeight: 52,
     marginTop: 20,
-    color: colors.accent.gold,
-    fontFamily: 'BebasNeue',
+    color: colors.scoreGreen,
+    fontFamily: 'Inter_700Bold',
     textAlign: 'center',
     paddingVertical: 0,
     minWidth: 200,
@@ -1061,7 +1061,7 @@ const styles = StyleSheet.create({
   vdotLine: { marginTop: 6, fontSize: 12 },
   presetsRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 16 },
   testNivLink: { marginTop: 20, alignItems: 'center' },
-  testNivText: { fontSize: 13, fontFamily: 'Inter-Medium' },
+  testNivText: { fontSize: 13, fontFamily: 'Inter_500Medium' },
   presetChip: {
     borderWidth: 1,
     borderColor: colors.border,
@@ -1071,7 +1071,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
     marginBottom: 6,
   },
-  presetText: { color: colors.text.secondary, fontSize: 11, fontFamily: 'Inter-Medium' },
+  presetText: { color: colors.text.secondary, fontSize: 11, fontFamily: 'Inter_500Medium' },
   toggleRow: { flexDirection: 'row', marginTop: 16, marginBottom: 12 },
   smallChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8, marginRight: 8 },
   refCard: {
@@ -1104,8 +1104,8 @@ const styles = StyleSheet.create({
   timePieceWrap: { flexDirection: 'row', alignItems: 'center', marginRight: 12 },
   timeInput: {
     width: 56,
-    color: colors.accent.gold,
-    fontFamily: 'BebasNeue',
+    color: colors.scoreGreen,
+    fontFamily: 'Inter_700Bold',
     fontSize: 38,
     lineHeight: 42,
     textAlign: 'center',
@@ -1125,7 +1125,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  calibrationValue: { color: colors.accent.gold, fontFamily: 'Inter-Bold', fontSize: 18 },
+  calibrationValue: { color: colors.scoreGreen, fontFamily: 'Inter_700Bold', fontSize: 18 },
   sectionLabel: { letterSpacing: 1, fontSize: 11, marginTop: 16, marginBottom: 8 },
   sessionsRow: { flexDirection: 'row', justifyContent: 'space-between' },
   sessionsCell: {
@@ -1163,7 +1163,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 4,
   },
-  paceRowValue: { color: colors.accent.gold, fontFamily: 'Inter-Bold', fontSize: 13 },
+  paceRowValue: { color: colors.scoreGreen, fontFamily: 'Inter_700Bold', fontSize: 13 },
   error: { marginTop: 12, textAlign: 'center' },
   footer: { padding: 24, paddingTop: 8 },
 });

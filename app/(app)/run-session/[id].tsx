@@ -45,7 +45,6 @@ import { doc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { computeAndSaveWorkloadEntry } from '@/lib/pro';
 import { readCurrentWeek, readProgrammeQueue, recordSessionComplete, startWeek } from '@/lib/weekTracking';
-import { usePro } from '@/hooks/usePro';
 import { ZoneOrbe } from '@/components/ZoneOrbe';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { useSession, formatRestMS } from '@/context/SessionContext';
@@ -100,7 +99,6 @@ function stepDurationSeconds(step: RunningSessionStepPlanned): number {
 
 export default function RunSessionScreen(): React.ReactElement {
   const router = useRouter();
-  const { isPro } = usePro();
   const params = useLocalSearchParams<{ id: string }>();
   const runId = params.id ?? '';
   const { startSession, updateSessionProgress, endSession } = useSession();
@@ -213,7 +211,7 @@ export default function RunSessionScreen(): React.ReactElement {
   const isInterval = isIntervalSession(sessionType);
   const zoneScore = run?.zone_score_at_start ?? null;
   const zoneLevel = useMemo(() => (zoneScore !== null ? getZoneLevel(zoneScore) : null), [zoneScore]);
-  const accentColor = zoneLevel?.color ?? colors.accent.gold;
+  const accentColor = zoneLevel?.color ?? colors.run;
 
   const startTick = useCallback((): void => {
     if (tickRef.current) clearInterval(tickRef.current);
@@ -585,15 +583,15 @@ export default function RunSessionScreen(): React.ReactElement {
                   style={[
                     styles.rpeCell,
                     {
-                      backgroundColor: active ? colors.accent.gold : colors.bg.card,
-                      borderColor: active ? colors.accent.gold : colors.border,
+                      backgroundColor: active ? colors.run : colors.bg.card,
+                      borderColor: active ? colors.run : colors.border,
                     },
                   ]}
                 >
                   <ZoneText
                     style={{
                       color: active ? colors.bg.primary : colors.text.secondary,
-                      fontFamily: 'Inter-Bold',
+                      fontFamily: 'Inter_700Bold',
                       fontSize: 12,
                     }}
                   >
@@ -665,11 +663,6 @@ export default function RunSessionScreen(): React.ReactElement {
             <ZoneText style={styles.zoneStripText}>
               {run.zone_message ?? 'En route.'}
             </ZoneText>
-            {isPro ? (
-              <View style={styles.proBadge}>
-                <ZoneText style={styles.proBadgeText}>PRO</ZoneText>
-              </View>
-            ) : null}
             {zoneScore !== null ? (
               <ZoneOrbe score={zoneScore} size={40} animated={false} />
             ) : null}
@@ -786,7 +779,7 @@ export default function RunSessionScreen(): React.ReactElement {
                   Guide-toi sur ta FC, pas ton allure. Allure cible ajustée : +15 sec/km. La chaleur augmente la FC de 10 à 20 bpm. C&apos;est normal de courir plus lentement.
                 </ZoneText>
                 {sessionType === 'EF' ? (
-                  <ZoneText variant="caption" color={colors.accent.gold} style={styles.preHintHr}>
+                  <ZoneText variant="caption" color={colors.run} style={styles.preHintHr}>
                     FC cible EF : 140 à 155 bpm
                   </ZoneText>
                 ) : null}
@@ -833,11 +826,6 @@ export default function RunSessionScreen(): React.ReactElement {
     <SafeScreen edges={['top', 'left', 'right']}>
       <View style={[styles.zoneStrip, { backgroundColor: accentColor }]}>
         <ZoneText style={styles.zoneStripText}>{run.zone_message ?? 'En route.'}</ZoneText>
-        {isPro ? (
-          <View style={styles.proBadge}>
-            <ZoneText style={styles.proBadgeText}>PRO</ZoneText>
-          </View>
-        ) : null}
         {zoneScore !== null ? (
           <ZoneOrbe score={zoneScore} size={40} animated={false} />
         ) : null}
@@ -915,7 +903,7 @@ function dotColor(kind: RunningSessionStepPlanned['kind'], accent: string): stri
     case 'cooldown':
       return colors.orbe.blue;
     default:
-      return colors.accent.gold;
+      return colors.run;
   }
 }
 
@@ -1190,12 +1178,12 @@ const styles = StyleSheet.create({
   zoneStripText: {
     flex: 1,
     color: colors.bg.primary,
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Inter_700Bold',
     fontSize: 12,
     letterSpacing: 0.3,
   },
   proBadge: {
-    borderColor: colors.accent.gold,
+    borderColor: colors.run,
     borderWidth: 1,
     borderRadius: 4,
     paddingHorizontal: 6,
@@ -1203,8 +1191,8 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   proBadgeText: {
-    color: colors.accent.gold,
-    fontFamily: 'Inter-Bold',
+    color: colors.run,
+    fontFamily: 'Inter_700Bold',
     fontSize: 8,
     letterSpacing: 1,
   },
@@ -1217,7 +1205,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.elevated,
     borderRadius: 999,
   },
-  typeBadgeText: { color: colors.accent.gold, fontFamily: 'Inter-Bold', fontSize: 11, letterSpacing: 1 },
+  typeBadgeText: { color: colors.run, fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 1 },
   sessionTitle: { fontSize: 26, marginTop: 6, color: colors.text.primary, letterSpacing: 1 },
   sessionPurpose: { marginTop: 6, lineHeight: 18 },
   structureCard: {
@@ -1259,7 +1247,7 @@ const styles = StyleSheet.create({
   metricLabel: { letterSpacing: 1, fontSize: 10 },
   metricValue: { fontSize: 22, color: colors.text.primary, marginTop: 2, lineHeight: 26 },
   targetLine: { marginTop: 12 },
-  feedback: { marginTop: 10, fontFamily: 'Inter-Bold', fontSize: 14 },
+  feedback: { marginTop: 10, fontFamily: 'Inter_700Bold', fontSize: 14 },
   progressTrack: {
     width: '100%',
     height: 4,
@@ -1277,7 +1265,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.card,
     alignItems: 'center',
   },
-  intervalPhase: { fontFamily: 'Inter-Bold', letterSpacing: 2, fontSize: 12 },
+  intervalPhase: { fontFamily: 'Inter_700Bold', letterSpacing: 2, fontSize: 12 },
   intervalPace: { fontSize: 32, marginTop: 4, color: colors.text.primary, lineHeight: 36 },
   ringWrap: { marginTop: 18, width: 220, height: 220, alignItems: 'center', justifyContent: 'center' },
   ringContent: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
@@ -1293,7 +1281,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 10,
   },
-  gpsBannerText: { color: colors.text.secondary, fontSize: 11, fontFamily: 'Inter-Medium' },
+  gpsBannerText: { color: colors.text.secondary, fontSize: 11, fontFamily: 'Inter_500Medium' },
   footer: { padding: 24, paddingTop: 8 },
   doneWrap: { padding: 24, paddingBottom: 32 },
   doneTitle: { fontSize: 40, marginTop: 24, letterSpacing: 2 },
@@ -1324,7 +1312,7 @@ const styles = StyleSheet.create({
   preEyebrow: {
     letterSpacing: 2,
     fontSize: 11,
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Inter_700Bold',
     marginTop: 22,
     marginBottom: 10,
   },
@@ -1338,17 +1326,17 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: 'center',
   },
-  preChoiceActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
+  preChoiceActive: { backgroundColor: colors.run, borderColor: colors.run },
   preChoiceText: { fontSize: 14 },
   preHint: {
     marginTop: 10,
-    backgroundColor: `${colors.accent.gold}15`,
+    backgroundColor: `${colors.run}15`,
     borderRadius: 12,
     padding: 12,
   },
   preHintTitle: { fontSize: 13 },
   preHintBody: { marginTop: 6, lineHeight: 17 },
-  preHintHr: { marginTop: 8, fontFamily: 'Inter-Bold', fontSize: 12 },
+  preHintHr: { marginTop: 8, fontFamily: 'Inter_700Bold', fontSize: 12 },
   preCondRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   preCond: {
     backgroundColor: colors.bg.card,
@@ -1358,12 +1346,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  preCondActive: { backgroundColor: colors.accent.gold, borderColor: colors.accent.gold },
-  preCondText: { fontFamily: 'Inter-Medium', fontSize: 12 },
+  preCondActive: { backgroundColor: colors.run, borderColor: colors.run },
+  preCondText: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   doneTreadmillBlock: { marginTop: 8 },
   treadmillInput: {
     color: colors.text.primary,
-    fontFamily: 'Inter-Regular',
+    fontFamily: 'Inter_400Regular',
     fontSize: 18,
     backgroundColor: colors.bg.elevated,
     borderRadius: 12,
@@ -1382,7 +1370,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.elevated,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.accent.gold,
+    borderColor: colors.run,
     padding: 20,
   },
   treadmillIntroCard: {
@@ -1399,11 +1387,11 @@ const styles = StyleSheet.create({
   efActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
   efBtn: {
     flex: 1,
-    backgroundColor: colors.accent.gold,
+    backgroundColor: colors.run,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
   },
-  efBtnText: { fontFamily: 'Inter-Bold' },
+  efBtnText: { fontFamily: 'Inter_700Bold' },
   efGhost: { alignSelf: 'center', marginTop: 12, paddingVertical: 8 },
 });

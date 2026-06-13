@@ -49,10 +49,10 @@ export interface SchedulePreferences {
 }
 
 const SPORT_COLORS: Record<SchedulerSport, string> = {
-  weightlifting: '#C9A84C',
-  running: '#64B5F6',
-  musculation: '#B074F0',
-  hyrox: '#FF9F4A',
+  weightlifting: '#4F46E5', // Indigo — Haltérophilie
+  running: '#F97316', // Orange — Course
+  musculation: '#EF4444', // Rouge — Musculation
+  hyrox: '#0EA5E9', // Bleu ciel — Hyrox
 };
 
 export function sportColor(sport: SchedulerSport): string {
