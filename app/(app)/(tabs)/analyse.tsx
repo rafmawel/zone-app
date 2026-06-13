@@ -2,118 +2,146 @@ import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { auth } from '@/lib/firebase';
 import {
+  getCompletedRuns,
   getCompletedSessions,
   getExerciseMaxes,
+  getHyroxProfile,
+  getHyroxSessionHistory,
   getLatestCheckins,
   getMuscleProfile,
   getRunningProfile,
   getUserProgram,
-  getUserSports,
-  getWorkloadHistory,
   todayDateString,
   type DailyCheckin,
   type ExerciseMax,
+  type HyroxProfile,
+  type HyroxSessionRecord,
+  type MuscleProfile,
+  type RunSession,
   type RunningProfile,
+  type RunningRaceDistance,
   type TrainingSession,
-  type UserSport,
-  type WorkloadEntry,
+  type UserProgram,
 } from '@/lib/firestore';
-import {
-  analyzeSleepDebt,
-  calculateACWR,
-  calculatePerformanceModel,
-  calculateProReadiness,
-  getFormStatus,
-  getWeeklyLoadBudget,
-  mapUserSportsToWorkloadSports,
-  trackMuscleVolumeStatus,
-  type ACWRResult,
-  type DailyPerformanceMetrics,
-  type MuscleVolumeStatus,
-  type ProReadinessScore,
-  type SleepDebtAnalysis,
-  type WeeklyLoadBudget,
-  type WorkloadDataPoint,
-  type WorkloadSport,
-} from '@/lib/pro';
-import { EXERCISES } from '@/data/exercises';
+import { estimateVDOT, raceLabel, raceMeters } from '@/lib/runningEngine';
+import { colors, type SportColorKey } from '@/theme/colors';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { AnalyticsSkeleton } from '@/components/analytics/AnalyticsSkeleton';
 import { CheckinBanner } from '@/components/CheckinBanner';
 import { ProReadinessCard } from '@/components/analytics/ProReadinessCard';
+import { RegularityCard, type RegularityDay } from '@/components/analytics/RegularityCard';
 import { FormFatigueCard } from '@/components/analytics/FormFatigueCard';
-import { ACWRCard } from '@/components/analytics/ACWRCard';
-import { SportProgressionCard } from '@/components/analytics/SportProgressionCard';
-import { PredictionsCard } from '@/components/analytics/PredictionsCard';
-import { CoachZoneCard } from '@/components/analytics/CoachZoneCard';
+import {
+  SportProgressionCard,
+  type ProgressionItem,
+} from '@/components/analytics/SportProgressionCard';
 
-interface AnalyticsState {
+interface AnalyticsData {
   loaded: boolean;
-  workloadHistory: WorkloadDataPoint[];
   checkins: DailyCheckin[];
+  sessions: TrainingSession[];
+  runs: RunSession[];
+  hyrox: HyroxSessionRecord[];
   maxes: ExerciseMax[];
   runningProfile: RunningProfile | null;
-  completedSessions: TrainingSession[];
-  userSports: UserSport[];
-  zoneScore: number;
+  muscleProfile: MuscleProfile | null;
+  hyroxProfile: HyroxProfile | null;
+  program: UserProgram | null;
 }
 
-interface ComputedState {
-  metrics: DailyPerformanceMetrics[];
-  acwr: ACWRResult;
-  budget: WeeklyLoadBudget;
-  sleepDebt: SleepDebtAnalysis;
-  readiness: ProReadinessScore;
-  muscleVolume: MuscleVolumeStatus[];
-  activeSports: WorkloadSport[];
+const EMPTY: AnalyticsData = {
+  loaded: false,
+  checkins: [],
+  sessions: [],
+  runs: [],
+  hyrox: [],
+  maxes: [],
+  runningProfile: null,
+  muscleProfile: null,
+  hyroxProfile: null,
+  program: null,
+};
+
+function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+function energyFromFeeling(f: number | undefined): string {
+  if (f == null) return '—';
+  if (f >= 7) return 'Bonne';
+  if (f >= 4) return 'Moyenne';
+  return 'Basse';
+}
+
+function recoveryFromSoreness(s: number | undefined): string {
+  if (s == null) return '—';
+  if (s <= 2) return 'Bonne';
+  if (s === 3) return 'En cours';
+  return 'Courbatures';
+}
+
+/** Invert estimateVDOT to predict a race time (seconds) at a target VDOT. */
+function predictRaceTime(vdot: number, meters: number): number {
+  let lo = 60; // fast bound (s)
+  let hi = meters; // ~1 m/s slow bound (s)
+  for (let i = 0; i < 50; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (estimateVDOT(meters, mid) > vdot) lo = mid;
+    else hi = mid;
+  }
+  return Math.round((lo + hi) / 2);
+}
+
+function formatRaceTime(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.round((sec % 3600) / 60);
+  if (h > 0) return `${h}h${String(m).padStart(2, '0')}`;
+  return `${m} min`;
 }
 
 export default function AnalyticsScreen(): React.ReactElement {
-  const [state, setState] = useState<AnalyticsState>({
-    loaded: false,
-    workloadHistory: [],
-    checkins: [],
-    maxes: [],
-    runningProfile: null,
-    completedSessions: [],
-    userSports: [],
-    zoneScore: 50,
-  });
+  const [data, setData] = useState<AnalyticsData>(EMPTY);
 
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) {
-      setState((prev) => ({ ...prev, loaded: true }));
+      setData((p) => ({ ...p, loaded: true }));
       return;
     }
     let cancelled = false;
     void (async () => {
       try {
-        const [workload, checkins, maxes, runningProfile, sessions, sports] = await Promise.all([
-          getWorkloadHistory(user.uid, 60),
-          getLatestCheckins(user.uid, 14),
-          getExerciseMaxes(user.uid),
-          getRunningProfile(user.uid),
-          getCompletedSessions(user.uid),
-          getUserSports(user.uid),
-        ]);
-        await Promise.all([getMuscleProfile(user.uid), getUserProgram(user.uid)]);
+        const [checkins, sessions, runs, hyrox, maxes, runningProfile, muscleProfile, hyroxProfile, program] =
+          await Promise.all([
+            getLatestCheckins(user.uid, 90),
+            getCompletedSessions(user.uid),
+            getCompletedRuns(user.uid, 80),
+            getHyroxSessionHistory(user.uid, 40),
+            getExerciseMaxes(user.uid),
+            getRunningProfile(user.uid),
+            getMuscleProfile(user.uid),
+            getHyroxProfile(user.uid),
+            getUserProgram(user.uid),
+          ]);
         if (cancelled) return;
-        const todayCheckin = checkins.find((c) => c.date === todayDateString());
-        setState({
+        setData({
           loaded: true,
-          workloadHistory: toWorkloadDataPoints(workload),
           checkins,
+          sessions,
+          runs,
+          hyrox,
           maxes,
           runningProfile,
-          completedSessions: sessions,
-          userSports: sports,
-          zoneScore: todayCheckin?.zone_score ?? checkins[0]?.zone_score ?? 50,
+          muscleProfile,
+          hyroxProfile,
+          program,
         });
       } catch {
-        if (cancelled) return;
-        setState((prev) => ({ ...prev, loaded: true }));
+        if (!cancelled) setData((p) => ({ ...p, loaded: true }));
       }
     })();
     return () => {
@@ -121,7 +149,7 @@ export default function AnalyticsScreen(): React.ReactElement {
     };
   }, []);
 
-  if (!state.loaded) {
+  if (!data.loaded) {
     return (
       <SafeScreen>
         <AnalyticsSkeleton />
@@ -129,182 +157,183 @@ export default function AnalyticsScreen(): React.ReactElement {
     );
   }
 
-  const computed = computeAnalytics(state);
-  const hasCheckinToday = state.checkins.some((c) => c.date === todayDateString());
+  const today = addDays(new Date(), 0);
+  const todayStr = todayDateString(today);
+  const start = addDays(today, -55); // 8 weeks × 7 days, ending today
+
+  // ── Section 1: today's check-in ──────────────────────────────────────────
+  const todayCheckin = data.checkins.find((c) => c.date === todayStr) ?? null;
+  const score = todayCheckin ? todayCheckin.zone_score : null;
+  const sleepHours = todayCheckin ? todayCheckin.sleep_duration : null;
+  const energyLabel = energyFromFeeling(todayCheckin?.feeling);
+  const recoveryLabel = recoveryFromSoreness(todayCheckin?.muscle_soreness);
+
+  // ── Section 2: regularity grid (8×7) ─────────────────────────────────────
+  const activities: { date: string; sport: SportColorKey }[] = [
+    ...data.sessions.map((s) => ({
+      date: s.date,
+      sport: (s.discipline === 'musculation' ? 'muscu' : 'haltero') as SportColorKey,
+    })),
+    ...data.runs.map((r) => ({ date: r.date, sport: 'run' as SportColorKey })),
+    ...data.hyrox.map((h) => ({ date: h.date, sport: 'hyrox' as SportColorKey })),
+  ];
+  const doneMap = new Map<string, SportColorKey>();
+  const doneSet = new Set<string>();
+  for (const a of activities) {
+    doneSet.add(a.date);
+    if (!doneMap.has(a.date)) doneMap.set(a.date, a.sport);
+  }
+  const weeks: RegularityDay[][] = [];
+  for (let w = 0; w < 8; w += 1) {
+    const row: RegularityDay[] = [];
+    for (let dy = 0; dy < 7; dy += 1) {
+      const ds = todayDateString(addDays(start, w * 7 + dy));
+      const sport = doneMap.get(ds);
+      row.push({ done: sport != null, sport, isToday: ds === todayStr });
+    }
+    weeks.push(row);
+  }
+  const totalSessions = activities.filter((a) => a.date >= todayDateString(start) && a.date <= todayStr).length;
+  let streakDays = 0;
+  let cursor = doneSet.has(todayStr) ? today : addDays(today, -1);
+  while (doneSet.has(todayDateString(cursor))) {
+    streakDays += 1;
+    cursor = addDays(cursor, -1);
+  }
+
+  // ── Section 3: weekly Zone score ─────────────────────────────────────────
+  const weeklyScores: number[] = [];
+  for (let w = 0; w < 8; w += 1) {
+    const wStart = todayDateString(addDays(start, w * 7));
+    const wEnd = todayDateString(addDays(start, w * 7 + 6));
+    const inWeek = data.checkins.filter((c) => c.date >= wStart && c.date <= wEnd);
+    weeklyScores.push(
+      inWeek.length === 0
+        ? NaN
+        : Math.round(inWeek.reduce((acc, c) => acc + (c.zone_score ?? 0), 0) / inWeek.length),
+    );
+  }
+  const finite = weeklyScores.filter((v) => Number.isFinite(v));
+  const average = finite.length ? Math.round(finite.reduce((a, b) => a + b, 0) / finite.length) : NaN;
+  const firstFinite = weeklyScores.find((v) => Number.isFinite(v));
+  const lastFinite = [...weeklyScores].reverse().find((v) => Number.isFinite(v));
+  const trend =
+    finite.length >= 2 && firstFinite != null && lastFinite != null
+      ? Math.round(lastFinite - firstFinite)
+      : 0;
+
+  // ── Section 4: per-sport progression ─────────────────────────────────────
+  const items: ProgressionItem[] = [];
+  if (data.program) {
+    const snatch = data.maxes.find((m) => m.exercise_id === 'snatch');
+    const squat = data.maxes.find((m) => m.exercise_id === 'front_squat');
+    items.push({
+      sport: 'haltero',
+      emoji: '🏋️',
+      name: 'Haltérophilie',
+      enoughData: Boolean(snatch || squat),
+      primary: snatch
+        ? { label: 'Arraché', value: `${snatch.weight_kg} kg` }
+        : squat
+          ? { label: 'Squat avant', value: `${squat.weight_kg} kg` }
+          : undefined,
+      secondary: snatch && squat ? { label: 'Squat avant', value: `${squat.weight_kg} kg` } : undefined,
+      phrase: 'Continue comme ça, tu progresses semaine après semaine.',
+    });
+  }
+  if (data.runningProfile) {
+    const vdot = Math.round(data.runningProfile.vdot);
+    const projected = Math.min(85, vdot + 2);
+    const dist = (data.runningProfile.race_distance ??
+      data.runningProfile.reference_distance ??
+      '10km') as RunningRaceDistance;
+    const predicted = formatRaceTime(predictRaceTime(projected, raceMeters(dist)));
+    items.push({
+      sport: 'run',
+      emoji: '🏃',
+      name: 'Course',
+      enoughData: data.runs.length >= 3,
+      primary: { label: 'VDOT actuel', value: String(vdot) },
+      secondary: { label: 'Dans 8 semaines', value: `→ ${projected}`, color: colors.scoreGreen },
+      phrase: `Tu pourrais courir le ${raceLabel(dist).toLowerCase()} en ${predicted} dans 8 semaines.`,
+    });
+  }
+  if (data.muscleProfile) {
+    const count = data.sessions.filter((s) => s.discipline === 'musculation').length;
+    items.push({
+      sport: 'muscu',
+      emoji: '💪',
+      name: 'Musculation',
+      enoughData: count >= 3,
+      primary: { label: 'Séances totales', value: String(count) },
+      phrase: 'Tes séances s’enchaînent, beau travail.',
+    });
+  }
+  if (data.hyroxProfile) {
+    items.push({
+      sport: 'hyrox',
+      emoji: '🔥',
+      name: 'Hyrox',
+      enoughData: data.hyrox.length >= 3,
+      primary: { label: 'Séances totales', value: String(data.hyrox.length) },
+      phrase: 'Ta condition Hyrox progresse, continue.',
+    });
+  }
+
+  const hasCheckinToday = todayCheckin != null;
 
   return (
     <SafeScreen>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <ZoneText variant="heading" style={styles.title}>
-          ANALYSE
+          Analyse
         </ZoneText>
-        {!hasCheckinToday ? <CheckinBanner /> : null}
-        <ProReadinessCard
-          readiness={computed.readiness}
-          zoneScore={state.zoneScore}
-          acwr={computed.acwr.acwr}
-          acwrRiskLabel={frenchRiskLabel(computed.acwr.riskLevel)}
-          avgSleepHours={computed.sleepDebt.avgHoursLast7Days}
-          tsb={computed.metrics[computed.metrics.length - 1]?.tsb ?? 0}
-          tsbLabel={getFormStatus(
-            computed.metrics[computed.metrics.length - 1]?.tsb ?? 0,
-          ).label}
-        />
-        <View style={styles.gap} />
-        <FormFatigueCard
-          metrics={computed.metrics}
-          formStatus={getFormStatus(
-            computed.metrics[computed.metrics.length - 1]?.tsb ?? 0,
-          )}
-        />
-        <View style={styles.gap} />
-        <ACWRCard
-          acwrResult={computed.acwr}
-          budget={computed.budget}
-          workloadHistory={state.workloadHistory}
-        />
-        {computed.activeSports.length > 0 ? (
+
+        {!hasCheckinToday ? (
           <>
+            <CheckinBanner />
             <View style={styles.gap} />
-            <SportProgressionCard
-              activeSports={computed.activeSports}
-              workloadHistory={state.workloadHistory}
-              exerciseMaxes={state.maxes}
-              completedSessions={state.completedSessions}
-              runningProfile={state.runningProfile}
-              muscleVolumeStatus={computed.muscleVolume}
-            />
-            <View style={styles.gap} />
-            <PredictionsCard
-              activeSports={computed.activeSports}
-              metrics={computed.metrics}
-              runningProfile={state.runningProfile}
-              exerciseMaxes={state.maxes}
-            />
           </>
         ) : null}
-        <View style={styles.gap} />
-        <CoachZoneCard
-          acwr={computed.acwr}
-          sleepDebt={computed.sleepDebt}
-          metrics={computed.metrics}
-          budget={computed.budget}
+
+        <ProReadinessCard
+          score={score}
+          sleepHours={sleepHours}
+          energyLabel={energyLabel}
+          recoveryLabel={recoveryLabel}
         />
+
+        <View style={styles.gap} />
+        <RegularityCard weeks={weeks} totalSessions={totalSessions} streakDays={streakDays} />
+
+        <View style={styles.gap} />
+        <FormFatigueCard weeklyScores={weeklyScores} average={average} trend={trend} />
+
+        {items.length > 0 ? (
+          <>
+            <View style={styles.gap} />
+            <ZoneText style={styles.sectionTitle}>Ta progression</ZoneText>
+            {items.map((item) => (
+              <View key={item.sport} style={styles.progressionItem}>
+                <SportProgressionCard item={item} />
+              </View>
+            ))}
+          </>
+        ) : null}
       </ScrollView>
     </SafeScreen>
   );
 }
 
-function computeAnalytics(state: AnalyticsState): ComputedState {
-  const today = todayDateString();
-  const metrics = calculatePerformanceModel(state.workloadHistory, 120);
-  const acwr = calculateACWR(state.workloadHistory, today);
-  const budget = getWeeklyLoadBudget(acwr);
-  const sleepDebt = analyzeSleepDebt(
-    state.checkins.map((c) => ({
-      date: c.date,
-      sleep_duration: c.sleep_duration,
-      sleep_quality: c.sleep_quality,
-    })),
-  );
-  const activeSports = mapUserSportsToWorkloadSports(
-    state.userSports.map((s) => s.sport_key),
-  );
-  const exerciseToMuscleMap = buildExerciseMuscleMap();
-  const muscleVolume = trackMuscleVolumeStatus(
-    state.completedSessions.map((session) => ({
-      date: session.date,
-      exercises:
-        session.planned_exercises?.map((ex) => ({
-          exerciseId: ex.exercise_id,
-          sets: ex.sets.map((s) => ({
-            reps: parseInt(s.target_reps, 10) || 0,
-            weightKg: s.target_weight_kg ?? 0,
-          })),
-        })) ?? [],
-    })),
-    exerciseToMuscleMap,
-    4,
-  );
-  const lastTSB = metrics[metrics.length - 1]?.tsb ?? 0;
-  const readiness = calculateProReadiness({
-    zoneScore: state.zoneScore,
-    acwr,
-    sleepDebt,
-    tsb: lastTSB,
-    activeSports: activeSports.length > 0 ? activeSports : ['weightlifting'],
-  });
-  return {
-    metrics,
-    acwr,
-    budget,
-    sleepDebt,
-    readiness,
-    muscleVolume,
-    activeSports,
-  };
-}
-
-const VALID_WORKLOAD_SPORTS: ReadonlySet<WorkloadSport> = new Set([
-  'weightlifting',
-  'running',
-  'musculation',
-  'hyrox',
-]);
-
-function toWorkloadDataPoints(entries: WorkloadEntry[]): WorkloadDataPoint[] {
-  const out: WorkloadDataPoint[] = [];
-  for (const e of entries) {
-    if (!VALID_WORKLOAD_SPORTS.has(e.sport as WorkloadSport)) continue;
-    out.push({
-      date: e.date,
-      tss: e.tss,
-      sport: e.sport as WorkloadSport,
-      sessionType: e.sessionType,
-      durationMinutes: e.durationMinutes,
-      intensityFactor: e.intensityFactor,
-    });
-  }
-  return out;
-}
-
-function buildExerciseMuscleMap(): Record<string, string[]> {
-  const map: Record<string, string[]> = {};
-  for (const ex of EXERCISES) {
-    map[ex.id] = [...ex.muscles_primary, ...ex.muscles_secondary];
-  }
-  return map;
-}
-
-function frenchRiskLabel(riskLevel: ACWRResult['riskLevel']): string {
-  switch (riskLevel) {
-    case 'optimal':
-      return 'optimal';
-    case 'caution':
-      return 'prudence';
-    case 'danger':
-      return 'À surveiller';
-    case 'undertraining':
-    default:
-      return 'sous-charge';
-  }
-}
-
 const styles = StyleSheet.create({
-  scroll: {
-    padding: 16,
-    paddingBottom: 32,
+  scroll: { padding: 16, paddingBottom: 32 },
+  title: { fontSize: 24, marginBottom: 16, marginLeft: 2 },
+  gap: { height: 12 },
+  sectionTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 16,
+    color: colors.textPrimary,
+    marginBottom: 12,
   },
-  title: {
-    fontSize: 26,
-    letterSpacing: 0.5,
-    marginBottom: 16,
-    marginLeft: 4,
-  },
-  gap: {
-    height: 16,
-  },
+  progressionItem: { marginBottom: 12 },
 });

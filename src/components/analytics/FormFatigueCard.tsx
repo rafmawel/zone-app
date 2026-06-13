@@ -1,293 +1,93 @@
-import React, { useMemo, useState } from 'react';
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
-import { ChevronDown, ChevronUp } from 'lucide-react-native';
+import React from 'react';
+import { Dimensions, StyleSheet, View } from 'react-native';
 import { colors } from '@/theme/colors';
 import { ZoneText } from '@/components/ui/ZoneText';
-import { Card } from '@/components/ui/Card';
 import { LineChart } from './charts';
-import type { DailyPerformanceMetrics, FormStatus } from '@/lib/pro';
 
 export interface FormFatigueCardProps {
-  metrics: DailyPerformanceMetrics[];
-  formStatus: FormStatus;
+  /** Up to 8 weekly average Zone scores (oldest first). NaN = no data that week. */
+  weeklyScores: number[];
+  average: number;
+  /** Points difference between the most recent and earliest weeks. */
+  trend: number;
 }
 
-function weeklyAverage(values: number[], weeks: number): number[] {
-  if (values.length === 0) return [];
-  const out: number[] = [];
-  const perWeek = Math.max(1, Math.floor(values.length / weeks));
-  for (let w = 0; w < weeks; w += 1) {
-    const start = values.length - (weeks - w) * perWeek;
-    const slice = values.slice(Math.max(0, start), Math.max(0, start) + perWeek);
-    if (slice.length === 0) {
-      out.push(0);
-    } else {
-      out.push(slice.reduce((a, b) => a + b, 0) / slice.length);
-    }
-  }
-  return out;
-}
+// Screen padding (16×2) + card padding (16×2).
+const CHART_W = Dimensions.get('window').width - 64;
 
-export function FormFatigueCard({ metrics, formStatus }: FormFatigueCardProps): React.ReactElement {
-  const [width, setWidth] = useState<number>(0);
-
-  const onLayout = (e: LayoutChangeEvent): void => {
-    setWidth(e.nativeEvent.layout.width);
-  };
-
-  const { ctlSeries, atlSeries, tsbSeries, xLabels, current, weeklyDelta } = useMemo(() => {
-    const tail = metrics.slice(-56);
-    const ctl = weeklyAverage(tail.map((m) => m.ctl), 8);
-    const atl = weeklyAverage(tail.map((m) => m.atl), 8);
-    const tsb = weeklyAverage(tail.map((m) => m.tsb), 8);
-    const labels = Array.from({ length: 8 }, (_, i) => `S${i + 1}`);
-    const last = metrics[metrics.length - 1];
-    const prev = metrics[metrics.length - 8] ?? metrics[0];
-    return {
-      ctlSeries: ctl,
-      atlSeries: atl,
-      tsbSeries: tsb,
-      xLabels: labels,
-      current: last,
-      weeklyDelta: {
-        ctl: last && prev ? last.ctl - prev.ctl : 0,
-        atl: last && prev ? last.atl - prev.atl : 0,
-        tsb: last && prev ? last.tsb - prev.tsb : 0,
-      },
-    };
-  }, [metrics]);
-
-  const hasData = metrics.length > 0 && metrics.some((m) => m.ctl > 0 || m.atl > 0);
+/** Section 3 — "Ta forme du moment" : single Zone-score line + avg & trend. */
+export function FormFatigueCard({
+  weeklyScores,
+  average,
+  trend,
+}: FormFatigueCardProps): React.ReactElement {
+  const labels = weeklyScores.map((_, i) => `S${i + 1}`);
+  const trendColor =
+    trend > 0 ? colors.scoreGreen : trend < 0 ? colors.danger : 'rgba(255,255,255,0.6)';
+  const trendStr = trend === 0 ? '–' : `${trend > 0 ? '↑ +' : '↓ −'}${Math.abs(trend)} pts`;
+  const hasData = weeklyScores.some((v) => Number.isFinite(v));
 
   return (
-    <Card style={styles.card}>
-      <ZoneText variant="heading" size={22} color={colors.text.primary} style={styles.title}>
-        TON ÉNERGIE SUR 8 SEMAINES
-      </ZoneText>
-      <ZoneText variant="caption" color={colors.text.muted} style={styles.subtitle}>
-        Comment ton corps a évolué ces 2 derniers mois
-      </ZoneText>
-
-      <View style={styles.chartWrap} onLayout={onLayout}>
-        {width > 0 ? (
-          hasData ? (
+    <View style={styles.card}>
+      <ZoneText style={styles.title}>Ta forme du moment</ZoneText>
+      {hasData ? (
+        <>
+          <View style={styles.chart}>
             <LineChart
-              width={width}
-              height={220}
-              yMin={-60}
-              yMax={120}
-              band={{ from: 5, to: 25, color: colors.success }}
-              guides={[{ y: 0, color: 'rgba(255,255,255,0.05)', dashed: true }]}
-              xLabels={xLabels}
-              series={[
-                { values: ctlSeries, color: colors.scoreGreen, strokeWidth: 2.5 },
-                {
-                  values: atlSeries,
-                  color: colors.danger,
-                  strokeWidth: 1.5,
-                  dashed: true,
-                },
-                { values: tsbSeries, color: colors.run, strokeWidth: 2 },
+              width={CHART_W}
+              height={160}
+              yMin={0}
+              yMax={100}
+              xLabels={labels}
+              series={[{ values: weeklyScores, color: colors.scoreGreen, strokeWidth: 2 }]}
+              guides={[
+                { y: 0, color: 'rgba(255,255,255,0.05)' },
+                { y: 50, color: 'rgba(255,255,255,0.05)' },
+                { y: 100, color: 'rgba(255,255,255,0.05)' },
               ]}
             />
-          ) : (
-            <View style={styles.empty}>
-              <ZoneText variant="caption" color={colors.text.muted}>
-                Pas encore assez de données. Termine quelques séances pour voir ton énergie évoluer.
+          </View>
+          <View style={styles.metrics}>
+            <View style={styles.metric}>
+              <ZoneText style={styles.metricLabel}>Moyenne</ZoneText>
+              <ZoneText style={styles.metricValue}>
+                {Number.isFinite(average) ? average : '—'}
               </ZoneText>
             </View>
-          )
-        ) : null}
-      </View>
-
-      <View style={styles.legend}>
-        <LegendItem color={colors.scoreGreen} label="Énergie accumulée" />
-        <LegendItem color={colors.danger} label="Fatigue récente" />
-        <LegendItem color={colors.run} label="Forme du moment" />
-        <LegendItem color={colors.success} label="Zone idéale" />
-      </View>
-
-      <View style={styles.metrics}>
-        <Metric
-          label="ÉNERGIE"
-          value={current?.ctl ?? 0}
-          delta={weeklyDelta.ctl}
-          valueColor={colors.scoreGreen}
-        />
-        <Metric
-          label="FATIGUE"
-          value={current?.atl ?? 0}
-          delta={weeklyDelta.atl}
-          valueColor={colors.danger}
-        />
-        <Metric
-          label="FORME"
-          value={current?.tsb ?? 0}
-          delta={weeklyDelta.tsb}
-          valueColor={colorForFormValue(current?.tsb ?? 0)}
-          signed
-        />
-      </View>
-
-      <View style={[styles.interpret, { borderLeftColor: formStatus.color }]}>
-        <ZoneText variant="label" color={formStatus.color} style={styles.interpretLabel}>
-          {softenLabel(formStatus.label)}
+            <View style={styles.metric}>
+              <ZoneText style={styles.metricLabel}>Tendance</ZoneText>
+              <ZoneText style={[styles.metricValue, { color: trendColor }]}>{trendStr}</ZoneText>
+            </View>
+          </View>
+        </>
+      ) : (
+        <ZoneText style={styles.empty} numberOfLines={2}>
+          Fais quelques check-ins pour voir ta forme évoluer.
         </ZoneText>
-        <ZoneText
-          variant="body"
-          size={13}
-          color="rgba(255,255,255,0.6)"
-          style={styles.interpretMsg}
-        >
-          {interpretForm(current?.tsb ?? 0)}
-        </ZoneText>
-      </View>
-
-      <ZoneText variant="caption" size={10} color={colors.text.muted} style={styles.science}>
-        Méthode utilisée par les athlètes olympiques depuis 1975
-      </ZoneText>
-    </Card>
-  );
-}
-
-function interpretForm(tsb: number): string {
-  if (tsb > 25) return 'Tu es frais. Idéal pour te dépasser.';
-  if (tsb >= 5) return 'Tu es bien équilibré. Ni trop fatigué, ni sous-entraîné.';
-  if (tsb >= -10) return 'Légère fatigue. Séance modérée conseillée.';
-  return 'Fatigue accumulée. Récupère en priorité.';
-}
-
-/** FORME value colour, mirroring the readiness thresholds. */
-function colorForFormValue(value: number): string {
-  if (value > 70) return colors.scoreGreen;
-  if (value >= 40) return colors.warning;
-  return colors.danger;
-}
-
-/**
- * Soften harsh user-facing wording at display time without touching any
- * underlying science function output or enum values.
- */
-function softenLabel(text: string): string {
-  return text
-    .replace(/surmenage/gi, 'Fatigue élevée')
-    .replace(/danger/gi, 'À surveiller');
-}
-
-function LegendItem({ color, label }: { color: string; label: string }): React.ReactElement {
-  return (
-    <View style={styles.legendItem}>
-      <View style={[styles.legendDot, { backgroundColor: color }]} />
-      <ZoneText variant="caption" size={10} color={colors.text.muted}>
-        {label}
-      </ZoneText>
-    </View>
-  );
-}
-
-interface MetricProps {
-  label: string;
-  value: number;
-  delta: number;
-  valueColor: string;
-  signed?: boolean;
-}
-
-function Metric({ label, value, delta, valueColor, signed }: MetricProps): React.ReactElement {
-  const arrow = delta > 0.5 ? <ChevronUp size={12} color={colors.success} /> : delta < -0.5 ? <ChevronDown size={12} color={colors.danger} /> : null;
-  const deltaColor = delta > 0.5 ? colors.success : delta < -0.5 ? colors.danger : colors.text.muted;
-  const sign = signed && value > 0 ? '+' : '';
-  return (
-    <View style={styles.metric}>
-      <ZoneText variant="caption" size={10} color="rgba(255,255,255,0.4)" style={styles.metricLabel}>
-        {label}
-      </ZoneText>
-      <ZoneText variant="heading" size={28} color={valueColor}>
-        {sign}
-        {Math.round(value)}
-      </ZoneText>
-      <View style={styles.metricDelta}>
-        {arrow}
-        <ZoneText variant="caption" color={deltaColor}>
-          {delta > 0 ? '+' : ''}
-          {delta.toFixed(1)} cette semaine
-        </ZoneText>
-      </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    padding: 16,
-  },
-  title: {
-    letterSpacing: 1.2,
-  },
-  subtitle: {
+  card: { backgroundColor: colors.surface, borderRadius: 18, padding: 16 },
+  title: { fontFamily: 'Inter_700Bold', fontSize: 16, color: colors.textPrimary },
+  chart: { marginTop: 12, alignItems: 'center' },
+  metrics: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
+  metric: { flex: 1 },
+  metricLabel: { fontFamily: 'Inter_400Regular', fontSize: 12, color: 'rgba(255,255,255,0.4)' },
+  metricValue: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 20,
+    color: colors.textPrimary,
     marginTop: 2,
-    marginBottom: 12,
-  },
-  chartWrap: {
-    minHeight: 220,
-    marginBottom: 8,
   },
   empty: {
-    minHeight: 220,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  legend: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 4,
-  },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  metrics: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-  },
-  metric: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    alignItems: 'flex-start',
-  },
-  metricLabel: {
-    letterSpacing: 1,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-  },
-  metricDelta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    marginTop: 2,
-  },
-  interpret: {
-    marginTop: 16,
-    borderLeftWidth: 3,
-    paddingLeft: 12,
-    paddingVertical: 6,
-  },
-  interpretLabel: {
-    fontFamily: 'Inter_700Bold',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  interpretMsg: {
-    marginTop: 4,
+    fontFamily: 'Inter_400Regular',
     fontStyle: 'italic',
-  },
-  science: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.6)',
     marginTop: 12,
-    textAlign: 'center',
+    lineHeight: 18,
   },
 });
