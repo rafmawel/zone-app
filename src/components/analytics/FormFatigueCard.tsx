@@ -73,7 +73,7 @@ export function FormFatigueCard({ metrics, formStatus }: FormFatigueCardProps): 
           hasData ? (
             <LineChart
               width={width}
-              height={200}
+              height={220}
               yMin={-60}
               yMax={120}
               band={{ from: 5, to: 25, color: colors.success }}
@@ -108,16 +108,37 @@ export function FormFatigueCard({ metrics, formStatus }: FormFatigueCardProps): 
       </View>
 
       <View style={styles.metrics}>
-        <Metric label="ÉNERGIE" value={current?.ctl ?? 0} delta={weeklyDelta.ctl} />
-        <Metric label="FATIGUE" value={current?.atl ?? 0} delta={weeklyDelta.atl} />
-        <Metric label="FORME" value={current?.tsb ?? 0} delta={weeklyDelta.tsb} signed />
+        <Metric
+          label="ÉNERGIE"
+          value={current?.ctl ?? 0}
+          delta={weeklyDelta.ctl}
+          valueColor={colors.scoreGreen}
+        />
+        <Metric
+          label="FATIGUE"
+          value={current?.atl ?? 0}
+          delta={weeklyDelta.atl}
+          valueColor={colors.danger}
+        />
+        <Metric
+          label="FORME"
+          value={current?.tsb ?? 0}
+          delta={weeklyDelta.tsb}
+          valueColor={colorForFormValue(current?.tsb ?? 0)}
+          signed
+        />
       </View>
 
       <View style={[styles.interpret, { borderLeftColor: formStatus.color }]}>
-        <ZoneText variant="label" color={formStatus.color}>
-          {formStatus.label}
+        <ZoneText variant="label" color={formStatus.color} style={styles.interpretLabel}>
+          {softenLabel(formStatus.label)}
         </ZoneText>
-        <ZoneText variant="body" size={13} color={colors.text.primary} style={styles.interpretMsg}>
+        <ZoneText
+          variant="body"
+          size={13}
+          color="rgba(255,255,255,0.6)"
+          style={styles.interpretMsg}
+        >
           {interpretForm(current?.tsb ?? 0)}
         </ZoneText>
       </View>
@@ -136,6 +157,23 @@ function interpretForm(tsb: number): string {
   return 'Fatigue accumulée. Récupère en priorité.';
 }
 
+/** FORME value colour, mirroring the readiness thresholds. */
+function colorForFormValue(value: number): string {
+  if (value > 70) return colors.scoreGreen;
+  if (value >= 40) return colors.warning;
+  return colors.danger;
+}
+
+/**
+ * Soften harsh user-facing wording at display time without touching any
+ * underlying science function output or enum values.
+ */
+function softenLabel(text: string): string {
+  return text
+    .replace(/surmenage/gi, 'Fatigue élevée')
+    .replace(/danger/gi, 'À surveiller');
+}
+
 function LegendItem({ color, label }: { color: string; label: string }): React.ReactElement {
   return (
     <View style={styles.legendItem}>
@@ -151,10 +189,11 @@ interface MetricProps {
   label: string;
   value: number;
   delta: number;
+  valueColor: string;
   signed?: boolean;
 }
 
-function Metric({ label, value, delta, signed }: MetricProps): React.ReactElement {
+function Metric({ label, value, delta, valueColor, signed }: MetricProps): React.ReactElement {
   const arrow = delta > 0.5 ? <ChevronUp size={12} color={colors.success} /> : delta < -0.5 ? <ChevronDown size={12} color={colors.danger} /> : null;
   const deltaColor = delta > 0.5 ? colors.success : delta < -0.5 ? colors.danger : colors.text.muted;
   const sign = signed && value > 0 ? '+' : '';
@@ -163,7 +202,7 @@ function Metric({ label, value, delta, signed }: MetricProps): React.ReactElemen
       <ZoneText variant="caption" size={10} color="rgba(255,255,255,0.4)" style={styles.metricLabel}>
         {label}
       </ZoneText>
-      <ZoneText variant="heading" size={28} color={colors.textPrimary}>
+      <ZoneText variant="heading" size={28} color={valueColor}>
         {sign}
         {Math.round(value)}
       </ZoneText>
@@ -192,11 +231,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   chartWrap: {
-    minHeight: 200,
+    minHeight: 220,
     marginBottom: 8,
   },
   empty: {
-    minHeight: 200,
+    minHeight: 220,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
@@ -238,10 +277,12 @@ const styles = StyleSheet.create({
     paddingLeft: 12,
     paddingVertical: 6,
   },
-  interpretMsg: {
-    marginTop: 4,
+  interpretLabel: {
+    fontFamily: 'Inter_700Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  interpretAdvice: {
+  interpretMsg: {
     marginTop: 4,
     fontStyle: 'italic',
   },

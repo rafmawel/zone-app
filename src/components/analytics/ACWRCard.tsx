@@ -90,7 +90,6 @@ export function ACWRCard({
       </View>
 
       <View style={styles.headlineRow}>
-        <View style={[styles.riskDot, { backgroundColor: acwrColor }]} />
         <View style={styles.headlineBody}>
           <ZoneText variant="label" color={acwrColor}>
             {riskLabelFor(acwrResult.acwr)}
@@ -140,6 +139,8 @@ function riskLabelFor(value: number): string {
 
 const styles = StyleSheet.create({
   card: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
     padding: 16,
   },
   title: {
@@ -162,10 +163,8 @@ const styles = StyleSheet.create({
   headlineRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
     marginTop: 12,
   },
-  riskDot: { width: 14, height: 14, borderRadius: 7 },
   headlineBody: {
     flex: 1,
   },

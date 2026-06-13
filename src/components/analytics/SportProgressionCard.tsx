@@ -168,7 +168,7 @@ function WeightliftingProgression({
   const maxValue = Math.max(50, ...series.flatMap((s) => s.values));
 
   return (
-    <View style={styles.sportBody}>
+    <View style={[styles.sportBody, styles.sportBand, { borderLeftColor: colors.haltero }]}>
       <ZoneText variant="label" color={colors.text.primary} style={styles.sectionTitle}>
         PROGRESSION HALTÉROPHILIE
       </ZoneText>
@@ -332,7 +332,7 @@ function RunningProgression({
   const labels = Array.from({ length: 20 }, (_, i) => (i < 12 ? `S${i + 1}` : `+${i - 11}`));
 
   return (
-    <View style={styles.sportBody}>
+    <View style={[styles.sportBody, styles.sportBand, { borderLeftColor: colors.run }]}>
       <ZoneText variant="label" color={colors.text.primary} style={styles.sectionTitle}>
         PROGRESSION COURSE
       </ZoneText>
@@ -518,7 +518,7 @@ function MusculationProgression({
   const hasVolume = weeklyVolume.some((w) => w.value > 0);
 
   return (
-    <View style={styles.sportBody}>
+    <View style={[styles.sportBody, styles.sportBand, { borderLeftColor: colors.muscu }]}>
       <ZoneText variant="label" color={colors.text.primary} style={styles.sectionTitle}>
         PROGRESSION MUSCULATION
       </ZoneText>
@@ -598,7 +598,7 @@ function HyroxProgression(): React.ReactElement {
   const reference = [80, 80, 80, 80, 80, 80, 80, 80];
 
   return (
-    <View style={styles.sportBody}>
+    <View style={[styles.sportBody, styles.sportBand, { borderLeftColor: colors.hyrox }]}>
       <ZoneText variant="label" color={colors.text.primary} style={styles.sectionTitle}>
         PROGRESSION HYROX
       </ZoneText>
@@ -645,6 +645,8 @@ function EnergyBar({ label, pct, color }: { label: string; pct: number; color: s
 
 const styles = StyleSheet.create({
   card: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
     padding: 16,
   },
   title: {
@@ -664,6 +666,10 @@ const styles = StyleSheet.create({
   },
   sportBody: {
     marginTop: 8,
+  },
+  sportBand: {
+    borderLeftWidth: 4,
+    paddingLeft: 12,
   },
   sectionTitle: {
     marginTop: 16,

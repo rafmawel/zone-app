@@ -1,6 +1,5 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Activity, Brain, Moon, TrendingUp } from 'lucide-react-native';
 import { colors } from '@/theme/colors';
 import { ZoneText } from '@/components/ui/ZoneText';
 import type { ProReadinessScore } from '@/lib/pro';
@@ -51,7 +50,7 @@ export function ProReadinessCard({
         <View style={styles.left}>
           <ZoneText
             variant="heading"
-            size={72}
+            size={48}
             color={scoreColor}
             style={styles.scoreText}
           >
@@ -60,7 +59,7 @@ export function ProReadinessCard({
           <ZoneText
             variant="label"
             size={12}
-            color={colors.scoreGreen}
+            color={scoreColor}
             style={styles.label}
           >
             {softenLabel(readiness.label)}
@@ -68,23 +67,19 @@ export function ProReadinessCard({
         </View>
         <View style={styles.indicators}>
           <Indicator
-            icon={<Activity size={14} color={colors.text.muted} />}
-            label="Ton niveau d’énergie"
+            label="Énergie"
             value={`${Math.round(zoneScore)}/100`}
           />
           <Indicator
-            icon={<TrendingUp size={14} color={colors.text.muted} />}
-            label="Ton rythme d’entraînement"
+            label="Rythme"
             value={softenLabel(acwrRiskLabel)}
           />
           <Indicator
-            icon={<Moon size={14} color={colors.text.muted} />}
-            label="Ton sommeil cette semaine"
+            label="Sommeil"
             value={`${avgSleepHours.toFixed(1)} h`}
           />
           <Indicator
-            icon={<Brain size={14} color={colors.text.muted} />}
-            label="Ta forme du moment"
+            label="Forme"
             value={softenLabel(tsbLabel)}
           />
         </View>
@@ -92,7 +87,7 @@ export function ProReadinessCard({
       <ZoneText
         variant="body"
         size={13}
-        color={colors.text.primary}
+        color="rgba(255,255,255,0.6)"
         style={styles.headline}
       >
         {softenLabel(readiness.headline)}
@@ -102,21 +97,17 @@ export function ProReadinessCard({
 }
 
 interface IndicatorProps {
-  icon: React.ReactNode;
   label: string;
   value: string;
 }
 
-function Indicator({ icon, label, value }: IndicatorProps): React.ReactElement {
+function Indicator({ label, value }: IndicatorProps): React.ReactElement {
   return (
     <View style={styles.indicator}>
-      <View style={styles.indicatorHeader}>
-        {icon}
-        <ZoneText variant="caption" color={colors.text.muted}>
-          {label}
-        </ZoneText>
-      </View>
-      <ZoneText variant="label" size={13} color={colors.text.primary}>
+      <ZoneText variant="caption" size={10} color="rgba(255,255,255,0.4)" style={styles.indicatorLabel}>
+        {label}
+      </ZoneText>
+      <ZoneText variant="label" size={14} color="rgba(255,255,255,0.8)" style={styles.indicatorValue}>
         {value}
       </ZoneText>
     </View>
@@ -146,6 +137,8 @@ const styles = StyleSheet.create({
   },
   label: {
     letterSpacing: 1.4,
+    fontFamily: 'Inter_700Bold',
+    textTransform: 'uppercase',
   },
   indicators: {
     flex: 1,
@@ -157,13 +150,14 @@ const styles = StyleSheet.create({
     width: '48%',
     paddingVertical: 6,
   },
-  indicatorHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  indicatorLabel: {
     marginBottom: 2,
+  },
+  indicatorValue: {
+    fontFamily: 'Inter_700Bold',
   },
   headline: {
     marginTop: 12,
+    fontStyle: 'italic',
   },
 });

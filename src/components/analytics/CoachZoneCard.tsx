@@ -155,6 +155,8 @@ function ObservationRow({ observation }: { observation: Observation }): React.Re
 
 const styles = StyleSheet.create({
   card: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
     padding: 16,
   },
   header: {

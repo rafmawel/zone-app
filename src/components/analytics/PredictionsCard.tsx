@@ -42,7 +42,7 @@ export function PredictionsCard({
       ) : null}
       {activeSports.includes('musculation') ? <MusculationPrediction /> : null}
 
-      <View style={[styles.window, { borderColor: colors.scoreGreen }]}>
+      <View style={styles.window}>
         <View style={styles.windowHeader}>
           <Calendar size={16} color={colors.scoreGreen} />
           <ZoneText variant="label" color={colors.scoreGreen}>
@@ -85,7 +85,7 @@ function RunningPrediction({
 
   if (currentVDOT <= 0) {
     return (
-      <View style={styles.predictionCard}>
+      <View style={[styles.predictionCard, styles.predictionBand, { borderLeftColor: colors.run }]}>
         <ZoneText variant="body" size={13} color={colors.text.primary}>
           Renseigne ton allure de référence pour activer ta projection course.
         </ZoneText>
@@ -94,7 +94,7 @@ function RunningPrediction({
   }
 
   return (
-    <View style={styles.predictionCard}>
+    <View style={[styles.predictionCard, styles.predictionBand, { borderLeftColor: colors.run }]}>
       <ZoneText variant="body" size={14} color={colors.text.primary} style={styles.predSentence}>
         Dans 8 semaines, tu pourrais courir un {raceLabel(targetDistance)} en{' '}
         <ZoneText variant="body" size={14} color={colors.scoreGreen}>
@@ -121,7 +121,7 @@ function WeightliftingPrediction({
 
   if (!mainLift) {
     return (
-      <View style={styles.predictionCard}>
+      <View style={[styles.predictionCard, styles.predictionBand, { borderLeftColor: colors.haltero }]}>
         <ZoneText variant="caption" color={colors.text.muted}>
           Dans 4 semaines · Haltérophilie
         </ZoneText>
@@ -136,7 +136,7 @@ function WeightliftingPrediction({
   const liftName = (getExerciseById(mainLift.exercise_id)?.name ?? mainLift.exercise_id).toLowerCase();
 
   return (
-    <View style={styles.predictionCard}>
+    <View style={[styles.predictionCard, styles.predictionBand, { borderLeftColor: colors.haltero }]}>
       <ZoneText variant="body" size={14} color={colors.text.primary} style={styles.predSentence}>
         Dans 4 semaines, ton {liftName} pourrait atteindre{' '}
         <ZoneText variant="body" size={14} color={colors.scoreGreen}>
@@ -153,7 +153,7 @@ function WeightliftingPrediction({
 
 function MusculationPrediction(): React.ReactElement {
   return (
-    <View style={styles.predictionCard}>
+    <View style={[styles.predictionCard, styles.predictionBand, { borderLeftColor: colors.muscu }]}>
       <ZoneText variant="caption" color={colors.text.muted}>
         Pic de volume dans 3 semaines · Musculation
       </ZoneText>
@@ -220,6 +220,8 @@ function formatHMS(seconds: number): string {
 
 const styles = StyleSheet.create({
   card: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
     padding: 16,
   },
   title: {
@@ -235,6 +237,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: colors.bg.elevated,
   },
+  predictionBand: {
+    borderLeftWidth: 4,
+  },
   predDetail: {
     marginTop: 6,
   },
@@ -246,7 +251,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     padding: 12,
     borderRadius: 12,
-    borderWidth: 1,
+    backgroundColor: colors.bg.elevated,
   },
   windowHeader: {
     flexDirection: 'row',
