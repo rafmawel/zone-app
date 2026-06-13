@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Plus } from 'lucide-react-native';
+import { Lock, Plus } from 'lucide-react-native';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import {
@@ -383,7 +383,7 @@ export default function ProgrammeScreen(): React.ReactElement {
             <View key={sport} style={styles.sportBlock}>
               <View style={styles.sportHeaderRow}>
                 <ZoneText style={styles.sportHeaderIcon}>{SPORT_ICON[sport]}</ZoneText>
-                <ZoneText variant="titleSm" style={styles.sportHeaderLabel}>
+                <ZoneText style={[styles.sportHeaderLabel, { color: sportColor(sport as SchedulerSport) }]}>
                   {SPORT_LABEL[sport].toUpperCase()}
                 </ZoneText>
               </View>
@@ -394,16 +394,21 @@ export default function ProgrammeScreen(): React.ReactElement {
                   </ZoneText>
                   {week.items.map((item) => {
                     const meta = statusMeta(item.status);
-                    const done = item.status === 'completed' || item.status === 'skipped';
+                    const sc = sportColor(item.sport as SchedulerSport);
                     const available = item.status === 'available';
+                    const completed = item.status === 'completed';
+                    const skipped = item.status === 'skipped';
+                    const locked = !available && !completed && !skipped;
+                    const done = completed || skipped;
                     return (
                       <View
                         key={item.key}
                         style={[
-                          styles.qCard,
-                          available ? styles.qCardAvailable : null,
-                          done ? styles.qCardDone : null,
-                          { borderLeftColor: sportColor(item.sport as SchedulerSport) },
+                          styles.qCardBase,
+                          available ? { backgroundColor: sc } : styles.qCardSurface,
+                          completed ? { borderLeftWidth: 4, borderLeftColor: colors.scoreGreen } : null,
+                          locked ? styles.qCardLocked : null,
+                          skipped ? styles.qCardMuted : null,
                         ]}
                       >
                         <TouchableOpacity
@@ -411,22 +416,34 @@ export default function ProgrammeScreen(): React.ReactElement {
                           onPress={() => setPreviewItem(item)}
                         >
                           <View style={styles.qCardHead}>
-                            <ZoneText style={styles.qIcon}>{meta.icon}</ZoneText>
+                            {locked ? (
+                              <Lock size={16} color={`${sc}66`} style={styles.qIconLock} />
+                            ) : (
+                              <ZoneText style={styles.qIcon}>{meta.icon}</ZoneText>
+                            )}
                             <View style={styles.qMain}>
                               <ZoneText
                                 variant="titleSm"
-                                color={done ? colors.text.muted : colors.text.primary}
+                                color={available ? '#FFFFFF' : done ? colors.text.muted : colors.text.primary}
+                                style={skipped ? styles.qTitleStrike : undefined}
                               >
                                 {item.name}
                               </ZoneText>
-                              <ZoneText variant="caption" color={colors.text.muted}>
+                              <ZoneText
+                                variant="caption"
+                                color={available ? 'rgba(255,255,255,0.7)' : colors.text.muted}
+                              >
                                 {cardSubtitle(item)}
                               </ZoneText>
                             </View>
-                            {meta.label ? (
+                            {completed ? (
+                              <View style={styles.completedBadge}>
+                                <ZoneText style={styles.completedBadgeText}>COMPLÉTÉ</ZoneText>
+                              </View>
+                            ) : meta.label ? (
                               <ZoneText
                                 variant="caption"
-                                color={item.status === 'completed' ? colors.success : colors.text.muted}
+                                color={available ? 'rgba(255,255,255,0.85)' : colors.text.muted}
                                 style={styles.qStatusLabel}
                               >
                                 {meta.label}
@@ -441,7 +458,7 @@ export default function ProgrammeScreen(): React.ReactElement {
                               activeOpacity={0.7}
                               style={styles.qSkipFullBtn}
                             >
-                              <ZoneText variant="label" size={13} color={colors.text.secondary}>
+                              <ZoneText variant="label" size={13} color="#FFFFFF">
                                 Passer cette séance
                               </ZoneText>
                             </TouchableOpacity>
@@ -639,8 +656,8 @@ const styles = StyleSheet.create({
   },
   sportHeaderIcon: { fontSize: 20 },
   sportHeaderLabel: {
-    color: colors.text.primary,
     fontFamily: 'Inter_700Bold',
+    fontSize: 12,
     letterSpacing: 1,
   },
   weekBlock: { marginTop: 8 },
@@ -651,21 +668,33 @@ const styles = StyleSheet.create({
     color: colors.text.muted,
     marginBottom: 8,
   },
-  qCard: {
-    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 3,
-    borderRadius: 16, padding: 16, marginBottom: 10,
-  },
-  qCardAvailable: { borderColor: colors.scoreGreen },
-  qCardDone: { opacity: 0.55 },
+  qCardBase: { borderRadius: 18, padding: 16, marginBottom: 10 },
+  qCardSurface: { backgroundColor: colors.surface },
+  qCardLocked: { opacity: 0.5 },
+  qCardMuted: { opacity: 0.7 },
   qCardHead: { flexDirection: 'row', alignItems: 'center' },
   qIcon: { fontSize: 16, marginRight: 10 },
+  qIconLock: { marginRight: 10 },
   qMain: { flex: 1 },
+  qTitleStrike: { textDecorationLine: 'line-through' },
   qStatusLabel: { fontFamily: 'Inter_700Bold', letterSpacing: 0.5, marginLeft: 8 },
+  completedBadge: {
+    marginLeft: 8,
+    backgroundColor: 'rgba(27,202,130,0.15)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  completedBadgeText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    letterSpacing: 0.5,
+    color: colors.scoreGreen,
+  },
   qActions: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
   qSkipFullBtn: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 12,
     paddingVertical: 10,
     alignItems: 'center',

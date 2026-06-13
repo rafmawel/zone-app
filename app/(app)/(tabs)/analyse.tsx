@@ -286,7 +286,7 @@ function frenchRiskLabel(riskLevel: ACWRResult['riskLevel']): string {
     case 'caution':
       return 'prudence';
     case 'danger':
-      return 'danger';
+      return 'À surveiller';
     case 'undertraining':
     default:
       return 'sous-charge';
