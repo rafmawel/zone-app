@@ -15,14 +15,13 @@ import {
   type RunSession,
   type RunningProfile,
   type RunConditions,
+  type RunEntryMode,
   type RunLocation,
   type RunningSessionStepPlanned,
 } from '@/lib/firestore';
 import {
   calculateVDOTPaces,
   formatPace,
-  paceAdjustmentForConditions,
-  paceFromDistanceTime,
   sessionName,
   sessionPurpose,
   sessionRpe,
@@ -39,6 +38,16 @@ import { ZoneText } from '@/components/ui/ZoneText';
 import { Button } from '@/components/ui/Button';
 
 const TREADMILL_INTRO_KEY = '@zone/run/treadmill-intro-seen';
+
+const WEATHER: { key: string; emoji: string; label: string }[] = [
+  { key: 'sunny', emoji: '☀️', label: 'Ensoleillé' },
+  { key: 'cloudy', emoji: '🌥️', label: 'Nuageux' },
+  { key: 'rain', emoji: '🌧️', label: 'Pluie' },
+  { key: 'wind', emoji: '🌬️', label: 'Vent' },
+  { key: 'heat', emoji: '🥵', label: 'Chaleur' },
+  { key: 'cold', emoji: '🥶', label: 'Froid' },
+  { key: 'fog', emoji: '🌫️', label: 'Brouillard' },
+];
 
 function mmss(totalSec: number): string {
   const s = Math.max(0, Math.round(totalSec));
@@ -59,6 +68,14 @@ function parseMmss(text: string): number | null {
   }
   const m = parseInt(t, 10);
   return Number.isFinite(m) ? Math.max(0, m * 60) : null;
+}
+
+/** Map the multi-select weather tags onto the legacy single condition. */
+function legacyCondition(list: string[]): RunConditions {
+  if (list.includes('rain')) return 'rain';
+  if (list.includes('wind')) return 'wind';
+  if (list.includes('heat')) return 'heat';
+  return 'normal';
 }
 
 function stepDurationSeconds(step: RunningSessionStepPlanned): number {
@@ -92,16 +109,19 @@ export default function RunSessionScreen(): React.ReactElement {
   const [run, setRun] = useState<RunSession | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<'pre' | 'active' | 'done'>('pre');
+  const [phase, setPhase] = useState<'select' | 'active' | 'done'>('select');
   const [elapsed, setElapsed] = useState<number>(0);
   const [rpe, setRpe] = useState<number | null>(null);
   const [savingComplete, setSavingComplete] = useState<boolean>(false);
+  // How the run is recorded; `location` is the outdoor/treadmill pill in the recap.
+  const [entryMode, setEntryMode] = useState<RunEntryMode>('outdoor');
   const [location, setLocation] = useState<RunLocation>('outdoor');
-  const [conditions, setConditions] = useState<RunConditions>('normal');
+  const [conditionsList, setConditionsList] = useState<string[]>([]);
   // Post-run recap inputs.
   const [finalDurationSec, setFinalDurationSec] = useState<number>(0);
   const [durationText, setDurationText] = useState<string>('');
   const [distanceText, setDistanceText] = useState<string>('');
+  const [paceManualText, setPaceManualText] = useState<string>('');
   const [efAdjustVisible, setEfAdjustVisible] = useState<boolean>(false);
   const [treadmillIntroVisible, setTreadmillIntroVisible] = useState<boolean>(false);
   const treadmillIntroSeenRef = useRef<boolean>(false);
@@ -130,7 +150,6 @@ export default function RunSessionScreen(): React.ReactElement {
         } else {
           setRun(r);
           if (r.location) setLocation(r.location);
-          if (r.conditions) setConditions(r.conditions);
         }
         setRunningProfile(profile);
       } catch {
@@ -161,11 +180,6 @@ export default function RunSessionScreen(): React.ReactElement {
     });
   }, []);
 
-  const onPickTreadmill = (): void => {
-    setLocation('treadmill');
-    if (!treadmillIntroSeenRef.current) setTreadmillIntroVisible(true);
-  };
-
   const dismissTreadmillIntro = (): void => {
     setTreadmillIntroVisible(false);
     treadmillIntroSeenRef.current = true;
@@ -195,13 +209,12 @@ export default function RunSessionScreen(): React.ReactElement {
       steps.find((s) => s.kind === 'work' && s.target_pace_sec_per_km) ??
       steps.find((s) => s.target_pace_sec_per_km);
     if (!rep?.target_pace_sec_per_km) return null;
-    const condOffset = paceAdjustmentForConditions(conditions);
     const efOffset =
       rep.kind === 'steady' && sessionType === 'EF' && Number.isFinite(runningProfile?.ef_pace_adjustment ?? NaN)
         ? (runningProfile?.ef_pace_adjustment ?? 0)
         : 0;
-    return rep.target_pace_sec_per_km + condOffset + efOffset;
-  }, [steps, conditions, sessionType, runningProfile]);
+    return rep.target_pace_sec_per_km + efOffset;
+  }, [steps, sessionType, runningProfile]);
 
   const stopTick = (): void => {
     if (tickRef.current) {
@@ -210,16 +223,22 @@ export default function RunSessionScreen(): React.ReactElement {
     }
   };
 
-  const finish = useCallback(
-    (finalElapsed: number): void => {
+  // Open the recap, pre-filling duration and the planned distance.
+  const goToRecap = useCallback(
+    (durationSec: number): void => {
       stopTick();
-      const dur = finalElapsed > 0 ? finalElapsed : targetDurationSec;
+      const dur = durationSec > 0 ? durationSec : targetDurationSec;
       setFinalDurationSec(dur);
       setDurationText(mmss(dur));
+      setDistanceText(
+        run?.estimated_distance_km && run.estimated_distance_km > 0
+          ? String(run.estimated_distance_km)
+          : '',
+      );
       setPhase('done');
       updateSessionProgress({ isResting: false });
     },
-    [targetDurationSec, updateSessionProgress],
+    [targetDurationSec, run, updateSessionProgress],
   );
 
   // Auto-stop: when the elapsed time reaches the planned duration, stop the
@@ -232,20 +251,22 @@ export default function RunSessionScreen(): React.ReactElement {
     }
     if (elapsed >= targetDurationSec) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
-      finish(targetDurationSec);
+      goToRecap(targetDurationSec);
     }
-  }, [phase, elapsed, targetDurationSec, finish]);
+  }, [phase, elapsed, targetDurationSec, goToRecap]);
 
-  const onStart = (): void => {
+  const startChrono = (loc: RunLocation): void => {
     if (!run) return;
     const user = auth.currentUser;
     if (user) {
       void setDoc(
         doc(db, 'users', user.uid, 'runs', runId),
-        { location, conditions },
+        { location: loc },
         { merge: true },
       ).catch(() => undefined);
     }
+    setLocation(loc);
+    setEntryMode(loc);
     startSession(runId);
     startedAtRef.current = Date.now();
     warned10Ref.current = false;
@@ -267,6 +288,24 @@ export default function RunSessionScreen(): React.ReactElement {
     }, 1000);
   };
 
+  const onSelectOutdoor = (): void => startChrono('outdoor');
+
+  const onSelectTreadmill = (): void => {
+    setLocation('treadmill');
+    setEntryMode('treadmill');
+    if (!treadmillIntroSeenRef.current) {
+      setTreadmillIntroVisible(true);
+    } else {
+      startChrono('treadmill');
+    }
+  };
+
+  const onSelectManual = (): void => {
+    setEntryMode('manual');
+    setLocation((prev) => prev ?? 'outdoor');
+    goToRecap(targetDurationSec);
+  };
+
   const enteredDistanceKm = useMemo(() => {
     const cleaned = distanceText.replace(',', '.').trim();
     if (!cleaned) return 0;
@@ -274,6 +313,11 @@ export default function RunSessionScreen(): React.ReactElement {
     if (!Number.isFinite(n) || n <= 0) return 0;
     return n < 30 ? n : n / 1000; // accept metres if a large value is typed
   }, [distanceText]);
+
+  const computedPace = useMemo(
+    () => (enteredDistanceKm > 0 && finalDurationSec > 0 ? Math.round(finalDurationSec / enteredDistanceKm) : null),
+    [enteredDistanceKm, finalDurationSec],
+  );
 
   const adjustDuration = (deltaSec: number): void => {
     setFinalDurationSec((prev) => {
@@ -289,10 +333,9 @@ export default function RunSessionScreen(): React.ReactElement {
     if (parsed != null) setFinalDurationSec(parsed);
   };
 
-  const livePace = useMemo(() => {
-    if (enteredDistanceKm <= 0 || finalDurationSec <= 0) return null;
-    return Math.round(finalDurationSec / enteredDistanceKm);
-  }, [enteredDistanceKm, finalDurationSec]);
+  const toggleCondition = (key: string): void => {
+    setConditionsList((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  };
 
   const submitCompletion = async (): Promise<void> => {
     const user = auth.currentUser;
@@ -300,15 +343,18 @@ export default function RunSessionScreen(): React.ReactElement {
     setSavingComplete(true);
     try {
       const finalDur = finalDurationSec > 0 ? finalDurationSec : targetDurationSec;
-      const finalDistance = enteredDistanceKm > 0 ? enteredDistanceKm : run.estimated_distance_km;
-      const avg = paceFromDistanceTime(finalDistance * 1000, finalDur);
+      const savedDistance = enteredDistanceKm > 0 ? Math.round(enteredDistanceKm * 100) / 100 : null;
+      const savedPace = computedPace ?? parseMmss(paceManualText);
+      const mode: RunEntryMode = entryMode === 'manual' ? 'manual' : location;
       await completeRunSession(user.uid, runId, {
         duration_seconds: finalDur,
-        distance_km: Math.round(finalDistance * 100) / 100,
-        avg_pace_sec_per_km: Math.round(avg),
+        distance_km: savedDistance,
+        avg_pace_sec_per_km: savedPace,
         rpe,
         location,
-        conditions,
+        conditions: legacyCondition(conditionsList),
+        mode,
+        conditions_list: conditionsList,
       });
       if (run.queue_key) {
         await updateQueueItem(user.uid, run.queue_key, 'completed').catch(() => undefined);
@@ -316,12 +362,15 @@ export default function RunSessionScreen(): React.ReactElement {
       try {
         const profile = await getRunningProfile(user.uid);
         const thresholdPace = profile && profile.vdot > 0 ? calculateVDOTPaces(profile.vdot).T : 300;
+        // Fall back to the planned pace so training load stays meaningful even
+        // when the athlete records neither a distance nor a pace.
+        const workloadPace = savedPace ?? repPace ?? thresholdPace;
         await computeAndSaveWorkloadEntry(user.uid, {
           sport: 'running',
           date: run.date,
           sessionType: run.session_type,
           durationSeconds: finalDur,
-          avgPaceSecPerKm: Math.round(avg),
+          avgPaceSecPerKm: Math.round(workloadPace),
           thresholdPaceSecPerKm: thresholdPace,
         });
       } catch {
@@ -334,7 +383,7 @@ export default function RunSessionScreen(): React.ReactElement {
         const sessionsPerWeek = profile?.sessions_per_week ?? 3;
         await startWeek(user.uid, 'running', week, { sessions: sessionsPerWeek });
         await recordSessionComplete(user.uid, 'running', week, {
-          km: Math.round(finalDistance * 100) / 100,
+          km: savedDistance ?? run.estimated_distance_km,
         });
       } catch {
         // tracking is best-effort
@@ -396,6 +445,25 @@ export default function RunSessionScreen(): React.ReactElement {
             {sessionName(sessionType)}
           </ZoneText>
 
+          <ZoneText style={styles.sectionLabel}>MODE</ZoneText>
+          <View style={styles.modePillRow}>
+            {(['outdoor', 'treadmill'] as RunLocation[]).map((loc) => {
+              const active = location === loc;
+              return (
+                <TouchableOpacity
+                  key={loc}
+                  onPress={() => setLocation(loc)}
+                  activeOpacity={0.85}
+                  style={[styles.modePill, active ? styles.modePillActive : null]}
+                >
+                  <ZoneText style={[styles.modePillText, active ? styles.onRun : null]}>
+                    {loc === 'outdoor' ? 'Extérieur' : 'Tapis'}
+                  </ZoneText>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
           <ZoneText style={styles.sectionLabel}>DURÉE</ZoneText>
           <View style={styles.durationRow}>
             <TouchableOpacity onPress={() => adjustDuration(-60)} activeOpacity={0.8} style={styles.durationBtn}>
@@ -414,21 +482,58 @@ export default function RunSessionScreen(): React.ReactElement {
             </TouchableOpacity>
           </View>
 
-          <ZoneText style={styles.sectionLabel}>DISTANCE</ZoneText>
-          <View style={styles.distanceRow}>
+          <ZoneText style={styles.sectionLabel}>DISTANCE (FACULTATIF)</ZoneText>
+          <View style={styles.fieldRow}>
             <TextInput
               value={distanceText}
               onChangeText={setDistanceText}
               keyboardType="decimal-pad"
               placeholder="0.0"
               placeholderTextColor={colors.text.muted}
-              style={styles.distanceInput}
+              style={styles.fieldInput}
             />
-            <ZoneText style={styles.distanceUnit}>km</ZoneText>
+            <ZoneText style={styles.fieldUnit}>km</ZoneText>
           </View>
-          {livePace != null ? (
-            <ZoneText style={styles.paceHint}>Rythme moyen : {mmss(livePace)} /km</ZoneText>
+
+          <ZoneText style={styles.sectionLabel}>RYTHME MOYEN (FACULTATIF)</ZoneText>
+          <View style={styles.fieldRow}>
+            <TextInput
+              value={computedPace != null ? mmss(computedPace) : paceManualText}
+              onChangeText={setPaceManualText}
+              editable={computedPace == null}
+              keyboardType="numbers-and-punctuation"
+              placeholder="MM:SS"
+              placeholderTextColor={colors.text.muted}
+              style={[styles.fieldInput, computedPace != null ? styles.fieldInputAuto : null]}
+            />
+            <ZoneText style={styles.fieldUnit}>/km</ZoneText>
+          </View>
+          {computedPace != null ? (
+            <ZoneText style={styles.paceHint}>Calculé automatiquement (durée ÷ distance)</ZoneText>
           ) : null}
+
+          <ZoneText style={styles.sectionLabel}>CONDITIONS</ZoneText>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.weatherRow}
+          >
+            {WEATHER.map((w) => {
+              const active = conditionsList.includes(w.key);
+              return (
+                <TouchableOpacity
+                  key={w.key}
+                  onPress={() => toggleCondition(w.key)}
+                  activeOpacity={0.85}
+                  style={[styles.weatherPill, active ? styles.weatherPillActive : null]}
+                >
+                  <ZoneText style={[styles.weatherPillText, active ? styles.onRun : null]}>
+                    {w.emoji} {w.label}
+                  </ZoneText>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
 
           <ZoneText style={styles.sectionLabel}>COMMENT C'ÉTAIT ? (RPE)</ZoneText>
           <View style={styles.rpeRow}>
@@ -488,8 +593,8 @@ export default function RunSessionScreen(): React.ReactElement {
     );
   }
 
-  // ── PRE ───────────────────────────────────────────────────────────────────
-  if (phase === 'pre') {
+  // ── SELECT (mode) ─────────────────────────────────────────────────────────
+  if (phase === 'select') {
     return (
       <SafeScreen>
         <View style={styles.headerRow}>
@@ -537,74 +642,26 @@ export default function RunSessionScreen(): React.ReactElement {
             <EstCell label="DISTANCE" value={`${run.estimated_distance_km} km`} />
           </View>
 
-          <ZoneText variant="caption" color={colors.text.muted} style={styles.preEyebrow}>
-            OÙ COURS-TU AUJOURD&apos;HUI ?
-          </ZoneText>
-          <View style={styles.preChoiceRow}>
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => setLocation('outdoor')}
-              style={[styles.preChoice, location === 'outdoor' ? styles.preChoiceActive : null]}
-            >
-              <ZoneText
-                variant="label"
-                color={location === 'outdoor' ? colors.background : colors.text.primary}
-                style={styles.preChoiceText}
-              >
-                🏃 Extérieur
-              </ZoneText>
-            </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={onPickTreadmill}
-              style={[styles.preChoice, location === 'treadmill' ? styles.preChoiceActive : null]}
-            >
-              <ZoneText
-                variant="label"
-                color={location === 'treadmill' ? colors.background : colors.text.primary}
-                style={styles.preChoiceText}
-              >
-                ⚙️ Tapis roulant
-              </ZoneText>
-            </TouchableOpacity>
-          </View>
-          {location === 'treadmill' ? <TreadmillInclineCard /> : null}
-
-          <ZoneText variant="caption" color={colors.text.muted} style={styles.preEyebrow}>
-            CONDITIONS
-          </ZoneText>
-          <View style={styles.preCondRow}>
-            {(
-              [
-                { key: 'heat' as const, label: '☀️ Chaleur' },
-                { key: 'wind' as const, label: '💨 Vent fort' },
-                { key: 'rain' as const, label: '🌧️ Pluie' },
-                { key: 'normal' as const, label: '✓ Normales' },
-              ]
-            ).map((o) => {
-              const active = conditions === o.key;
-              return (
-                <TouchableOpacity
-                  key={o.key}
-                  activeOpacity={0.85}
-                  onPress={() => setConditions(o.key)}
-                  style={[styles.preCond, active ? styles.preCondActive : null]}
-                >
-                  <ZoneText
-                    variant="caption"
-                    color={active ? colors.background : colors.text.primary}
-                    style={styles.preCondText}
-                  >
-                    {o.label}
-                  </ZoneText>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          <ZoneText style={styles.question}>Comment vas-tu courir ?</ZoneText>
+          <ModeCard
+            emoji="🏃"
+            title="Extérieur"
+            subtitle="Je cours dehors"
+            onPress={onSelectOutdoor}
+          />
+          <ModeCard
+            emoji="🏃"
+            title="Tapis"
+            subtitle="Je cours en salle"
+            onPress={onSelectTreadmill}
+          />
+          <ModeCard
+            emoji="📝"
+            title="Ajout manuel"
+            subtitle="J'ai déjà couru"
+            onPress={onSelectManual}
+          />
         </ScrollView>
-        <View style={styles.footer}>
-          <Button title="Démarrer la séance" onPress={onStart} />
-        </View>
 
         <Modal
           visible={treadmillIntroVisible}
@@ -617,7 +674,13 @@ export default function RunSessionScreen(): React.ReactElement {
               <ScrollView showsVerticalScrollIndicator={false}>
                 <TreadmillInclineCard />
               </ScrollView>
-              <Button title="J'ai compris, inclinaison à 1 %" onPress={dismissTreadmillIntro} />
+              <Button
+                title="J'ai compris, commencer"
+                onPress={() => {
+                  dismissTreadmillIntro();
+                  startChrono('treadmill');
+                }}
+              />
             </View>
           </View>
         </Modal>
@@ -674,11 +737,33 @@ export default function RunSessionScreen(): React.ReactElement {
       </View>
 
       <View style={styles.footer}>
-        <TouchableOpacity onPress={() => finish(elapsed)} activeOpacity={0.85} style={styles.terminateBtn}>
+        <TouchableOpacity onPress={() => goToRecap(elapsed)} activeOpacity={0.85} style={styles.terminateBtn}>
           <ZoneText style={styles.terminateText}>TERMINER</ZoneText>
         </TouchableOpacity>
       </View>
     </SafeScreen>
+  );
+}
+
+function ModeCard({
+  emoji,
+  title,
+  subtitle,
+  onPress,
+}: {
+  emoji: string;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+}): React.ReactElement {
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={styles.modeCard}>
+      <ZoneText style={styles.modeCardEmoji}>{emoji}</ZoneText>
+      <View style={styles.modeCardMain}>
+        <ZoneText style={styles.modeCardTitle}>{title}</ZoneText>
+        <ZoneText style={styles.modeCardSub}>{subtitle}</ZoneText>
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -701,9 +786,10 @@ const styles = StyleSheet.create({
   errorAction: { marginTop: 16, alignSelf: 'stretch' },
   headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8 },
   closeBtn: { padding: 4 },
+  onRun: { color: '#FFFFFF' },
 
-  // Pre
-  preContent: { paddingHorizontal: 20, paddingBottom: 24 },
+  // Select
+  preContent: { paddingHorizontal: 20, paddingBottom: 32 },
   zoneStrip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -724,12 +810,7 @@ const styles = StyleSheet.create({
   typeBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 1, color: colors.run },
   sessionTitle: { fontSize: 24, marginTop: 10 },
   sessionPurpose: { marginTop: 4, lineHeight: 17 },
-  structureCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    padding: 16,
-    marginTop: 16,
-  },
+  structureCard: { backgroundColor: colors.surface, borderRadius: 18, padding: 16, marginTop: 16 },
   cardLabel: { letterSpacing: 1, fontFamily: 'Inter_700Bold', fontSize: 11, marginBottom: 10 },
   structureRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5 },
   structureDot: { width: 8, height: 8, borderRadius: 4, marginRight: 10 },
@@ -738,26 +819,20 @@ const styles = StyleSheet.create({
   estCell: { flex: 1, backgroundColor: colors.surface, borderRadius: 14, padding: 14 },
   estLabel: { letterSpacing: 0.5, fontSize: 10 },
   estValue: { fontSize: 22, marginTop: 4 },
-  preEyebrow: { letterSpacing: 1, fontFamily: 'Inter_700Bold', fontSize: 11, marginTop: 20, marginBottom: 10 },
-  preChoiceRow: { flexDirection: 'row', gap: 12 },
-  preChoice: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    paddingVertical: 16,
+  question: { fontFamily: 'Inter_700Bold', fontSize: 18, color: colors.textPrimary, marginTop: 24, marginBottom: 12 },
+  modeCard: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  preChoiceActive: { backgroundColor: colors.run },
-  preChoiceText: { fontSize: 14 },
-  preCondRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  preCond: {
     backgroundColor: colors.surface,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    borderRadius: 18,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    marginBottom: 12,
   },
-  preCondActive: { backgroundColor: colors.run },
-  preCondText: { fontFamily: 'Inter_600SemiBold' },
+  modeCardEmoji: { fontSize: 24, marginRight: 16 },
+  modeCardMain: { flex: 1 },
+  modeCardTitle: { fontFamily: 'Inter_700Bold', fontSize: 16, color: colors.textPrimary },
+  modeCardSub: { fontFamily: 'Inter_400Regular', fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 2 },
   footer: { paddingHorizontal: 20, paddingVertical: 14 },
 
   // Active
@@ -796,12 +871,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   treadmillBannerText: { fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.text.secondary },
-  terminateBtn: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
+  terminateBtn: { backgroundColor: colors.surface, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   terminateText: { fontFamily: 'Inter_700Bold', fontSize: 15, color: colors.textPrimary, letterSpacing: 0.5 },
 
   // Done
@@ -816,13 +886,18 @@ const styles = StyleSheet.create({
     marginTop: 22,
     marginBottom: 10,
   },
-  durationRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  durationBtn: {
+  modePillRow: { flexDirection: 'row', gap: 10 },
+  modePill: {
+    flex: 1,
     backgroundColor: colors.surface,
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
   },
+  modePillActive: { backgroundColor: colors.run },
+  modePillText: { fontFamily: 'Inter_600SemiBold', fontSize: 14, color: colors.text.secondary },
+  durationRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  durationBtn: { backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14 },
   durationBtnText: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.textPrimary },
   durationInput: {
     flex: 1,
@@ -834,21 +909,22 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     fontSize: 20,
   },
-  distanceRow: {
+  fieldRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderRadius: 12,
     paddingHorizontal: 16,
   },
-  distanceInput: {
+  fieldInput: {
     flex: 1,
     paddingVertical: 14,
     color: colors.textPrimary,
     fontFamily: 'Inter_700Bold',
     fontSize: 20,
   },
-  distanceUnit: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: colors.text.secondary },
+  fieldInputAuto: { color: 'rgba(255,255,255,0.7)' },
+  fieldUnit: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: colors.text.secondary },
   paceHint: {
     fontFamily: 'Inter_400Regular',
     fontStyle: 'italic',
@@ -856,6 +932,15 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.5)',
     marginTop: 8,
   },
+  weatherRow: { gap: 8, paddingRight: 8 },
+  weatherPill: {
+    backgroundColor: colors.surface,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  weatherPillActive: { backgroundColor: colors.run },
+  weatherPillText: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: 'rgba(255,255,255,0.6)' },
   rpeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   rpeCell: {
     width: 30,
@@ -879,7 +964,7 @@ const styles = StyleSheet.create({
   validateBtnDisabled: { opacity: 0.4 },
   validateText: { fontFamily: 'Inter_700Bold', fontSize: 15, color: '#FFFFFF', letterSpacing: 0.5 },
 
-  // EF note + treadmill intro modals
+  // Modals
   efBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
   efCard: { backgroundColor: colors.surfaceAlt, borderRadius: 18, padding: 20, alignSelf: 'stretch' },
   efTitle: { fontSize: 18, marginBottom: 10 },

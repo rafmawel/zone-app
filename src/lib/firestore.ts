@@ -265,6 +265,8 @@ export interface WeeklyScheduleDoc {
 
 export type RunLocation = 'outdoor' | 'treadmill';
 export type RunConditions = 'normal' | 'heat' | 'wind' | 'rain';
+/** How the run was recorded: live chrono (outdoor/treadmill) or entered after the fact. */
+export type RunEntryMode = 'outdoor' | 'treadmill' | 'manual';
 
 export interface RunSession {
   id: string;
@@ -288,6 +290,10 @@ export interface RunSession {
   location?: RunLocation;
   /** Self-reported environmental conditions. Defaults to 'normal'. */
   conditions?: RunConditions;
+  /** How the run was recorded (live chrono vs manual entry). */
+  mode?: RunEntryMode;
+  /** Multi-select weather tags, e.g. ['sunny', 'wind']. */
+  conditions_list?: string[];
 }
 
 export function todayDateString(d: Date = new Date()): string {
@@ -665,12 +671,14 @@ export async function getRunSession(uid: string, runId: string): Promise<RunSess
 
 export interface CompleteRunInput {
   duration_seconds: number;
-  distance_km: number;
-  avg_pace_sec_per_km: number;
+  distance_km: number | null;
+  avg_pace_sec_per_km: number | null;
   positions?: RunningSessionGPSPoint[];
   rpe?: number;
   location?: RunLocation;
   conditions?: RunConditions;
+  mode?: RunEntryMode;
+  conditions_list?: string[];
 }
 
 export async function completeRunSession(
@@ -682,12 +690,14 @@ export async function completeRunSession(
     status: 'completed',
     completed_at: serverTimestamp(),
     actual_duration_seconds: input.duration_seconds,
-    actual_distance_km: input.distance_km,
-    avg_pace_sec_per_km: input.avg_pace_sec_per_km,
+    actual_distance_km: input.distance_km ?? null,
+    avg_pace_sec_per_km: input.avg_pace_sec_per_km ?? null,
     ...(input.rpe !== undefined ? { rpe: input.rpe } : {}),
     ...(input.positions ? { positions: input.positions } : {}),
     ...(input.location ? { location: input.location } : {}),
     ...(input.conditions ? { conditions: input.conditions } : {}),
+    ...(input.mode ? { mode: input.mode } : {}),
+    ...(input.conditions_list ? { conditions_list: input.conditions_list } : {}),
   });
 }
 
