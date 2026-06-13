@@ -83,6 +83,14 @@ function formatVolume(kg: number): string {
   return `${Math.round(kg).toLocaleString('fr-FR')} kg`;
 }
 
+/** Colour a Zone score by tier: >70 green, 40–70 amber, <40 red. */
+function scoreColor(score: number | null | undefined): string {
+  if (!score || !Number.isFinite(score)) return colors.textPrimary;
+  if (score > 70) return colors.scoreGreen;
+  if (score >= 40) return colors.warning;
+  return colors.danger;
+}
+
 const TOTAL_WEEKS_PER_BLOCK = 4;
 const TOTAL_BLOCKS = 3;
 
@@ -593,10 +601,30 @@ export default function ProfileScreen(): React.ReactElement {
             MES STATISTIQUES
           </ZoneText>
           <View style={styles.statsGrid}>
-            <StatTile label="Total séances" value={stats ? String(stats.totalSessions) : '-'} loading={!stats} />
-            <StatTile label="Volume total" value={stats ? formatVolume(stats.totalVolume) : '-'} loading={!stats} />
-            <StatTile label="Meilleur streak" value={stats ? `${stats.bestStreak} j` : '-'} loading={!stats} />
-            <StatTile label="Score moyen" value={stats ? String(stats.avgZoneScore || '-') : '-'} loading={!stats} />
+            <StatTile
+              label="Total séances"
+              value={stats ? String(stats.totalSessions) : '-'}
+              loading={!stats}
+              valueColor={colors.textPrimary}
+            />
+            <StatTile
+              label="Volume total"
+              value={stats ? formatVolume(stats.totalVolume) : '-'}
+              loading={!stats}
+              valueColor={colors.scoreGreen}
+            />
+            <StatTile
+              label="Meilleur streak"
+              value={stats ? `${stats.bestStreak} j` : '-'}
+              loading={!stats}
+              valueColor={colors.run}
+            />
+            <StatTile
+              label="Score moyen"
+              value={stats ? String(stats.avgZoneScore || '-') : '-'}
+              loading={!stats}
+              valueColor={scoreColor(stats?.avgZoneScore)}
+            />
           </View>
         </View>
 
@@ -1011,20 +1039,22 @@ function StatTile({
   label,
   value,
   loading,
+  valueColor,
 }: {
   label: string;
   value: string;
   loading: boolean;
+  valueColor?: string;
 }): React.ReactElement {
   return (
     <View style={styles.statTile}>
-      <ZoneText variant="caption" color={colors.text.muted} style={styles.statLabel}>
-        {label}
-      </ZoneText>
+      <ZoneText style={styles.statLabel}>{label}</ZoneText>
       {loading ? (
         <Skeleton width={64} height={22} borderRadius={6} style={styles.statSkeleton} />
       ) : (
-        <ZoneText variant="number" style={styles.statValue}>
+        <ZoneText
+          style={[styles.statValue, valueColor ? { color: valueColor } : null]}
+        >
           {value}
         </ZoneText>
       )}
@@ -1105,7 +1135,7 @@ function InfoRow({ label, value }: { label: string; value: string }): React.Reac
       </ZoneText>
       <View style={styles.infoValueRow}>
         <ZoneText style={styles.infoValue}>{value}</ZoneText>
-        <ChevronRight size={14} color={colors.text.muted} />
+        <ChevronRight size={14} color="rgba(255,255,255,0.3)" />
       </View>
     </View>
   );
@@ -1135,12 +1165,17 @@ function SportProgressRow({
   return (
     <View style={[styles.sportProg, { borderLeftColor: color }]}>
       <View style={styles.sportProgHead}>
-        <ZoneText variant="label" color={colors.text.primary} style={styles.sportProgTitle}>
-          {icon} {label.toUpperCase()} · Bloc {block} · {blockName} · S{weekInBlock}/4
-        </ZoneText>
+        <View style={styles.sportProgHeadMain}>
+          <ZoneText style={styles.sportProgTitle}>
+            {icon} {label}
+          </ZoneText>
+          <ZoneText style={styles.sportProgSub}>
+            Bloc {block} · {blockName} · Semaine {weekInBlock}/4
+          </ZoneText>
+        </View>
         {onRestart ? (
           <TouchableOpacity onPress={onRestart} hitSlop={8} activeOpacity={0.7}>
-            <ZoneText variant="caption" color={color} style={styles.sportProgRestart}>
+            <ZoneText style={[styles.sportProgRestart, { color }]}>
               Recommencer
             </ZoneText>
           </TouchableOpacity>
@@ -1154,16 +1189,13 @@ function SportProgressRow({
               key={i}
               style={[
                 styles.sportProgSeg,
-                {
-                  backgroundColor:
-                    idx <= totalWeek ? colors.scoreGreen : colors.border,
-                },
+                { backgroundColor: idx <= totalWeek ? color : 'rgba(255,255,255,0.1)' },
               ]}
             />
           );
         })}
       </View>
-      <ZoneText variant="caption" color={colors.text.muted} style={styles.sportProgMeta}>
+      <ZoneText style={styles.sportProgMeta}>
         Semaine {Math.min(TOTAL, totalWeek)}/{TOTAL}
       </ZoneText>
     </View>
@@ -1272,34 +1304,39 @@ const styles = StyleSheet.create({
   },
   vacationCard: {
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: 18,
     padding: 16,
   },
   vacationActive: {
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderLeftWidth: 3,
+    backgroundColor: colors.surface,
+    borderLeftWidth: 4,
     borderLeftColor: colors.scoreGreen,
-    borderColor: colors.border,
-    borderRadius: 14,
+    borderRadius: 18,
     padding: 16,
   },
-  vacationTitle: { fontSize: 14, letterSpacing: 0.5 },
-  vacationBody: { marginTop: 8, lineHeight: 18 },
+  vacationTitle: {
+    fontSize: 15,
+    color: colors.textPrimary,
+    fontFamily: 'Inter_700Bold',
+  },
+  vacationBody: {
+    marginTop: 8,
+    lineHeight: 18,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.6)',
+  },
   vacationCta: {
     marginTop: 14,
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: colors.scoreGreen,
-    borderRadius: 999,
-    paddingVertical: 12,
+    borderRadius: 12,
+    padding: 12,
     alignItems: 'center',
   },
   vacationCtaText: { color: colors.scoreGreen, letterSpacing: 1, fontFamily: 'Inter_700Bold', fontSize: 12 },
   vacationCancel: { marginTop: 12, alignSelf: 'flex-start' },
-  vacationCancelText: { fontFamily: 'Inter_500Medium', fontSize: 12 },
+  vacationCancelText: { fontFamily: 'Inter_500Medium', fontSize: 12, color: 'rgba(255,255,255,0.5)' },
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.bg.elevated,
@@ -1432,11 +1469,27 @@ const styles = StyleSheet.create({
     fontSize: 24,
     textAlign: 'center',
   },
-  displayName: { marginTop: 10, fontSize: 22, color: colors.text.primary, letterSpacing: 1 },
-  email: { marginTop: 4, color: colors.text.secondary, fontSize: 13 },
-  memberSince: { marginTop: 2 },
+  displayName: {
+    marginTop: 12,
+    fontSize: 16,
+    color: colors.textPrimary,
+    fontFamily: 'Inter_700Bold',
+  },
+  email: {
+    marginTop: 4,
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontFamily: 'Inter_700Bold',
+  },
+  memberSince: { marginTop: 4, color: 'rgba(255,255,255,0.5)', fontSize: 13 },
   section: { marginTop: 22 },
-  eyebrow: { letterSpacing: 2, fontSize: 11, marginBottom: 8 },
+  eyebrow: {
+    letterSpacing: 2,
+    fontSize: 11,
+    marginBottom: 8,
+    color: 'rgba(255,255,255,0.4)',
+    textTransform: 'uppercase',
+  },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   modifyLink: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   programCard: {
@@ -1460,48 +1513,60 @@ const styles = StyleSheet.create({
   programMeta: { marginTop: 8, fontSize: 12 },
   programList: { gap: 10 },
   sportProg: {
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: colors.surface,
     borderLeftWidth: 4,
     borderLeftColor: colors.scoreGreen,
-    borderRadius: 12,
-    borderTopLeftRadius: 12,
-    borderBottomLeftRadius: 12,
-    padding: 12,
+    borderRadius: 18,
+    padding: 16,
   },
   sportProgHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
-  sportProgRestart: { fontFamily: 'Inter_500Medium', fontSize: 11 },
-  sportProgTitle: { fontSize: 13, letterSpacing: 0.5 },
-  sportProgBar: { flexDirection: 'row', gap: 2 },
-  sportProgSeg: { flex: 1, height: 6, borderRadius: 2 },
-  sportProgMeta: { marginTop: 6, fontSize: 11 },
+  sportProgHeadMain: { flex: 1, paddingRight: 12 },
+  sportProgRestart: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  sportProgTitle: {
+    fontSize: 14,
+    color: colors.textPrimary,
+    fontFamily: 'Inter_700Bold',
+  },
+  sportProgSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.5)',
+    marginTop: 3,
+  },
+  sportProgBar: { flexDirection: 'row', gap: 3 },
+  sportProgSeg: { flex: 1, height: 6, borderRadius: 3 },
+  sportProgMeta: {
+    marginTop: 8,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.4)',
+  },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   statTile: {
     width: '48%',
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: 14,
     padding: 14,
     marginBottom: 8,
   },
-  statLabel: { fontSize: 11 },
-  statValue: { fontSize: 26, color: colors.textPrimary, marginTop: 4, lineHeight: 30 },
+  statLabel: { fontSize: 11, color: 'rgba(255,255,255,0.4)' },
+  statValue: {
+    fontSize: 26,
+    color: colors.textPrimary,
+    fontFamily: 'Inter_700Bold',
+    marginTop: 6,
+    lineHeight: 30,
+  },
   statSkeleton: { marginTop: 6 },
   maxRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingVertical: 10,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    paddingVertical: 12,
     paddingHorizontal: 14,
     marginBottom: 6,
   },
@@ -1512,25 +1577,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 14,
     marginBottom: 6,
   },
   infoLabel: { fontSize: 12 },
-  subEyebrow: { letterSpacing: 2, fontSize: 11, marginTop: 18, marginBottom: 8 },
+  subEyebrow: {
+    letterSpacing: 2,
+    fontSize: 11,
+    marginTop: 18,
+    marginBottom: 8,
+    color: 'rgba(255,255,255,0.4)',
+    textTransform: 'uppercase',
+  },
   sportRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 14,
     marginBottom: 6,
   },
   sportEmoji: { fontSize: 22, marginRight: 12 },
@@ -1541,10 +1609,8 @@ const styles = StyleSheet.create({
   infoValueRow: { flexDirection: 'row', alignItems: 'center' },
   infoValue: { color: colors.text.primary, fontFamily: 'Inter_500Medium', fontSize: 13, marginRight: 6 },
   empty: {
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
     padding: 16,
     alignItems: 'center',
   },
@@ -1559,9 +1625,7 @@ const styles = StyleSheet.create({
   },
   zoneInfoText: { color: colors.scoreGreen, fontFamily: 'Inter_500Medium', fontSize: 14 },
   notifCard: {
-    backgroundColor: colors.bg.card,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: colors.surface,
     borderRadius: 14,
     padding: 16,
   },
@@ -1578,7 +1642,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingTop: 14,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: 'rgba(255,255,255,0.06)',
   },
   timeSteppers: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   timeColon: { fontSize: 22, color: colors.text.primary },
@@ -1616,7 +1680,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 12,
     borderBottomWidth: 0.5,
-    borderBottomColor: colors.border,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
   },
   healthRowMain: { flex: 1 },
   healthRowTitle: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
