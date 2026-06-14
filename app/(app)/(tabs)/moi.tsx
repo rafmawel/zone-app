@@ -29,6 +29,7 @@ import {
   getVacationState,
   resetSportProfile,
   saveUserProgram,
+  updateSessionsPerWeek,
   updateUserProfile,
   type AllTimeStats,
   type ExerciseMax,
@@ -275,6 +276,19 @@ export default function ProfileScreen(): React.ReactElement {
     }
   };
 
+  // Change only the weekly session count — no programme reset, progression
+  // and completed sessions are preserved.
+  const onChangeSessions = async (sport: ResettableSport, next: number): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const clamped = Math.max(1, Math.min(7, next));
+    if (sport === 'weightlifting') setProgram((p) => (p ? { ...p, sessions_per_week: clamped } : p));
+    else if (sport === 'running') setRunningProfile((p) => (p ? { ...p, sessions_per_week: clamped } : p));
+    else if (sport === 'musculation') setMuscleProfile((p) => (p ? { ...p, sessions_per_week: clamped } : p));
+    else setHyroxProfile((p) => (p ? { ...p, sessions_per_week: clamped } : p));
+    await updateSessionsPerWeek(user.uid, sport, clamped).catch(() => undefined);
+  };
+
   const onRestartProgramme = (sport: ProSportKey): void => {
     const user = auth.currentUser;
     if (!user) return;
@@ -288,7 +302,7 @@ export default function ProfileScreen(): React.ReactElement {
             : 'Hyrox';
     Alert.alert(
       `Recommencer le programme ${label} ?`,
-      'Tu repartiras de la semaine 1. Tes maxes et ton historique sont conservés.',
+      'Cela supprime ta progression pour ce sport (retour à la semaine 1). Tes 1RM et l’historique des séances sont conservés.',
       [
         { text: 'Annuler', style: 'cancel' },
         {
@@ -735,8 +749,10 @@ export default function ProfileScreen(): React.ReactElement {
             <SportRow
               emoji="🏋️"
               name="Haltérophilie"
-              summary={`Niveau ${program.level} · ${program.sessions_per_week}× / sem`}
+              summary={`Niveau ${program.level}`}
               loading={resettingSport === 'weightlifting'}
+              sessions={program.sessions_per_week}
+              onChangeSessions={(n) => void onChangeSessions('weightlifting', n)}
               onPress={() => onReconfigure('weightlifting')}
             />
           ) : null}
@@ -744,8 +760,10 @@ export default function ProfileScreen(): React.ReactElement {
             <SportRow
               emoji="🏃"
               name="Course à pied"
-              summary={`VDOT ${runningProfile.vdot} · ${vdotLevelLabel(runningProfile.vdot)} · ${runningProfile.sessions_per_week}× / sem`}
+              summary={`VDOT ${runningProfile.vdot} · ${vdotLevelLabel(runningProfile.vdot)}`}
               loading={resettingSport === 'running'}
+              sessions={runningProfile.sessions_per_week}
+              onChangeSessions={(n) => void onChangeSessions('running', n)}
               onPress={() => onReconfigure('running')}
             />
           ) : null}
@@ -753,8 +771,10 @@ export default function ProfileScreen(): React.ReactElement {
             <SportRow
               emoji="💪"
               name="Musculation"
-              summary={`${MUSCLE_GOAL_LABELS[muscleProfile.goal]} · ${muscleProfile.sessions_per_week}× / sem`}
+              summary={`${MUSCLE_GOAL_LABELS[muscleProfile.goal]}`}
               loading={resettingSport === 'musculation'}
+              sessions={muscleProfile.sessions_per_week}
+              onChangeSessions={(n) => void onChangeSessions('musculation', n)}
               onPress={() => onReconfigure('musculation')}
             />
           ) : null}
@@ -762,8 +782,10 @@ export default function ProfileScreen(): React.ReactElement {
             <SportRow
               emoji="🔥"
               name="Hyrox"
-              summary={`${HYROX_LEVEL_LABELS[hyroxProfile.level]} · ${hyroxProfile.sessions_per_week}× / sem`}
+              summary={`${HYROX_LEVEL_LABELS[hyroxProfile.level]}`}
               loading={resettingSport === 'hyrox'}
+              sessions={hyroxProfile.sessions_per_week}
+              onChangeSessions={(n) => void onChangeSessions('hyrox', n)}
               onPress={() => onReconfigure('hyrox')}
             />
           ) : null}
@@ -1067,12 +1089,16 @@ function SportRow({
   name,
   summary,
   loading,
+  sessions,
+  onChangeSessions,
   onPress,
 }: {
   emoji: string;
   name: string;
   summary: string;
   loading: boolean;
+  sessions: number;
+  onChangeSessions: (n: number) => void;
   onPress: () => void;
 }): React.ReactElement {
   return (
@@ -1085,6 +1111,30 @@ function SportRow({
         <ZoneText variant="caption" color={colors.text.muted} style={styles.sportSummary}>
           {summary}
         </ZoneText>
+        <View style={styles.freqRow}>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.freqLabel}>
+            Séances/sem
+          </ZoneText>
+          <TouchableOpacity
+            onPress={() => onChangeSessions(sessions - 1)}
+            disabled={sessions <= 1}
+            hitSlop={8}
+            activeOpacity={0.7}
+            style={[styles.freqBtn, sessions <= 1 ? styles.freqBtnDisabled : null]}
+          >
+            <ZoneText style={styles.freqSign}>−</ZoneText>
+          </TouchableOpacity>
+          <ZoneText style={styles.freqValue}>{sessions}</ZoneText>
+          <TouchableOpacity
+            onPress={() => onChangeSessions(sessions + 1)}
+            disabled={sessions >= 7}
+            hitSlop={8}
+            activeOpacity={0.7}
+            style={[styles.freqBtn, sessions >= 7 ? styles.freqBtnDisabled : null]}
+          >
+            <ZoneText style={styles.freqSign}>+</ZoneText>
+          </TouchableOpacity>
+        </View>
       </View>
       <TouchableOpacity
         onPress={onPress}
@@ -1594,7 +1644,7 @@ const styles = StyleSheet.create({
   },
   sportRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     backgroundColor: colors.surface,
     borderRadius: 14,
     paddingHorizontal: 14,
@@ -1605,7 +1655,26 @@ const styles = StyleSheet.create({
   sportMain: { flex: 1 },
   sportName: { color: colors.text.primary, fontSize: 14 },
   sportSummary: { fontSize: 11, marginTop: 2 },
-  reconfigureLink: { fontFamily: 'Inter_500Medium', fontSize: 12 },
+  reconfigureLink: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 2 },
+  freqRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  freqLabel: { fontSize: 11, marginRight: 2 },
+  freqBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  freqBtnDisabled: { opacity: 0.4 },
+  freqSign: { fontFamily: 'Inter_700Bold', fontSize: 15, color: colors.textPrimary, lineHeight: 18 },
+  freqValue: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
+    color: colors.textPrimary,
+    minWidth: 16,
+    textAlign: 'center',
+  },
   infoValueRow: { flexDirection: 'row', alignItems: 'center' },
   infoValue: { color: colors.text.primary, fontFamily: 'Inter_500Medium', fontSize: 13, marginRight: 6 },
   empty: {

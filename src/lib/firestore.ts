@@ -941,6 +941,68 @@ export async function resetSportProfile(uid: string, sport: ResettableSport): Pr
   await deleteDoc(doc(db, 'users', uid, 'state', SPORT_STATE_DOC[sport]));
 }
 
+/** Firestore `sports/{id}` document id for each programme sport. */
+const SPORTS_DOC_ID: Record<ResettableSport, SportKey> = {
+  weightlifting: 'halterophilie',
+  running: 'course',
+  musculation: 'musculation',
+  hyrox: 'hyrox',
+};
+
+/**
+ * Change a sport's weekly session count WITHOUT resetting the programme.
+ *
+ * Updates only `sessions_per_week` on the sport profile (`state/<doc>`), the
+ * `sports/{id}` config doc (when present), and the current week's
+ * `planned_sessions` counter in the queue. The queue window itself is
+ * regenerated reactively by `buildProgrammeQueue` from the new count, so
+ * completed/skipped items (keyed by block/week/session) are preserved. Never
+ * touches maxes, past weeks, or completed sessions.
+ *
+ * @param uid Firebase auth UID
+ * @param sport the programme sport to update
+ * @param newCount desired sessions per week (clamped 1-7)
+ */
+export async function updateSessionsPerWeek(
+  uid: string,
+  sport: ResettableSport,
+  newCount: number,
+): Promise<void> {
+  const safe = Math.max(1, Math.min(7, Math.round(newCount)));
+  const batch = writeBatch(db);
+
+  // 1. Sport profile doc (state/program | running_profile | muscle_profile | hyrox_profile).
+  batch.set(
+    doc(db, 'users', uid, 'state', SPORT_STATE_DOC[sport]),
+    { sessions_per_week: safe, updated_at: serverTimestamp() },
+    { merge: true },
+  );
+
+  // 2. sports/{id} config doc — only if it exists.
+  const sportsRef = doc(db, 'users', uid, 'sports', SPORTS_DOC_ID[sport]);
+  const sportsSnap = await getDoc(sportsRef);
+  if (sportsSnap.exists()) {
+    batch.set(sportsRef, { sessions_per_week: safe }, { merge: true });
+  }
+
+  // 3. Current week's planned_sessions in the queue (recompute the count only;
+  //    completed/skipped items are left untouched).
+  const queueRef = doc(db, 'users', uid, 'state', 'programme_queue');
+  const queueSnap = await getDoc(queueRef);
+  if (queueSnap.exists()) {
+    const data = queueSnap.data() as Record<string, unknown>;
+    const cwRaw = data[`${sport}_current_week`];
+    const currentWeek = typeof cwRaw === 'number' && cwRaw >= 1 ? Math.floor(cwRaw) : 1;
+    batch.set(
+      queueRef,
+      { [`${sport}_week_${currentWeek}_planned_sessions`]: safe },
+      { merge: true },
+    );
+  }
+
+  await batch.commit();
+}
+
 export interface WorkloadEntry {
   date: string;
   tss: number;
