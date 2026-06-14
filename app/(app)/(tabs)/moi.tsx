@@ -29,14 +29,17 @@ import {
   getVacationState,
   resetSportProfile,
   saveUserProgram,
+  setUserSport,
   updateSessionsPerWeek,
   updateUserProfile,
   type AllTimeStats,
   type ExerciseMax,
   type HyroxProfile,
+  type Level,
   type MuscleProfile,
   type ResettableSport,
   type RunningProfile,
+  type SportKey,
   type UserProfile,
   type UserProgram,
   type UserSport,
@@ -78,6 +81,59 @@ const LEVEL_LABEL: Record<string, string> = {
   avance: 'Avancé',
   confirme: 'Confirmé',
 };
+
+const LEVEL_OPTIONS: { key: string; label: string }[] = [
+  { key: 'debutant', label: 'Débutant' },
+  { key: 'intermediaire', label: 'Intermédiaire' },
+  { key: 'avance', label: 'Avancé' },
+  { key: 'confirme', label: 'Confirmé' },
+];
+
+const HALTERO_GOALS: { key: string; label: string }[] = [
+  { key: 'force_pure', label: 'Force pure' },
+  { key: 'perf_competition', label: 'Performance compétition' },
+  { key: 'remise_en_forme', label: 'Remise en forme' },
+];
+
+const COURSE_GOALS: { key: string; label: string }[] = [
+  { key: '5km', label: '5 km' },
+  { key: '10km', label: '10 km' },
+  { key: 'semi_marathon', label: 'Semi-marathon' },
+  { key: 'marathon', label: 'Marathon' },
+  { key: 'trail', label: 'Trail' },
+  { key: 'forme_generale', label: 'Forme générale' },
+];
+
+/** Goal option lists per sport (mirrors the onboarding choices). */
+const GOAL_OPTIONS_BY_SPORT: Partial<Record<SportKey, { key: string; label: string }[]>> = {
+  halterophilie: HALTERO_GOALS,
+  course: COURSE_GOALS,
+};
+
+/** Flat goal-key → human label map for display. */
+const GOAL_LABELS: Record<string, string> = Object.fromEntries(
+  [...HALTERO_GOALS, ...COURSE_GOALS].map((o) => [o.key, o.label]),
+);
+
+const SESSIONS_OPTIONS: { key: string; label: string }[] = [1, 2, 3, 4, 5, 6, 7].map((n) => ({
+  key: String(n),
+  label: `${n} séance${n > 1 ? 's' : ''} / semaine`,
+}));
+
+/** Map the sports/{id} key onto the programme sport used by the queue/profile. */
+const SPORTKEY_TO_RESETTABLE: Partial<Record<SportKey, ResettableSport>> = {
+  halterophilie: 'weightlifting',
+  course: 'running',
+  musculation: 'musculation',
+  hyrox: 'hyrox',
+};
+
+interface PickerConfig {
+  title: string;
+  options: { key: string; label: string }[];
+  current: string;
+  onSelect: (key: string) => void;
+}
 
 function formatVolume(kg: number): string {
   if (!Number.isFinite(kg)) return '0 kg';
@@ -181,6 +237,7 @@ export default function ProfileScreen(): React.ReactElement {
   const [loading, setLoading] = useState<boolean>(true);
   const [resettingSport, setResettingSport] = useState<ResettableSport | null>(null);
   const [zoneInfoVisible, setZoneInfoVisible] = useState<boolean>(false);
+  const [picker, setPicker] = useState<PickerConfig | null>(null);
   const [vacation, setVacation] = useState<VacationState | null>(null);
   const [vacationSheetVisible, setVacationSheetVisible] = useState<boolean>(false);
   const [vacationDays, setVacationDays] = useState<number>(7);
@@ -287,6 +344,62 @@ export default function ProfileScreen(): React.ReactElement {
     else if (sport === 'musculation') setMuscleProfile((p) => (p ? { ...p, sessions_per_week: clamped } : p));
     else setHyroxProfile((p) => (p ? { ...p, sessions_per_week: clamped } : p));
     await updateSessionsPerWeek(user.uid, sport, clamped).catch(() => undefined);
+  };
+
+  // ── MON PROFIL editors (open a picker, then persist) ───────────────────────
+  const onSelectLevel = async (key: string): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+    setProfile((p) => (p ? { ...p, level: key as Level } : p));
+    await updateUserProfile(user.uid, { level: key as Level }).catch(() => undefined);
+  };
+
+  const onSelectGoal = async (key: string): Promise<void> => {
+    const user = auth.currentUser;
+    const sp = sports[0];
+    if (!user || !sp) return;
+    setSports((arr) => arr.map((s, i) => (i === 0 ? { ...s, goal: key } : s)));
+    await setUserSport(user.uid, sp.sport_key, { ...sp, goal: key }).catch(() => undefined);
+  };
+
+  const onSelectPrimarySessions = async (n: number): Promise<void> => {
+    const sp = sports[0];
+    if (!sp) return;
+    setSports((arr) => arr.map((s, i) => (i === 0 ? { ...s, sessions_per_week: n } : s)));
+    const mapped = SPORTKEY_TO_RESETTABLE[sp.sport_key];
+    if (mapped) await onChangeSessions(mapped, n);
+  };
+
+  const openLevelPicker = (): void =>
+    setPicker({
+      title: 'Niveau',
+      options: LEVEL_OPTIONS,
+      current: profile?.level ?? '',
+      onSelect: (k) => void onSelectLevel(k),
+    });
+
+  const openGoalPicker = (): void => {
+    const sp = sports[0];
+    if (!sp) return;
+    const options = GOAL_OPTIONS_BY_SPORT[sp.sport_key] ?? [];
+    if (options.length === 0) return;
+    setPicker({
+      title: 'Objectif',
+      options,
+      current: sp.goal ?? '',
+      onSelect: (k) => void onSelectGoal(k),
+    });
+  };
+
+  const openSessionsPicker = (): void => {
+    const sp = sports[0];
+    if (!sp) return;
+    setPicker({
+      title: 'Séances par semaine',
+      options: SESSIONS_OPTIONS,
+      current: String(sp.sessions_per_week),
+      onSelect: (k) => void onSelectPrimarySessions(Number(k)),
+    });
   };
 
   const onRestartProgramme = (sport: ProSportKey): void => {
@@ -693,11 +806,17 @@ export default function ProfileScreen(): React.ReactElement {
           <InfoRow
             label="Niveau"
             value={profile?.level ? (LEVEL_LABEL[profile.level] ?? profile.level) : '-'}
+            onPress={openLevelPicker}
           />
-          <InfoRow label="Objectif" value={primarySport?.goal ?? '-'} />
+          <InfoRow
+            label="Objectif"
+            value={primarySport ? (GOAL_LABELS[primarySport.goal] ?? primarySport.goal) : '-'}
+            onPress={primarySport ? openGoalPicker : undefined}
+          />
           <InfoRow
             label="Séances par semaine"
             value={primarySport ? `${primarySport.sessions_per_week}` : '-'}
+            onPress={primarySport ? openSessionsPicker : undefined}
           />
           {profile?.health_data_source === 'health_connect' ||
           profile?.health_data_source === 'both' ? (
@@ -884,6 +1003,46 @@ export default function ProfileScreen(): React.ReactElement {
         </TouchableOpacity>
       </ScrollView>
       <ZoneExplainerModal visible={zoneInfoVisible} onClose={() => setZoneInfoVisible(false)} />
+
+      <Modal
+        visible={picker !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPicker(null)}
+      >
+        <TouchableOpacity
+          style={styles.pickerBackdrop}
+          activeOpacity={1}
+          onPress={() => setPicker(null)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.pickerSheet}>
+            <View style={styles.sheetHandleBar} />
+            <ZoneText variant="heading" style={styles.pickerTitle}>
+              {picker?.title}
+            </ZoneText>
+            {picker?.options.map((o) => {
+              const active = o.key === picker.current;
+              return (
+                <TouchableOpacity
+                  key={o.key}
+                  onPress={() => {
+                    picker.onSelect(o.key);
+                    setPicker(null);
+                  }}
+                  activeOpacity={0.8}
+                  style={[styles.pickerOption, active ? styles.pickerOptionActive : null]}
+                >
+                  <ZoneText
+                    style={[styles.pickerOptionText, active ? styles.pickerOptionTextActive : null]}
+                  >
+                    {o.label}
+                  </ZoneText>
+                </TouchableOpacity>
+              );
+            })}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Vacation duration sheet */}
       <Modal
@@ -1177,8 +1336,16 @@ function TimeStepper({
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }): React.ReactElement {
-  return (
+function InfoRow({
+  label,
+  value,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  onPress?: () => void;
+}): React.ReactElement {
+  const content = (
     <View style={styles.infoRow}>
       <ZoneText variant="caption" color={colors.text.muted} style={styles.infoLabel}>
         {label}
@@ -1188,6 +1355,12 @@ function InfoRow({ label, value }: { label: string; value: string }): React.Reac
         <ChevronRight size={14} color="rgba(255,255,255,0.3)" />
       </View>
     </View>
+  );
+  if (!onPress) return content;
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+      {content}
+    </TouchableOpacity>
   );
 }
 
@@ -1675,6 +1848,33 @@ const styles = StyleSheet.create({
     minWidth: 16,
     textAlign: 'center',
   },
+  pickerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  pickerSheet: {
+    backgroundColor: colors.surfaceAlt,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 32,
+  },
+  sheetHandleBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  pickerTitle: { fontSize: 18, marginBottom: 14 },
+  pickerOption: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    marginBottom: 8,
+  },
+  pickerOptionActive: { backgroundColor: colors.scoreGreen },
+  pickerOptionText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: colors.textPrimary },
+  pickerOptionTextActive: { color: colors.background },
   infoValueRow: { flexDirection: 'row', alignItems: 'center' },
   infoValue: { color: colors.text.primary, fontFamily: 'Inter_500Medium', fontSize: 13, marginRight: 6 },
   empty: {
