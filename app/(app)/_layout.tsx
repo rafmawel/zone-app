@@ -21,6 +21,7 @@ export default function AppLayout(): React.ReactElement {
       <Stack.Screen name="session-preview" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="muscle-session/[id]" options={{ animation: 'slide_from_bottom' }} />
       <Stack.Screen name="session-detail/[id]" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="session-edit/[id]" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="running-setup" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="running-test" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="bonus-cardio" options={{ animation: 'slide_from_bottom' }} />

@@ -7,7 +7,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ChevronRight, Dumbbell } from 'lucide-react-native';
+import { ChevronRight, Dumbbell, Pencil } from 'lucide-react-native';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import {
@@ -210,6 +210,7 @@ export default function HistoryScreen(): React.ReactElement {
                     key={item.id}
                     session={item.session}
                     onPress={() => router.push(`/(app)/session-detail/${item.session.id}`)}
+                    onEdit={() => router.push(`/(app)/session-edit/${item.session.id}`)}
                   />
                 );
               }
@@ -266,9 +267,11 @@ function StatCard({
 function SessionRow({
   session,
   onPress,
+  onEdit,
 }: {
   session: TrainingSession;
   onPress: () => void;
+  onEdit: () => void;
 }): React.ReactElement {
   const zone = session.zone_score_at_start ?? null;
   const level = zone !== null ? getZoneLevel(zone) : null;
@@ -281,12 +284,8 @@ function SessionRow({
         ? 'Course'
         : 'Haltérophilie';
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.85}
-      style={[styles.sessionCard, { borderLeftColor: border }]}
-    >
-      <View style={styles.sessionMain}>
+    <View style={[styles.sessionCard, { borderLeftColor: border }]}>
+      <TouchableOpacity style={styles.sessionMain} activeOpacity={0.85} onPress={onPress}>
         <View style={styles.sessionRow}>
           <ZoneText variant="label" color={colors.scoreGreen} style={styles.sessionDate}>
             {frenchShortDate(session.date)}
@@ -303,9 +302,18 @@ function SessionRow({
             {sport} · {session.duration_minutes ?? 0} min · {formatVolume(session.total_volume_kg ?? 0)} · {sets} séries
           </ZoneText>
         </View>
-      </View>
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={onEdit}
+        hitSlop={8}
+        activeOpacity={0.7}
+        style={styles.editBtn}
+        accessibilityLabel="Modifier la séance"
+      >
+        <Pencil size={15} color={colors.text.muted} />
+      </TouchableOpacity>
       <ChevronRight size={16} color={colors.text.muted} />
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -467,6 +475,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sessionMain: { flex: 1 },
+  editBtn: { padding: 6, marginRight: 2 },
   sessionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sessionDate: { fontSize: 13 },
   scoreBubble: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 },
