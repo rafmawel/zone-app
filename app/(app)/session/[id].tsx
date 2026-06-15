@@ -74,6 +74,9 @@ export default function SessionScreen(): React.ReactElement {
   const [program, setProgram] = useState<UserProgram | null>(null);
   const [actualReps, setActualReps] = useState<number>(0);
   const [actualWeight, setActualWeight] = useState<number>(0);
+  // Last weight actually used per exercise index — the next set of the same
+  // exercise pre-fills with it instead of the original target weight.
+  const carriedWeightRef = useRef<Record<number, number>>({});
   const [setRpe, setSetRpe] = useState<number | null>(null);
   const [completedSets, setCompletedSets] = useState<CompletedSet[]>([]);
   const [pr, setPr] = useState<ResultPR | null>(null);
@@ -156,10 +159,13 @@ export default function SessionScreen(): React.ReactElement {
   // hydrated, so we depend on its identity to prefill the first set).
   useEffect(() => {
     if (!currentSet) return;
+    const carried = carriedWeightRef.current[exerciseIdx];
     setActualWeight(
-      currentSet.target_weight_kg !== null && currentSet.target_weight_kg !== undefined
-        ? currentSet.target_weight_kg
-        : 0,
+      carried !== undefined
+        ? carried
+        : currentSet.target_weight_kg !== null && currentSet.target_weight_kg !== undefined
+          ? currentSet.target_weight_kg
+          : 0,
     );
     setActualReps(parseTargetReps(currentSet.target_reps, currentSet.target_complexes));
     setSetRpe(null);
@@ -230,6 +236,11 @@ export default function SessionScreen(): React.ReactElement {
 
     const lastSetOfExercise = setIdx === currentExercise.sets.length - 1;
     const lastExercise = exerciseIdx === exercises.length - 1;
+
+    // Carry the weight just used into the next set of the SAME exercise.
+    if (!lastSetOfExercise) {
+      carriedWeightRef.current[exerciseIdx] = actualWeight;
+    }
 
     if (lastSetOfExercise && lastExercise) {
       await finish();

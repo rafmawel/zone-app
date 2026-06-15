@@ -467,6 +467,22 @@ export async function saveCompletedSet(
   await updateDoc(ref, { completed_sets: next });
 }
 
+/**
+ * Overwrite a session's completed sets and recomputed total volume. Used by
+ * the post-session edit screen. Does not change status/date.
+ */
+export async function updateSessionCompletedSets(
+  uid: string,
+  sessionId: string,
+  sets: CompletedSet[],
+  totalVolumeKg: number,
+): Promise<void> {
+  await updateDoc(doc(db, 'users', uid, 'sessions', sessionId), {
+    completed_sets: sets,
+    total_volume_kg: Math.round(totalVolumeKg),
+  });
+}
+
 export interface CompleteSessionSummary {
   rpe?: number;
   duration_minutes: number;
