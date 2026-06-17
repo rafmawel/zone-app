@@ -26,6 +26,7 @@ import {
   type TrainingSession,
 } from '@/lib/firestore';
 import { formatPaceShort, sessionName, type RunningSessionType } from '@/lib/runningEngine';
+import { formatSpeed } from '@/utils/paceUtils';
 import { HYROX_SESSION_LABELS } from '@/lib/hyroxEngine';
 import { formatDuration } from '@/lib/hyroxScience';
 import { getZoneLevel } from '@/lib/zoneScore';
@@ -351,7 +352,7 @@ function RunRow({ run }: { run: RunSession }): React.ReactElement {
           </View>
         </View>
         <ZoneText variant="caption" color={colors.text.muted} style={styles.runMeta}>
-          {sessionName(run.session_type)} · {(run.actual_distance_km ?? 0).toFixed(2)} km · {formatPaceShort(run.avg_pace_sec_per_km ?? 0)} /km · {Math.round((run.actual_duration_seconds ?? 0) / 60)} min
+          {sessionName(run.session_type)} · {(run.actual_distance_km ?? 0).toFixed(2)} km · {formatPaceShort(run.avg_pace_sec_per_km ?? 0)} /km{run.avg_pace_sec_per_km ? ` · ${formatSpeed(run.avg_pace_sec_per_km)}` : ''} · {Math.round((run.actual_duration_seconds ?? 0) / 60)} min
         </ZoneText>
       </View>
     </View>

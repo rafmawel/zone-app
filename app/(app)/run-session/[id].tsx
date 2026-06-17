@@ -27,6 +27,7 @@ import {
   sessionRpe,
   type RunningSessionType,
 } from '@/lib/runningEngine';
+import { formatSpeed } from '@/utils/paceUtils';
 import { computeAndSaveWorkloadEntry } from '@/lib/pro';
 import { readCurrentWeek, readProgrammeQueue, recordSessionComplete, startWeek } from '@/lib/weekTracking';
 import { ZoneOrbe } from '@/components/ZoneOrbe';
@@ -507,6 +508,11 @@ export default function RunSessionScreen(): React.ReactElement {
               style={[styles.fieldInput, computedPace != null ? styles.fieldInputAuto : null]}
             />
             <ZoneText style={styles.fieldUnit}>/km</ZoneText>
+            {formatSpeed(computedPace ?? parseMmss(paceManualText) ?? 0) ? (
+              <ZoneText style={styles.fieldSpeed}>
+                · {formatSpeed(computedPace ?? parseMmss(paceManualText) ?? 0)}
+              </ZoneText>
+            ) : null}
           </View>
           {computedPace != null ? (
             <ZoneText style={styles.paceHint}>Calculé automatiquement (durée ÷ distance)</ZoneText>
@@ -631,7 +637,9 @@ export default function RunSessionScreen(): React.ReactElement {
                 <View style={[styles.structureDot, { backgroundColor: dotColor(s.kind, accentColor) }]} />
                 <ZoneText variant="caption" color={colors.text.secondary} style={styles.structureText}>
                   {s.label}
-                  {s.target_pace_sec_per_km ? ` · ${formatPace(s.target_pace_sec_per_km)}` : ''}
+                  {s.target_pace_sec_per_km
+                    ? ` · ${formatPace(s.target_pace_sec_per_km)} · ${formatSpeed(s.target_pace_sec_per_km)}`
+                    : ''}
                 </ZoneText>
               </View>
             ))}
@@ -724,7 +732,7 @@ export default function RunSessionScreen(): React.ReactElement {
           <View style={styles.targetCard}>
             <ZoneText style={styles.targetLabel}>ALLURE CIBLE</ZoneText>
             <ZoneText style={styles.targetValue}>
-              {formatPace(repPace)} /km · {sessionName(sessionType)}
+              {formatPace(repPace)} /km · {formatSpeed(repPace)} · {sessionName(sessionType)}
             </ZoneText>
           </View>
         ) : null}
@@ -925,6 +933,7 @@ const styles = StyleSheet.create({
   },
   fieldInputAuto: { color: 'rgba(255,255,255,0.7)' },
   fieldUnit: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: colors.text.secondary },
+  fieldSpeed: { fontFamily: 'Inter_500Medium', fontSize: 13, color: 'rgba(255,255,255,0.6)', marginLeft: 6 },
   paceHint: {
     fontFamily: 'Inter_400Regular',
     fontStyle: 'italic',
