@@ -431,6 +431,7 @@ export default function ProfileScreen(): React.ReactElement {
                   current_week: 1,
                   current_day: 1,
                   mesocycle_start: new Date().toISOString().slice(0, 10),
+                  mesocycle_start_block: 1,
                 });
               }
               setCurrentWeeks((c) => ({ ...c, [sport]: 1 }));
@@ -1171,6 +1172,7 @@ export default function ProfileScreen(): React.ReactElement {
                             current_week: 1,
                             current_day: 1,
                             mesocycle_start: new Date().toISOString().slice(0, 10),
+                            mesocycle_start_block: 1,
                           });
                         }
                         for (const s of ['weightlifting', 'running', 'musculation', 'hyrox'] as ProSportKey[]) {

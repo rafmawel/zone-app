@@ -41,6 +41,7 @@ export async function initializeUserProgram(uid: string): Promise<UserProgram> {
     current_week: 1,
     current_day: 1,
     mesocycle_start: todayDateString(),
+    mesocycle_start_block: 1,
     sessions_per_week: sessions,
     level,
     goal,

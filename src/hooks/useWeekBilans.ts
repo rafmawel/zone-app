@@ -241,6 +241,10 @@ export function useWeekBilans(inputs: UseWeekBilansInputs): UseWeekBilansResult 
 
   for (const { sport, profile } of entries) {
     if (!profile) continue;
+    // Weightlifting advances automatically on each completed session (single
+    // source of truth = state/program), so it has no manual "valider la
+    // semaine" bilan card.
+    if (sport === 'weightlifting') continue;
     const weekNumber = readCurrentWeek(raw, sport);
     const stateBase = parseStateFromRaw(raw, sport, weekNumber);
     const state: WeekState = {

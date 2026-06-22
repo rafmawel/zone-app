@@ -16,7 +16,7 @@ import { auth } from '@/lib/firebase';
 import {
   completeSession,
   updateQueueItem,
-  countCompletedSessionsSince,
+  countCompletedWeightliftingSessionsSince,
   getExerciseMaxes,
   getSession,
   getUserProgram,
@@ -33,7 +33,7 @@ import {
 } from '@/lib/firestore';
 import { checkAndAdvanceProgram, computeRestSeconds, estimateOneRepMax } from '@/lib/programEngine';
 import { computeAndSaveWorkloadEntry } from '@/lib/pro';
-import { recordSessionComplete, readProgrammeQueue, readCurrentWeek, startWeek } from '@/lib/weekTracking';
+import { recordSessionComplete, setCurrentWeek, startWeek } from '@/lib/weekTracking';
 import { ZoneOrbe } from '@/components/ZoneOrbe';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { getExerciseById, type Exercise } from '@/data/exercises';
@@ -81,6 +81,7 @@ export default function SessionScreen(): React.ReactElement {
   const [completedSets, setCompletedSets] = useState<CompletedSet[]>([]);
   const [pr, setPr] = useState<ResultPR | null>(null);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
+  const [weekAdvanceMsg, setWeekAdvanceMsg] = useState<string | null>(null);
   const [infoVisible, setInfoVisible] = useState<boolean>(false);
   const startedAtRef = useRef<number>(Date.now());
   const ringProgress = useSharedValue(0);
@@ -310,22 +311,37 @@ export default function SessionScreen(): React.ReactElement {
       }).catch(() => undefined);
       await reconcileMaxesFromSession(user.uid, allSets, maxes).catch(() => undefined);
       if (program) {
-        const completedSince = await countCompletedSessionsSince(user.uid, program.mesocycle_start);
-        const sortedSessions: TrainingSession[] = Array.from(
-          { length: completedSince },
-          () => ({ id: '', date: '', sport_key: 'weightlifting', status: 'completed', created_at: null }),
+        // Record this completion under the week actually trained, then
+        // recompute the programme position from the musculation-excluded count.
+        // state/program is the single source of truth; keep the queue pointer
+        // (weightlifting_current_week) in sync so the bilan never desyncs.
+        const trainedWeek = Math.min(4, Math.max(1, program.current_week));
+        try {
+          await startWeek(user.uid, 'weightlifting', trainedWeek, {
+            sessions: program.sessions_per_week,
+          });
+          await recordSessionComplete(user.uid, 'weightlifting', trainedWeek, {});
+        } catch {
+          // tracking is best effort
+        }
+        const completedSince = await countCompletedWeightliftingSessionsSince(
+          user.uid,
+          program.mesocycle_start,
         );
-        const advanced = checkAndAdvanceProgram(program, sortedSessions);
+        const advanced = checkAndAdvanceProgram(program, completedSince);
         await saveUserProgram(user.uid, advanced);
-      }
-      try {
-        const queue = await readProgrammeQueue(user.uid);
-        const week = readCurrentWeek(queue, 'weightlifting');
-        const sessionsPerWeek = program?.sessions_per_week ?? 3;
-        await startWeek(user.uid, 'weightlifting', week, { sessions: sessionsPerWeek });
-        await recordSessionComplete(user.uid, 'weightlifting', week, {});
-      } catch {
-        // tracking is best effort
+        await setCurrentWeek(user.uid, 'weightlifting', advanced.current_week).catch(
+          () => undefined,
+        );
+        if (advanced.current_block !== program.current_block) {
+          setWeekAdvanceMsg(
+            `Bloc ${program.current_block} terminé ! Bloc ${advanced.current_block} · semaine 1 démarrée.`,
+          );
+        } else if (advanced.current_week !== program.current_week) {
+          setWeekAdvanceMsg(
+            `Semaine ${program.current_week} terminée ! Semaine ${advanced.current_week} démarrée.`,
+          );
+        }
       }
     } catch {
       // surfaced via summary; user can retry navigating
@@ -374,6 +390,7 @@ export default function SessionScreen(): React.ReactElement {
         volume={summary.volume}
         prs={summary.prs}
         completedSets={completedSets}
+        weekAdvanceMessage={weekAdvanceMsg}
         onClose={onReturnToDashboard}
       />
     );
@@ -1156,6 +1173,7 @@ function SummaryView({
   volume,
   prs,
   completedSets,
+  weekAdvanceMessage,
   onClose,
 }: {
   accentColor: string;
@@ -1165,6 +1183,7 @@ function SummaryView({
   volume: number;
   prs: ResultPR[];
   completedSets: CompletedSet[];
+  weekAdvanceMessage?: string | null;
   onClose: () => void;
 }): React.ReactElement {
   return (
@@ -1178,6 +1197,11 @@ function SummaryView({
           <SummaryStat label="VOLUME" value={`${volume}`} unit="kg" />
           <SummaryStat label="SÉRIES" value={`${completedSets.length}`} unit="" />
         </View>
+        {weekAdvanceMessage ? (
+          <View style={styles.weekAdvanceBanner}>
+            <ZoneText style={styles.weekAdvanceText}>🎉 {weekAdvanceMessage}</ZoneText>
+          </View>
+        ) : null}
         {prs.length > 0 ? (
           <View style={styles.prsCard}>
             <ZoneText variant="caption" color={colors.text.muted} style={styles.prsLabel}>
@@ -1551,6 +1575,19 @@ const styles = StyleSheet.create({
   summaryStatValueRow: { flexDirection: 'row', alignItems: 'baseline' },
   summaryStatValue: { fontSize: 32, color: colors.text.primary, lineHeight: 36 },
   summaryStatUnit: { marginLeft: 4 },
+  weekAdvanceBanner: {
+    marginTop: 20,
+    backgroundColor: 'rgba(27,202,130,0.12)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  weekAdvanceText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    color: colors.scoreGreen,
+    lineHeight: 18,
+  },
   prsCard: {
     marginTop: 20,
     backgroundColor: colors.bg.card,

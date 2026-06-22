@@ -30,22 +30,6 @@ export function roundToBar(weightKg: number): number {
   return Math.max(20, Math.round(weightKg / 2.5) * 2.5);
 }
 
-const BLOCK_PERCENTAGES: Record<ProgramBlock, Record<WeekIndex, number>> = {
-  1: { 1: 65, 2: 70, 3: 75, 4: 55 },
-  2: { 1: 75, 2: 80, 3: 85, 4: 60 },
-  3: { 1: 82, 2: 88, 3: 93, 4: 65 },
-};
-
-export function getTrainingPercentage(
-  block: ProgramBlock,
-  week: WeekIndex,
-  level: string,
-): number {
-  const base = BLOCK_PERCENTAGES[block][week];
-  if (level === 'avance' || level === 'confirme') return base + 5;
-  return base;
-}
-
 export function getBlockName(block: ProgramBlock): string {
   if (block === 1) return 'ACCUMULATION';
   if (block === 2) return 'INTENSIFICATION';
@@ -860,23 +844,30 @@ export function getNextSessionDate(
   return `${y}-${m}-${d}`;
 }
 
+/**
+ * Recompute block/week/day from the total number of completed weightlifting
+ * sessions since the mesocycle started.
+ *
+ * Idempotent: the block is derived from the FIXED `mesocycle_start_block`
+ * (default 1) plus the number of finished 4-week blocks — never from the live
+ * `current_block`, so calling this on every completion can't double-advance.
+ *
+ * @param program current programme state
+ * @param totalCompleted completed weightlifting sessions since mesocycle_start
+ */
 export function checkAndAdvanceProgram(
   program: UserProgram,
-  completedSessions: TrainingSession[],
+  totalCompleted: number,
 ): UserProgram {
-  const sortedCompleted = completedSessions
-    .filter((s) => s.status === 'completed')
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  const totalCompleted = sortedCompleted.length;
+  const total = Math.max(0, Math.floor(totalCompleted));
   const sessionsPerWeek = Math.max(1, program.sessions_per_week);
-  const weeksDone = Math.floor(totalCompleted / sessionsPerWeek);
-  const dayInWeek = (totalCompleted % sessionsPerWeek) + 1;
+  const weeksDone = Math.floor(total / sessionsPerWeek);
+  const dayInWeek = (total % sessionsPerWeek) + 1;
 
-  let block = program.current_block;
-  let week = (weeksDone % 4) + 1;
+  const startBlock = program.mesocycle_start_block ?? 1;
   const blocksFinished = Math.floor(weeksDone / 4);
-  block = ((((program.current_block - 1) + blocksFinished) % 3) + 1) as ProgramBlock;
+  const week = (weeksDone % 4) + 1;
+  const block = ((((startBlock - 1) + blocksFinished) % 3) + 1) as ProgramBlock;
 
   return {
     ...program,
