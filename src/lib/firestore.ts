@@ -142,6 +142,9 @@ export interface UserProgram {
   current_week: number;
   current_day: number;
   mesocycle_start: string;
+  /** Block the current mesocycle started on (fixed). Lets advancement stay
+   *  idempotent — derived from a fixed base, never from the live block. */
+  mesocycle_start_block?: ProgramBlock;
   sessions_per_week: number;
   level: string;
   goal: string;
@@ -515,6 +518,34 @@ export async function countCompletedSessionsSince(
   try {
     const snap = await getDocs(q);
     return snap.size;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Count completed WEIGHTLIFTING sessions since a date, excluding musculation.
+ *
+ * Musculation sessions live in the same `sessions` collection with
+ * `sport_key: 'weightlifting'` + `discipline: 'musculation'`; counting them
+ * would wrongly advance the weightlifting programme. This filter keeps the
+ * weightlifting block/week progression honest.
+ */
+export async function countCompletedWeightliftingSessionsSince(
+  uid: string,
+  isoDate: string,
+): Promise<number> {
+  const q = query(
+    collection(db, 'users', uid, 'sessions'),
+    where('status', '==', 'completed'),
+    where('date', '>=', isoDate),
+  );
+  try {
+    const snap = await getDocs(q);
+    return snap.docs.filter((d) => {
+      const s = d.data() as TrainingSession;
+      return s.sport_key === 'weightlifting' && s.discipline !== 'musculation';
+    }).length;
   } catch {
     return 0;
   }
