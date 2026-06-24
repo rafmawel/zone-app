@@ -4,12 +4,12 @@
  *
  * Queue (state/programme_queue):
  *   items.weightlifting_b1_w3_s1..s3 = completed
- *   items.weightlifting_b1_w4_s1     = completed
- *   items.weightlifting_b1_w4_s2/s3  = removed -> available
+ *   items.weightlifting_b1_w4_s1/s2  = completed
+ *   items.weightlifting_b1_w4_s3     = removed -> available
  *   weightlifting_current_week                = 4
  *   weightlifting_week_3_completed_sessions   = 3   (was 4)
  *   weightlifting_week_3_planned_sessions     = 3
- *   weightlifting_week_4_completed_sessions   = 1
+ *   weightlifting_week_4_completed_sessions   = 2
  *   weightlifting_week_4_planned_sessions     = 3
  *
  * Program (state/program) — single source of truth post-fix:
@@ -50,13 +50,14 @@ const COMPLETED_ITEMS = [
   'weightlifting_b1_w3_s2',
   'weightlifting_b1_w3_s3',
   'weightlifting_b1_w4_s1',
+  'weightlifting_b1_w4_s2',
 ];
-const REMOVE_ITEMS = ['weightlifting_b1_w4_s2', 'weightlifting_b1_w4_s3'];
+const REMOVE_ITEMS = ['weightlifting_b1_w4_s3'];
 const QUEUE_SCALARS = {
   weightlifting_current_week: 4,
   weightlifting_week_3_completed_sessions: 3,
   weightlifting_week_3_planned_sessions: 3,
-  weightlifting_week_4_completed_sessions: 1,
+  weightlifting_week_4_completed_sessions: 2,
   weightlifting_week_4_planned_sessions: 3,
 };
 const PROGRAM_PATCH = { current_block: 1, current_week: 4, mesocycle_start_block: 1 };
