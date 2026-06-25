@@ -465,9 +465,9 @@ function distanceOfSteps(steps: RunningSessionStep[]): number {
  * downstream from duration × easy pace, so only the minutes live here.
  */
 const LONG_RUN_MINUTES: Record<ProgramBlockRunning, Record<WeekIndexRunning, number>> = {
-  1: { 1: 60, 2: 65, 3: 70, 4: 50 },
-  2: { 1: 70, 2: 75, 3: 80, 4: 55 },
-  3: { 1: 80, 2: 85, 3: 90, 4: 60 },
+  1: { 1: 70, 2: 75, 3: 80, 4: 55 },
+  2: { 1: 80, 2: 85, 3: 90, 4: 60 },
+  3: { 1: 90, 2: 95, 3: 100, 4: 65 },
 };
 
 /**
