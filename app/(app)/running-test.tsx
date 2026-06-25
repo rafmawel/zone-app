@@ -92,6 +92,11 @@ export default function RunningTestScreen(): React.ReactElement {
     const paces = calculateVDOTPaces(vdot);
     setSaving(true);
     try {
+      // saveRunningProfile does a non-merge setDoc (full overwrite), so every
+      // field has to be carried over explicitly — otherwise redoing the test
+      // would silently wipe the race goal / programme phases (goal_time_seconds,
+      // race_distance, goal_vdot, programme_weeks, programme_start_date) and the
+      // manual EF pace adjustment. Mirrors race-goal.tsx and running-setup.tsx.
       const existing = await getRunningProfile(user.uid);
       await saveRunningProfile(user.uid, {
         vdot,
@@ -103,6 +108,12 @@ export default function RunningTestScreen(): React.ReactElement {
         target_race_date: existing?.target_race_date ?? null,
         long_run_pref:
           existing?.long_run_pref ?? ('dimanche' as LongRunPreference),
+        goal_time_seconds: existing?.goal_time_seconds ?? null,
+        race_distance: existing?.race_distance ?? null,
+        goal_vdot: existing?.goal_vdot ?? null,
+        programme_weeks: existing?.programme_weeks ?? null,
+        programme_start_date: existing?.programme_start_date ?? null,
+        ef_pace_adjustment: existing?.ef_pace_adjustment ?? null,
       });
       router.replace('/(app)/');
     } catch {

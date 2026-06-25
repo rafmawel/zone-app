@@ -11,7 +11,12 @@ import {
   type UserProgram,
 } from './firestore';
 import { generateWeeklySession, rirIntensityDelta } from './programEngine';
-import { buildSessionPlan, calculateVDOTPaces, runningPaceFactor } from './runningEngine';
+import {
+  blockWeekForAbsoluteWeek,
+  buildSessionPlan,
+  calculateVDOTPaces,
+  runningPaceFactor,
+} from './runningEngine';
 import { generateMuscleSession } from './muscleEngine';
 import type { QueueItem } from './programmeQueue';
 import type { MuscleGroup } from '@/data/exercises';
@@ -117,12 +122,16 @@ export async function launchSessionForItem(
     const paces = calculateVDOTPaces(runningProfile.vdot);
     const level =
       runningProfile.vdot < 35 ? 'beginner' : runningProfile.vdot < 55 ? 'intermediate' : 'advanced';
+    // item.week is the absolute programme week; recover the block / week-in-block
+    // so the long-run duration (and any block-specific work) matches the session
+    // shown in the queue instead of always building week 1.
+    const { block, week } = blockWeekForAbsoluteWeek(item.week);
     const plan = buildSessionPlan({
       type: item.runningType,
       paces,
       level,
-      block: 1,
-      week: 1,
+      block,
+      week,
       paceFactor: runningPaceFactor(recentRunRir),
       withStrides: item.runningWithStrides,
       recovery: item.runningRecovery,
