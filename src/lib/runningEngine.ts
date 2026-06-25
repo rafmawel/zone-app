@@ -215,6 +215,10 @@ export interface BuildSessionParams {
   level: 'beginner' | 'intermediate' | 'advanced';
   block: ProgramBlockRunning;
   week: WeekIndexRunning;
+  /** Athlete's current VDOT. Drives the adaptive EF / long-run durations and
+   *  the progressive introduction of quality work, so the programme follows
+   *  the athlete's fitness without any manual reconfiguration. */
+  vdot: number;
   /** Autoregulation multiplier on target paces (<1 faster, >1 slower). */
   paceFactor?: number;
   /** Append 4 × 20 s @ R + 60 s walk strides to the EF run. */
@@ -459,16 +463,53 @@ function distanceOfSteps(steps: RunningSessionStep[]): number {
 }
 
 /**
- * Long-run duration (minutes) per meso-cycle block and week. Daniels'
- * guidance: build the long run gradually, keep it near 25-30 % of weekly
- * volume, and pull it back on the week-4 deload. Distance is derived
- * downstream from duration × easy pace, so only the minutes live here.
+ * Long-run duration (minutes), derived from the athlete's VDOT at generation
+ * time so it tracks fitness automatically. Daniels' guidance: ~25-30 % of
+ * weekly volume, capped by absorption capacity per level. The base steps up
+ * with VDOT, then +5 min per week within a block and +10 min per block; week 4
+ * is the deload (~70 % of base). Bounded 55-120 min.
  */
-const LONG_RUN_MINUTES: Record<ProgramBlockRunning, Record<WeekIndexRunning, number>> = {
-  1: { 1: 70, 2: 75, 3: 80, 4: 55 },
-  2: { 1: 80, 2: 85, 3: 90, 4: 60 },
-  3: { 1: 90, 2: 95, 3: 100, 4: 65 },
-};
+export function getLongRunDuration(vdot: number, block: number, week: number): number {
+  // Tiers set so the worked examples hold: VDOT 35 → 60 (débutant), 42 → 70.
+  const baseByVdot =
+    vdot < 40 ? 60 : // débutant
+    vdot < 45 ? 70 : // intermédiaire bas
+    vdot < 50 ? 80 : // intermédiaire
+    vdot < 55 ? 90 : // intermédiaire haut
+    100;             // avancé
+
+  const blockDelta = (block - 1) * 10;
+
+  // Week-4 deload: 70 % of THIS block's baseline, so it scales per block
+  // (B1/B2/B3 → 40/50/55 at VDOT 35) rather than being flat.
+  if (week === 4) return Math.round(((baseByVdot + blockDelta) * 0.70) / 5) * 5;
+
+  const weekDelta = (week - 1) * 5;
+  return Math.min(120, Math.max(55, baseByVdot + weekDelta + blockDelta));
+}
+
+/**
+ * Easy-run (EF) duration (minutes) from VDOT — a lighter progression than the
+ * long run: +3 min per week within a block, +5 min per block; week 4 deload
+ * (~75 % of base). Bounded 30-75 min.
+ */
+export function getEFDuration(vdot: number, block: number, week: number): number {
+  // Same VDOT tiers as the long run (shifted so VDOT 35 is the débutant tier).
+  const baseByVdot =
+    vdot < 40 ? 35 :
+    vdot < 45 ? 45 :
+    vdot < 50 ? 50 :
+    vdot < 55 ? 55 :
+    60;
+
+  const blockDelta = (block - 1) * 5;
+
+  // Week-4 deload: 75 % of this block's baseline (per block, like the long run).
+  if (week === 4) return Math.round(((baseByVdot + blockDelta) * 0.75) / 5) * 5;
+
+  const weekDelta = (week - 1) * 3;
+  return Math.min(75, Math.max(30, baseByVdot + weekDelta + blockDelta));
+}
 
 /**
  * Map a 1-based absolute programme week onto the 3-block × 4-week meso-cycle:
@@ -488,24 +529,15 @@ export function blockWeekForAbsoluteWeek(absoluteWeek: number): {
 }
 
 export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan {
-  const { type, paces, level, block, week } = params;
+  const { type, paces, level, block, week, vdot } = params;
   let steps: RunningSessionStep[] = [];
   let message = '';
 
   switch (type) {
     case 'EF': {
       const isRecovery = params.recovery === true;
-      const baseMinutes = isRecovery
-        ? level === 'beginner'
-          ? 25
-          : level === 'intermediate'
-            ? 35
-            : 40
-        : level === 'beginner'
-          ? 35
-          : level === 'intermediate'
-            ? 50
-            : 60;
+      // Duration scales with VDOT (and block/week); week 4 is the deload.
+      const baseMinutes = getEFDuration(vdot, block, week);
       const efPace = isRecovery ? paces.E_slow : paces.E_fast;
       steps = [
         steady(
@@ -529,11 +561,11 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
       break;
     }
     case 'SL': {
-      // Long-run duration builds across the 4-week block and steps up each
-      // block (see LONG_RUN_MINUTES); week 4 is the deload. The last quarter
+      // Long-run duration scales with the athlete's VDOT and builds across the
+      // block (see getLongRunDuration); week 4 is the deload. The last quarter
       // (capped at 20 min) drops to E_slow so fatigue accumulates without
       // breaking form. Distance is derived from duration × easy pace below.
-      const minutes = LONG_RUN_MINUTES[block]?.[week] ?? 60;
+      const minutes = getLongRunDuration(vdot, block, week);
       const slowMinutes = Math.min(20, Math.round(minutes / 4));
       const fastMinutes = Math.max(10, minutes - slowMinutes);
       steps = [
@@ -737,41 +769,60 @@ type TemplateSlot = {
   recovery?: boolean;
 };
 
-function templateForBlock(block: ProgramBlockRunning, sessions: number): TemplateSlot[] {
-  const s = Math.max(2, Math.min(6, sessions));
-  const EFs: TemplateSlot = { type: 'EF', withStrides: true };
-  const EFr: TemplateSlot = { type: 'EF', recovery: true };
-  if (block === 1) {
-    // Base aérobie: all easy + strides + hill repeats. No threshold work.
-    const map: Record<number, TemplateSlot[]> = {
-      2: [EFs, { type: 'SL' }],
-      3: [EFs, EFr, { type: 'SL' }],
-      4: [EFs, { type: 'CO' }, EFr, { type: 'SL' }],
-      5: [EFs, { type: 'CO' }, EFr, EFs, { type: 'SL' }],
-      6: [EFs, { type: 'CO' }, EFr, EFs, { type: 'RA' }, { type: 'SL' }],
-    };
-    return map[s];
+/** EF / SL plus the `EF_strides` shorthand (an easy run finished with 4
+ *  strides). Quality codes (CO/IV/RA/…) map straight to their session type. */
+type WeeklySessionType = RunningSessionType | 'EF_strides';
+
+/**
+ * Choose the week's session types from the athlete's VDOT and the block,
+ * introducing quality work progressively while keeping the Seiler 80/20 easy
+ * bias. Low VDOT = pure aerobic base; tempo/hills then intervals appear earlier
+ * as VDOT climbs. The long run (SL) is always last.
+ *
+ * The hand-tuned patterns cover 2-3 sessions/week; 4-6 reuse the same quality
+ * core and pad easy volume (an EF + strides first, then plain EF) ahead of the
+ * long run, so higher frequencies never collapse back to 3 sessions.
+ */
+export function getWeeklySessionTypes(
+  vdot: number,
+  block: number,
+  sessionsPerWeek: number,
+): WeeklySessionType[] {
+  const n = Math.max(2, Math.min(6, Math.round(sessionsPerWeek)));
+
+  let base: WeeklySessionType[];
+  if (vdot < 35) {
+    // Pas encore prêt pour la qualité : endurance pure.
+    base = n === 2 ? ['EF', 'SL'] : ['EF', 'EF', 'SL'];
+  } else if (vdot < 40) {
+    if (block === 1) base = n === 2 ? ['EF', 'SL'] : ['EF', 'EF_strides', 'SL'];
+    else if (block === 2) base = n === 2 ? ['CO', 'SL'] : ['EF', 'CO', 'SL'];
+    else base = n === 2 ? ['CO', 'SL'] : ['CO', 'IV', 'SL'];
+  } else if (vdot < 45) {
+    if (block === 1) base = n === 2 ? ['EF_strides', 'SL'] : ['EF', 'CO', 'SL'];
+    else if (block === 2) base = n === 2 ? ['CO', 'SL'] : ['CO', 'IV', 'SL'];
+    else base = n === 2 ? ['IV', 'SL'] : ['CO', 'IV', 'SL'];
+  } else {
+    if (block === 1) base = n === 2 ? ['CO', 'SL'] : ['EF', 'CO', 'SL'];
+    else if (block === 2) base = n === 2 ? ['IV', 'SL'] : ['CO', 'IV', 'SL'];
+    else base = n === 2 ? ['IV', 'SL'] : ['IV', 'RA', 'SL'];
   }
-  if (block === 2) {
-    // Développement: threshold + VO2max introduced, easy volume preserved.
-    const map: Record<number, TemplateSlot[]> = {
-      2: [{ type: 'TC' }, { type: 'SL' }],
-      3: [EFs, { type: 'TC' }, { type: 'SL' }],
-      4: [EFs, { type: 'IV' }, EFr, { type: 'SL' }],
-      5: [EFs, { type: 'IV' }, EFr, { type: 'TC' }, { type: 'SL' }],
-      6: [EFs, { type: 'IV' }, EFr, { type: 'TC' }, { type: 'RA' }, { type: 'SL' }],
-    };
-    return map[s];
+
+  if (n <= base.length) return base;
+
+  // 4-6 sessions: keep the quality core, add easy volume before the long run.
+  const head = base.slice(0, base.length - 1);
+  const filler: WeeklySessionType[] = [];
+  for (let i = 0; i < n - base.length; i += 1) {
+    filler.push(i === 0 ? 'EF_strides' : 'EF');
   }
-  // Spécificité: race-pace work front and centre.
-  const map: Record<number, TemplateSlot[]> = {
-    2: [{ type: 'AS' }, { type: 'SL' }],
-    3: [EFs, { type: 'AS' }, { type: 'SL' }],
-    4: [EFs, { type: 'IV' }, EFr, { type: 'SL' }],
-    5: [EFs, { type: 'IV' }, EFr, { type: 'AS' }, { type: 'SL' }],
-    6: [EFs, { type: 'IV' }, EFr, { type: 'AS' }, { type: 'RA' }, { type: 'SL' }],
-  };
-  return map[s];
+  return [...head, ...filler, 'SL'];
+}
+
+/** Expand a WeeklySessionType into a build slot (EF_strides → EF + strides). */
+function toTemplateSlot(t: WeeklySessionType): TemplateSlot {
+  if (t === 'EF_strides') return { type: 'EF', withStrides: true };
+  return { type: t };
 }
 
 const DAY_LAYOUT: Record<number, number[]> = {
@@ -782,33 +833,25 @@ const DAY_LAYOUT: Record<number, number[]> = {
   6: [0, 1, 2, 3, 5, 6],
 };
 
-const QUALITY_TYPES: ReadonlySet<RunningSessionType> = new Set([
-  'IV',
-  'RV',
-  'TC',
-  'TB',
-  'CO',
-  'AS',
-]);
-
 export function getWeeklyDistribution(
   sessionsPerWeek: number,
   block: ProgramBlockRunning,
   week: WeekIndexRunning,
+  vdot: number,
 ): WeeklyPlan {
   const sessions = Math.max(2, Math.min(6, sessionsPerWeek));
-  const seq = templateForBlock(block, sessions);
+  const seq: TemplateSlot[] = getWeeklySessionTypes(vdot, block, sessions).map(toTemplateSlot);
   const days = DAY_LAYOUT[sessions] ?? [0, 2, 4, 6];
-  // Deload week: swap quality work for a recovery EF; trim the long run.
+  // Deload week (week 4): easy only. Every quality / easy slot becomes a
+  // recovery EF and the long run is kept but shortened — the actual durations
+  // drop via getEFDuration / getLongRunDuration's week-4 branch.
   const deload = week === 4;
   const adjusted: TemplateSlot[] = deload
-    ? seq.map((slot) => {
-        if (QUALITY_TYPES.has(slot.type)) {
-          return { type: 'EF', recovery: true };
-        }
-        if (slot.type === 'SL') return { type: 'SL', recovery: true };
-        return slot;
-      })
+    ? seq.map((slot) =>
+        slot.type === 'SL'
+          ? { type: 'SL', recovery: true }
+          : { type: 'EF', recovery: true },
+      )
     : seq;
   const items: WeeklyPlanItem[] = [];
   for (let d = 0; d < 7; d += 1) {
