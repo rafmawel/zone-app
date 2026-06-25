@@ -458,8 +458,37 @@ function distanceOfSteps(steps: RunningSessionStep[]): number {
   return total / 1000;
 }
 
+/**
+ * Long-run duration (minutes) per meso-cycle block and week. Daniels'
+ * guidance: build the long run gradually, keep it near 25-30 % of weekly
+ * volume, and pull it back on the week-4 deload. Distance is derived
+ * downstream from duration × easy pace, so only the minutes live here.
+ */
+const LONG_RUN_MINUTES: Record<ProgramBlockRunning, Record<WeekIndexRunning, number>> = {
+  1: { 1: 60, 2: 65, 3: 70, 4: 50 },
+  2: { 1: 70, 2: 75, 3: 80, 4: 55 },
+  3: { 1: 80, 2: 85, 3: 90, 4: 60 },
+};
+
+/**
+ * Map a 1-based absolute programme week onto the 3-block × 4-week meso-cycle:
+ * weeks 1-4 → block 1, 5-8 → block 2, 9-12 → block 3, then it wraps. Running
+ * queue items carry the absolute week, so this recovers the block / week-in-block
+ * the session engine needs (long-run progression, block-specific work).
+ */
+export function blockWeekForAbsoluteWeek(absoluteWeek: number): {
+  block: ProgramBlockRunning;
+  week: WeekIndexRunning;
+} {
+  const w = Math.max(1, Math.floor(absoluteWeek));
+  const zeroBased = (w - 1) % 12;
+  const block = (Math.floor(zeroBased / 4) + 1) as ProgramBlockRunning;
+  const week = ((zeroBased % 4) + 1) as WeekIndexRunning;
+  return { block, week };
+}
+
 export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan {
-  const { type, paces, level, block } = params;
+  const { type, paces, level, block, week } = params;
   let steps: RunningSessionStep[] = [];
   let message = '';
 
@@ -500,22 +529,21 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
       break;
     }
     case 'SL': {
-      // 20-30 % of weekly volume. The last 20 minutes drop a notch
-      // (E_slow) so fatigue accumulates without breaking form.
-      const baseMinutes =
-        level === 'beginner' ? 60 : level === 'intermediate' ? 80 : 100;
-      const minutes = params.recovery
-        ? Math.round(baseMinutes * 0.75)
-        : baseMinutes;
+      // Long-run duration builds across the 4-week block and steps up each
+      // block (see LONG_RUN_MINUTES); week 4 is the deload. The last quarter
+      // (capped at 20 min) drops to E_slow so fatigue accumulates without
+      // breaking form. Distance is derived from duration × easy pace below.
+      const minutes = LONG_RUN_MINUTES[block]?.[week] ?? 60;
       const slowMinutes = Math.min(20, Math.round(minutes / 4));
       const fastMinutes = Math.max(10, minutes - slowMinutes);
       steps = [
         steady('Sortie longue · allure facile', fastMinutes, paces.E_fast),
         steady('Sortie longue · dernière partie', slowMinutes, paces.E_slow),
       ];
-      message = params.recovery
-        ? 'Sortie longue allégée. On garde la routine sans casser les jambes.'
-        : 'Reste sur le pied gauche du couloir. Les 20 dernières minutes, lâche un peu l’allure : la fatigue se construit sans casser la foulée.';
+      message =
+        week === 4
+          ? 'Sortie longue allégée. On garde la routine sans casser les jambes.'
+          : 'Reste sur le pied gauche du couloir. Les 20 dernières minutes, lâche un peu l’allure : la fatigue se construit sans casser la foulée.';
       break;
     }
     case 'TC': {

@@ -1,5 +1,6 @@
 import { previewWeightliftingSession, projectProgram } from './programEngine';
 import {
+  blockWeekForAbsoluteWeek,
   buildSessionPlan,
   calculateVDOTPaces,
   getWeeklyDistribution,
@@ -210,6 +211,10 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
     const goalDistance = runningProfile.reference_distance ?? undefined;
     const goalTimeSeconds = runningProfile.goal_time_seconds ?? undefined;
     for (let w = 1; w <= POOL_WEEKS; w += 1) {
+      // The queue key keeps the legacy block-1 / absolute-week shape (no data
+      // migration), but the session content needs the real block / week-in-block
+      // so the preview duration matches what launchSessionForItem will build.
+      const { block: slBlock, week: slWeek } = blockWeekForAbsoluteWeek(w);
       slots.forEach((slot, idx) => {
         const s = idx + 1;
         const t = slot.type as RunningSessionType;
@@ -217,8 +222,8 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
           type: t,
           paces,
           level,
-          block: 1,
-          week: 1,
+          block: slBlock,
+          week: slWeek,
           withStrides: slot.withStrides,
           recovery: slot.recovery,
           goalDistance,
