@@ -119,9 +119,12 @@ export async function launchSessionForItem(
   }
 
   if (item.sport === 'running' && runningProfile && item.runningType) {
-    const paces = calculateVDOTPaces(runningProfile.vdot);
+    // VDOT drives the adaptive durations / session types at generation time, so
+    // the session always reflects the athlete's current fitness.
+    const vdot = Number.isFinite(runningProfile.vdot) ? runningProfile.vdot : 35;
+    const paces = calculateVDOTPaces(vdot);
     const level =
-      runningProfile.vdot < 35 ? 'beginner' : runningProfile.vdot < 55 ? 'intermediate' : 'advanced';
+      vdot < 35 ? 'beginner' : vdot < 55 ? 'intermediate' : 'advanced';
     // item.week is the absolute programme week; recover the block / week-in-block
     // so the long-run duration (and any block-specific work) matches the session
     // shown in the queue instead of always building week 1.
@@ -132,6 +135,7 @@ export async function launchSessionForItem(
       level,
       block,
       week,
+      vdot,
       paceFactor: runningPaceFactor(recentRunRir),
       withStrides: item.runningWithStrides,
       recovery: item.runningRecovery,

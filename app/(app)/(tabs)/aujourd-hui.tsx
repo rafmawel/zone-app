@@ -262,7 +262,7 @@ export default function ProgrammeScreen(): React.ReactElement {
       if (runningProfile && option === 'recovery') {
         const paces = calculateVDOTPaces(runningProfile.vdot);
         const level = runningProfile.vdot < 35 ? 'beginner' : runningProfile.vdot < 55 ? 'intermediate' : 'advanced';
-        const plan = buildSessionPlan({ type: 'RA', paces, level, block: 1, week: 1, paceFactor: runningPaceFactor(recentRunRir) });
+        const plan = buildSessionPlan({ type: 'RA', paces, level, block: 1, week: 1, vdot: runningProfile.vdot, paceFactor: runningPaceFactor(recentRunRir) });
         const id = await createRunSession(user.uid, {
           date: todayDateString(),
           session_type: plan.type,

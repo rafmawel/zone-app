@@ -192,8 +192,12 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
 
   // Running
   if (runningProfile) {
-    const paces = calculateVDOTPaces(runningProfile.vdot);
-    const level = runningLevel(runningProfile.vdot);
+    // VDOT drives the adaptive durations and session-type selection at runtime,
+    // so the queue always reflects the athlete's current fitness — no stored
+    // baked-in durations, no manual reconfiguration when the VDOT improves.
+    const vdot = Number.isFinite(runningProfile.vdot) ? runningProfile.vdot : 35;
+    const paces = calculateVDOTPaces(vdot);
+    const level = runningLevel(vdot);
     // Honour the athlete's chosen weekly frequency. The engine clamps
     // to 2..6 internally, but we re-clamp here so an undefined or
     // out-of-range value never silently collapses to the default 3.
@@ -206,15 +210,16 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
           : 3,
       ),
     );
-    const dist = getWeeklyDistribution(runPerWeek, 1, 1);
-    const slots = dist.items.filter((i) => i.type !== 'REST');
     const goalDistance = runningProfile.reference_distance ?? undefined;
     const goalTimeSeconds = runningProfile.goal_time_seconds ?? undefined;
     for (let w = 1; w <= POOL_WEEKS; w += 1) {
       // The queue key keeps the legacy block-1 / absolute-week shape (no data
-      // migration), but the session content needs the real block / week-in-block
-      // so the preview duration matches what launchSessionForItem will build.
+      // migration), but the session content needs the real block / week-in-block:
+      // both the session types (getWeeklyDistribution) and the durations depend
+      // on it, so the distribution is recomputed per week rather than reused.
       const { block: slBlock, week: slWeek } = blockWeekForAbsoluteWeek(w);
+      const dist = getWeeklyDistribution(runPerWeek, slBlock, slWeek, vdot);
+      const slots = dist.items.filter((i) => i.type !== 'REST');
       slots.forEach((slot, idx) => {
         const s = idx + 1;
         const t = slot.type as RunningSessionType;
@@ -224,6 +229,7 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
           level,
           block: slBlock,
           week: slWeek,
+          vdot,
           withStrides: slot.withStrides,
           recovery: slot.recovery,
           goalDistance,
