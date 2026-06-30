@@ -776,41 +776,54 @@ type WeeklySessionType = RunningSessionType | 'EF_strides';
 /**
  * Choose the week's session types from the athlete's VDOT and the block,
  * introducing quality work progressively while keeping the Seiler 80/20 easy
- * bias. Low VDOT = pure aerobic base; tempo/hills then intervals appear earlier
- * as VDOT climbs. The long run (SL) is always last.
+ * bias. Low VDOT = pure aerobic base; tempo/hills then intervals appear as VDOT
+ * climbs.
  *
- * The hand-tuned patterns cover 2-3 sessions/week; 4-6 reuse the same quality
- * core and pad easy volume (an EF + strides first, then plain EF) ahead of the
- * long run, so higher frequencies never collapse back to 3 sessions.
+ * Invariants:
+ *   - returns EXACTLY `sessionsPerWeek` sessions (2-6), never more,
+ *   - the long run (SL) is always the last session (except on a deload week),
+ *   - a deload week is easy-only (all EF, no long run).
+ *
+ * The hand-tuned patterns target 2-3 sessions/week; 4-6 reuse the same quality
+ * core and pad easy volume (one strides day, then plain EF) ahead of the long
+ * run, so higher frequencies never collapse back to 3 sessions.
  */
 export function getWeeklySessionTypes(
   vdot: number,
   block: number,
   sessionsPerWeek: number,
+  isDeload: boolean,
 ): WeeklySessionType[] {
   const n = Math.max(2, Math.min(6, Math.round(sessionsPerWeek)));
 
+  // Deload week: easy only, no long run — exactly n easy runs.
+  if (isDeload) return Array<WeeklySessionType>(n).fill('EF');
+
+  // VDOT < 40 — pure aerobic base: (n-1) easy runs (last carries strides) + SL.
+  if (vdot < 40) {
+    const easy: WeeklySessionType[] = Array<WeeklySessionType>(Math.max(1, n - 1)).fill('EF');
+    easy[easy.length - 1] = 'EF_strides';
+    return [...easy, 'SL'];
+  }
+
+  // Higher VDOT: a quality core that grows with VDOT and block. The n=2 week
+  // drops the plain EF and keeps [quality, SL]; n>=3 keeps an easy day too.
   let base: WeeklySessionType[];
-  if (vdot < 35) {
-    // Pas encore prêt pour la qualité : endurance pure.
-    base = n === 2 ? ['EF', 'SL'] : ['EF', 'EF', 'SL'];
-  } else if (vdot < 40) {
-    if (block === 1) base = n === 2 ? ['EF', 'SL'] : ['EF', 'EF_strides', 'SL'];
-    else if (block === 2) base = n === 2 ? ['CO', 'SL'] : ['EF', 'CO', 'SL'];
-    else base = n === 2 ? ['CO', 'SL'] : ['CO', 'IV', 'SL'];
-  } else if (vdot < 45) {
+  if (vdot < 45) {
     if (block === 1) base = n === 2 ? ['EF_strides', 'SL'] : ['EF', 'CO', 'SL'];
-    else if (block === 2) base = n === 2 ? ['CO', 'SL'] : ['CO', 'IV', 'SL'];
-    else base = n === 2 ? ['IV', 'SL'] : ['CO', 'IV', 'SL'];
+    else base = n === 2 ? ['CO', 'SL'] : ['EF', 'CO', 'SL'];
+  } else if (block === 1) {
+    base = n === 2 ? ['CO', 'SL'] : ['EF', 'CO', 'SL'];
+  } else if (block === 2) {
+    base = n === 2 ? ['IV', 'SL'] : ['CO', 'IV', 'SL'];
   } else {
-    if (block === 1) base = n === 2 ? ['CO', 'SL'] : ['EF', 'CO', 'SL'];
-    else if (block === 2) base = n === 2 ? ['IV', 'SL'] : ['CO', 'IV', 'SL'];
-    else base = n === 2 ? ['IV', 'SL'] : ['IV', 'RA', 'SL'];
+    base = n === 2 ? ['IV', 'SL'] : ['IV', 'RA', 'SL'];
   }
 
   if (n <= base.length) return base;
 
-  // 4-6 sessions: keep the quality core, add easy volume before the long run.
+  // 4-6 sessions: keep the quality core, pad easy volume (one strides day first)
+  // before the long run, so the total always equals n.
   const head = base.slice(0, base.length - 1);
   const filler: WeeklySessionType[] = [];
   for (let i = 0; i < n - base.length; i += 1) {
@@ -840,18 +853,14 @@ export function getWeeklyDistribution(
   vdot: number,
 ): WeeklyPlan {
   const sessions = Math.max(2, Math.min(6, sessionsPerWeek));
-  const seq: TemplateSlot[] = getWeeklySessionTypes(vdot, block, sessions).map(toTemplateSlot);
-  const days = DAY_LAYOUT[sessions] ?? [0, 2, 4, 6];
-  // Deload week (week 4): easy only. Every quality / easy slot becomes a
-  // recovery EF and the long run is kept but shortened — the actual durations
-  // drop via getEFDuration / getLongRunDuration's week-4 branch.
   const deload = week === 4;
+  const seq: TemplateSlot[] = getWeeklySessionTypes(vdot, block, sessions, deload).map(toTemplateSlot);
+  const days = DAY_LAYOUT[sessions] ?? [0, 2, 4, 6];
+  // On deload, getWeeklySessionTypes already returns easy-only (no long run);
+  // mark every slot recovery so the pace eases (E_slow) and the duration uses
+  // getEFDuration's week-4 branch.
   const adjusted: TemplateSlot[] = deload
-    ? seq.map((slot) =>
-        slot.type === 'SL'
-          ? { type: 'SL', recovery: true }
-          : { type: 'EF', recovery: true },
-      )
+    ? seq.map((slot) => ({ type: slot.type, recovery: true }))
     : seq;
   const items: WeeklyPlanItem[] = [];
   for (let d = 0; d < 7; d += 1) {
