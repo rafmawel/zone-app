@@ -100,9 +100,9 @@ const CATEGORIES: { label: string; query: string }[] = [
 ];
 
 const QUICK_EXERCISES: { id: string; name: string }[] = [
-  { id: 'snatch', name: 'Arraché' },
-  { id: 'clean_and_jerk', name: 'Épaulé-jeté' },
-  { id: 'front_squat', name: 'Squat avant' },
+  { id: 'snatch', name: 'Snatch' },
+  { id: 'clean_and_jerk', name: 'Clean & Jerk' },
+  { id: 'front_squat', name: 'Front Squat' },
 ];
 
 function weeksUntil(iso: string | null): number | null {

@@ -57,7 +57,7 @@ interface TestSession {
 const SESSION_GROUPS: Record<StrengthTestSport, { 1: TestSession; 2: TestSession }> = {
   weightlifting: {
     1: {
-      label: 'Arraché et squat avant',
+      label: 'Snatch & Front Squat',
       lifts: [
         {
           id: 'snatch',
@@ -72,7 +72,7 @@ const SESSION_GROUPS: Record<StrengthTestSport, { 1: TestSession; 2: TestSession
       ],
     },
     2: {
-      label: 'Épaulé-jeté et développé',
+      label: 'Clean & Jerk & Press',
       lifts: [
         {
           id: 'clean_and_jerk',

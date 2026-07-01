@@ -59,7 +59,7 @@ export interface Exercise {
 export const EXERCISES: Exercise[] = [
   {
     id: 'snatch',
-    name: 'Arraché',
+    name: 'Snatch',
     name_en: 'Snatch',
     sport: 'weightlifting',
     category: 'olympic_lift',
@@ -93,7 +93,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'clean_and_jerk',
-    name: 'Épaulé-jeté',
+    name: 'Clean & Jerk',
     name_en: 'Clean & Jerk',
     sport: 'weightlifting',
     category: 'olympic_lift',
@@ -127,7 +127,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'power_clean',
-    name: 'Épaulé de force',
+    name: 'Power Clean',
     name_en: 'Power Clean',
     sport: 'weightlifting',
     category: 'olympic_lift',
@@ -161,7 +161,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'power_snatch',
-    name: 'Arraché de force',
+    name: 'Power Snatch',
     name_en: 'Power Snatch',
     sport: 'weightlifting',
     category: 'olympic_lift',
@@ -195,8 +195,8 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'hang_clean',
-    name: 'Épaulé suspendu',
-    name_en: 'Hang Clean',
+    name: 'Hang Power Clean',
+    name_en: 'Hang Power Clean',
     sport: 'weightlifting',
     category: 'olympic_lift',
     difficulty: 'intermediate',
@@ -204,11 +204,11 @@ export const EXERCISES: Exercise[] = [
     muscles_primary: ['quadriceps', 'glutes', 'hamstrings', 'traps'],
     muscles_secondary: ['shoulders', 'core', 'forearms', 'lower_back'],
     description:
-      "Clean démarré depuis la position suspendue (barre au-dessus des genoux). Travaille le deuxième tirage et la rapidité sous la barre.",
+      "Clean démarré depuis la position suspendue (barre au-dessus des genoux). Réception coudes hauts SANS squat complet (power = réception haute, cuisses au-dessus de la parallèle). Travaille le deuxième tirage et la vitesse sous la barre.",
     setup:
       "Debout, barre à hauteur des cuisses ou genoux. Prise clean, dos plat, légère flexion des hanches.",
     execution:
-      "Descends jusqu'au-dessus des genoux en bascule de hanche. Extension explosive verticale, réception coudes hauts.",
+      "Descends jusqu'au-dessus des genoux en bascule de hanche (hip hinge explosif). Extension verticale, réception coudes hauts, cuisses au-dessus de la parallèle — sans descendre en squat complet.",
     cues: [
       "Bascule de hanche, pas de squat",
       "Garde le dos plat",
@@ -229,8 +229,8 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'hang_snatch',
-    name: 'Arraché suspendu',
-    name_en: 'Hang Snatch',
+    name: 'Hang Power Snatch',
+    name_en: 'Hang Power Snatch',
     sport: 'weightlifting',
     category: 'olympic_lift',
     difficulty: 'advanced',
@@ -238,11 +238,11 @@ export const EXERCISES: Exercise[] = [
     muscles_primary: ['quadriceps', 'glutes', 'hamstrings', 'traps', 'shoulders'],
     muscles_secondary: ['core', 'forearms', 'lower_back', 'upper_back'],
     description:
-      "Snatch démarré depuis la position suspendue. Focalise le deuxième tirage et la vitesse de réception bras tendus.",
+      "Snatch démarré depuis la position suspendue. Réception bras tendus SANS squat overhead complet (power = réception haute, cuisses au-dessus de la parallèle). Focalise le deuxième tirage et la vitesse sous la barre.",
     setup:
       "Debout, barre au-dessus des genoux, prise snatch large. Dos plat, hanche fléchie.",
     execution:
-      "Bascule contrôlée vers les genoux. Extension explosive complète, réception bras tendus au-dessus de la tête.",
+      "Bascule contrôlée vers les genoux (hip hinge). Extension explosive complète, réception bras tendus au-dessus de la tête, cuisses au-dessus de la parallèle — sans squat overhead complet.",
     cues: [
       "Bascule de hanche propre",
       "Pousse contre le sol",
@@ -263,7 +263,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'snatch_pull',
-    name: 'Tirage arraché',
+    name: 'Snatch Pull',
     name_en: 'Snatch Pull',
     sport: 'weightlifting',
     category: 'olympic_lift',
@@ -297,7 +297,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'clean_pull',
-    name: 'Tirage épaulé',
+    name: 'Clean Pull',
     name_en: 'Clean Pull',
     sport: 'weightlifting',
     category: 'olympic_lift',
@@ -331,7 +331,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'push_jerk',
-    name: 'Jeté debout',
+    name: 'Push Jerk',
     name_en: 'Push Jerk',
     sport: 'weightlifting',
     category: 'olympic_lift',
@@ -365,7 +365,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'split_jerk',
-    name: 'Jeté fendu',
+    name: 'Split Jerk',
     name_en: 'Split Jerk',
     sport: 'weightlifting',
     category: 'olympic_lift',
@@ -399,7 +399,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'back_squat_high',
-    name: 'Squat barre haute',
+    name: 'Back Squat',
     name_en: 'Back Squat High Bar',
     sport: 'both',
     category: 'squat',
@@ -467,7 +467,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'front_squat',
-    name: 'Squat avant',
+    name: 'Front Squat',
     name_en: 'Front Squat',
     sport: 'both',
     category: 'squat',
@@ -501,7 +501,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'overhead_squat',
-    name: 'Squat overhead',
+    name: 'Overhead Squat',
     name_en: 'Overhead Squat',
     sport: 'weightlifting',
     category: 'squat',
@@ -637,7 +637,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'romanian_deadlift',
-    name: 'Soulevé de terre roumain',
+    name: 'Romanian Deadlift',
     name_en: 'Romanian Deadlift',
     sport: 'both',
     category: 'hinge',
@@ -773,7 +773,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'strict_press',
-    name: 'Développé militaire',
+    name: 'Strict Press',
     name_en: 'Strict Press',
     sport: 'both',
     category: 'push',
@@ -807,7 +807,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'push_press',
-    name: 'Développé militaire poussé',
+    name: 'Push Press',
     name_en: 'Push Press',
     sport: 'both',
     category: 'push',
@@ -841,7 +841,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'snatch_balance',
-    name: 'Snatch balance',
+    name: 'Snatch Balance',
     name_en: 'Snatch Balance',
     sport: 'weightlifting',
     category: 'olympic_lift',
@@ -874,7 +874,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'jerk_from_blocks',
-    name: 'Jeté depuis blocs',
+    name: 'Jerk from Blocks',
     name_en: 'Jerk from Blocks',
     sport: 'weightlifting',
     category: 'olympic_lift',
@@ -907,7 +907,7 @@ export const EXERCISES: Exercise[] = [
   },
   {
     id: 'jerk_from_rack',
-    name: 'Jeté depuis le rack',
+    name: 'Jerk from Rack',
     name_en: 'Jerk from Rack',
     sport: 'weightlifting',
     category: 'olympic_lift',
