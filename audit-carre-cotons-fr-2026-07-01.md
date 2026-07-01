@@ -135,7 +135,41 @@
 
 ---
 
-## 4. Notes détaillées page par page
+### 🖼️ 3.6 Design & identité visuelle — analyse dédiée
+
+> Analyse fondée sur l'extraction des *design tokens* réels du thème (couleurs, polices, système de grille) dans le HTML/CSS servi. Le rendu visuel en conditions réelles (navigateur) n'a pas pu être capturé depuis l'environnement d'audit ; les jugements ci-dessous portent sur les tokens et la structure, à confirmer par une revue visuelle.
+
+**Système de design détecté**
+
+| Élément | Valeur réelle | Commentaire |
+|---|---|---|
+| Police principale | **Work Sans** (sans-serif géométrique) | Choix moderne, lisible, cohérent avec un positionnement épuré |
+| Couleur de marque 1 | **Vert sauge `#78a5a3`** | Évoque le naturel / végétal / éco — juste pour le secteur |
+| Couleur de marque 2 | **Teal profond `#00646c`** | Bonne couleur de contraste pour titres et boutons |
+| Neutres | Gris chaud `#71706f`, quasi-noir `#111111`, fond `#f9f9f9` | Palette douce, reposante |
+| Accent | Magenta `#c8036f` | Touche pop, à doser (risque de dissonance avec le vert sauge) |
+| Grille | Système responsive 12 colonnes (thème type Avada/Shella) | Structure éprouvée |
+
+#### ✅ Ce qui fonctionne bien (design)
+- **Cohérence chromatique avec le positionnement.** Le duo vert sauge / teal sur fond blanc cassé installe immédiatement un registre « naturel, doux, artisanal » parfaitement aligné avec le zéro déchet et le Made in France. La couleur *travaille* pour la marque.
+- **Typographie unique et maîtrisée.** Une seule famille (Work Sans) sur tout le site → sobriété et cohérence. Pas de collision de polices.
+- **Direction artistique produit forte.** Photographie soignée et abondante (visuels lifestyle + packshots), qui valorise le fait-main et les tissus (motifs japonais, imprimés fleuris).
+- **Respiration visuelle.** Fond clair `#f9f9f9`, neutres chauds : l'ensemble est aéré, non agressif, cohérent avec une cible féminine sensible à l'esthétique.
+- **Repères de marque récurrents** (♡ dans la barre d'annonce, emojis thématiques) qui donnent une personnalité chaleureuse et « fait maison ».
+
+#### ⚠️ Ce qui ne va pas (design)
+- 🟠 **Incohérence typographique de fond : les noms de produits en Unicode « stylisé ».** C'est autant un problème SEO (§3.2) qu'un **problème de design** : `𝑵𝒆𝒏𝒖𝒑𝒉𝒂𝒓𝒔`, `𝑻𝒐𝒌𝒚𝒐` sont des caractères imposés qui *ignorent la police Work Sans du thème*. Résultat : ces titres s'affichent dans une fausse police italique incohérente avec le reste, au rendu variable selon l'OS/navigateur, parfois en « tofu » (□) sur certains appareils. **Le style décoratif doit venir de la CSS (italique, graisse), pas des caractères.**
+- 🟠 **Surcharge d'emojis dans les titres de section.** « TROUSSES DE TOILETTE 👛 », « CHARLOTTES COUVRE-PLATS 🥣 », « HEADBANDS FLEURIS 💐 »… La répétition d'un emoji par titre alourdit la lecture, donne un côté « amateur » qui contraste avec la qualité de la DA photo, et pose un souci d'accessibilité (vocalisation). → En garder 1 ou 2 maximum comme signature, pas un par section.
+- 🟠 **Hiérarchie visuelle du titrage incohérente** (H1 → H3 sans H2, cf. §3.1) : les niveaux de titres ne reflètent pas une échelle typographique claire, ce qui brouille la lecture des priorités sur la page d'accueil.
+- 🟡 **Risque de dissonance de l'accent magenta `#c8036f`** avec le vert sauge : ces deux couleurs sont presque complémentaires et « vibrent » si mal dosées. → Réserver le magenta aux micro-signaux (badges promo, ♡), jamais aux grandes surfaces.
+- 🟡 **Densité d'images très élevée par page** (jusqu'à 82 visuels en accueil) : belle générosité, mais sans rythme éditorial (alternance texte/visuel, blocs de respiration) la page devient un long défilé qui dilue le message. → Structurer en sections espacées avec titres H2 clairs.
+- 🟡 **Cohérence du bouton d'action à vérifier.** Le bouton d'ajout au panier (`product-form__cart-submit`) doit être la couleur la plus contrastée et constante du site (idéalement le teal `#00646c`) et ne jamais varier d'une page à l'autre — point à contrôler en revue visuelle.
+
+**Verdict design :** une **identité visuelle réellement réussie et différenciante** (palette + photo + police), **sabotée par des détails d'exécution** (Unicode dans les titres, emojis en excès, hiérarchie) qui la font paraître moins professionnelle qu'elle ne l'est. Ce sont des corrections rapides à fort effet perçu.
+
+---
+
+## 4. Notes détaillées par page
 
 | Page | UX | SEO | Perf | Trust | Conv. | Moy. | Remarque clé |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|---|
