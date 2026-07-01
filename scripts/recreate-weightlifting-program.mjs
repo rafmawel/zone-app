@@ -48,10 +48,11 @@ const CONFIG = {
   level: 'debutant',
   goal: 'force_pure',
   sessions_per_week: 3,
-  current_block: 1,
-  current_week: 2,
+  current_block: 2,
+  current_week: 1,
   current_day: 1,
-  default_equipment: 'barre_disques',
+  mesocycle_start_block: 2,
+  equipment: 'salle_complete',
 };
 
 const APPLY = process.argv.includes('--apply');
@@ -105,14 +106,14 @@ async function main() {
     console.warn('  ⚠️  No maxes found — sessions cannot be generated until 1RM exist.');
   }
 
-  // Pull equipment from the sports/halterophilie config if present.
-  let equipment = CONFIG.default_equipment;
+  // Equipment is the explicit target value; the sports/halterophilie config is
+  // read only for reference so any mismatch is visible before applying.
+  const equipment = CONFIG.equipment;
   const sportSnap = await getDoc(doc(db, 'users', uid, 'sports', 'halterophilie'));
   if (sportSnap.exists() && typeof sportSnap.data().equipment === 'string') {
-    equipment = sportSnap.data().equipment;
-    console.log(`\nUsing equipment from sports/halterophilie: ${equipment}`);
+    console.log(`\nsports/halterophilie equipment = ${sportSnap.data().equipment}; writing ${equipment} (per target).`);
   } else {
-    console.log(`\nUsing default equipment: ${equipment}`);
+    console.log(`\nWriting equipment: ${equipment}.`);
   }
 
   // mesocycle_start backdated so it's consistent with being in week N.
@@ -125,6 +126,7 @@ async function main() {
     current_week: CONFIG.current_week,
     current_day: CONFIG.current_day,
     mesocycle_start: mesocycleStart,
+    mesocycle_start_block: CONFIG.mesocycle_start_block,
     sessions_per_week: CONFIG.sessions_per_week,
     level: CONFIG.level,
     goal: CONFIG.goal,
