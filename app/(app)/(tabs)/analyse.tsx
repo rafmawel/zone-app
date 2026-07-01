@@ -233,11 +233,11 @@ export default function AnalyticsScreen(): React.ReactElement {
       name: 'Haltérophilie',
       enoughData: Boolean(snatch || squat),
       primary: snatch
-        ? { label: 'Arraché', value: `${snatch.weight_kg} kg` }
+        ? { label: 'Snatch', value: `${snatch.weight_kg} kg` }
         : squat
-          ? { label: 'Squat avant', value: `${squat.weight_kg} kg` }
+          ? { label: 'Front Squat', value: `${squat.weight_kg} kg` }
           : undefined,
-      secondary: snatch && squat ? { label: 'Squat avant', value: `${squat.weight_kg} kg` } : undefined,
+      secondary: snatch && squat ? { label: 'Front Squat', value: `${squat.weight_kg} kg` } : undefined,
       phrase: 'Continue comme ça, tu progresses semaine après semaine.',
     });
   }

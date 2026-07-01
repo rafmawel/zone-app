@@ -272,7 +272,7 @@ const PRILEPIN_ENFORCED = new Set([
 const BLOCK_SESSIONS: Record<ProgramBlock, SessionBlueprint[]> = {
   1: [
     {
-      name: 'Arraché',
+      name: 'Snatch',
       movements: [
         { exercise_id: 'snatch', sets: 5, reps: 3, pct: 70, role: 'main' },
         { exercise_id: 'overhead_squat', sets: 4, reps: 3, pct: 65, role: 'accessory' },
@@ -282,7 +282,7 @@ const BLOCK_SESSIONS: Record<ProgramBlock, SessionBlueprint[]> = {
       ],
     },
     {
-      name: 'Épaulé-jeté',
+      name: 'Clean & Jerk',
       movements: [
         { exercise_id: 'clean_and_jerk', sets: 5, reps: 1, repsLabel: '2+1', pct: 70, role: 'main' },
         { exercise_id: 'clean_pull', sets: 4, reps: 3, pct: 90, role: 'pull' },
@@ -292,7 +292,7 @@ const BLOCK_SESSIONS: Record<ProgramBlock, SessionBlueprint[]> = {
       ],
     },
     {
-      name: 'Technique et force',
+      name: 'Technique & Strength',
       movements: [
         { exercise_id: 'hang_snatch', sets: 4, reps: 3, pct: 65, role: 'main' },
         { exercise_id: 'power_clean', sets: 4, reps: 3, pct: 70, role: 'main' },
@@ -304,7 +304,7 @@ const BLOCK_SESSIONS: Record<ProgramBlock, SessionBlueprint[]> = {
   ],
   2: [
     {
-      name: 'Arraché lourd',
+      name: 'Heavy Snatch',
       movements: [
         { exercise_id: 'snatch', sets: 6, reps: 2, pct: 80, role: 'main' },
         { exercise_id: 'snatch_balance', sets: 4, reps: 3, pct: 70, role: 'accessory' },
@@ -314,7 +314,7 @@ const BLOCK_SESSIONS: Record<ProgramBlock, SessionBlueprint[]> = {
       ],
     },
     {
-      name: 'Épaulé-jeté lourd',
+      name: 'Heavy Clean & Jerk',
       movements: [
         { exercise_id: 'clean_and_jerk', sets: 6, reps: 1, repsLabel: '1+1', pct: 82, role: 'main' },
         { exercise_id: 'clean_pull', sets: 5, reps: 2, pct: 100, role: 'pull' },
@@ -324,7 +324,7 @@ const BLOCK_SESSIONS: Record<ProgramBlock, SessionBlueprint[]> = {
       ],
     },
     {
-      name: 'Puissance',
+      name: 'Power',
       movements: [
         { exercise_id: 'hang_clean', sets: 4, reps: 2, pct: 78, role: 'main' },
         { exercise_id: 'overhead_squat', sets: 4, reps: 3, pct: 72, role: 'accessory' },
@@ -336,7 +336,7 @@ const BLOCK_SESSIONS: Record<ProgramBlock, SessionBlueprint[]> = {
   ],
   3: [
     {
-      name: 'Réalisation arraché',
+      name: 'Snatch Peaking',
       movements: [
         {
           exercise_id: 'snatch',
@@ -361,7 +361,7 @@ const BLOCK_SESSIONS: Record<ProgramBlock, SessionBlueprint[]> = {
       ],
     },
     {
-      name: 'Réalisation épaulé',
+      name: 'Clean & Jerk Peaking',
       movements: [
         { exercise_id: 'clean_and_jerk', sets: 5, reps: 1, pct: 90, role: 'main' },
         { exercise_id: 'snatch', sets: 5, reps: 1, pct: 90, role: 'main' },
@@ -370,7 +370,7 @@ const BLOCK_SESSIONS: Record<ProgramBlock, SessionBlueprint[]> = {
       ],
     },
     {
-      name: 'Puissance et pics',
+      name: 'Power & Peaking',
       movements: [
         { exercise_id: 'power_snatch', sets: 4, reps: 2, pct: 75, role: 'main' },
         { exercise_id: 'power_clean', sets: 4, reps: 2, pct: 75, role: 'main' },
@@ -385,7 +385,7 @@ const BLOCK_SESSIONS: Record<ProgramBlock, SessionBlueprint[]> = {
 // volume. Pattern is preserved (squat + technique) but fatigue is dropped.
 const DELOAD_SESSIONS: SessionBlueprint[] = [
   {
-    name: 'Décharge arraché',
+    name: 'Snatch Deload',
     movements: [
       { exercise_id: 'snatch', sets: 3, reps: 3, pct: 65, role: 'main' },
       { exercise_id: 'overhead_squat', sets: 3, reps: 3, pct: 60, role: 'accessory' },
@@ -393,14 +393,14 @@ const DELOAD_SESSIONS: SessionBlueprint[] = [
     ],
   },
   {
-    name: 'Décharge épaulé',
+    name: 'Clean & Jerk Deload',
     movements: [
       { exercise_id: 'clean_and_jerk', sets: 3, reps: 3, pct: 65, role: 'main' },
       { exercise_id: 'back_squat_high', sets: 3, reps: 3, pct: 65, role: 'squat' },
     ],
   },
   {
-    name: 'Décharge technique',
+    name: 'Technique Deload',
     movements: [
       { exercise_id: 'power_snatch', sets: 3, reps: 2, pct: 60, role: 'main' },
       { exercise_id: 'power_clean', sets: 3, reps: 2, pct: 60, role: 'main' },
