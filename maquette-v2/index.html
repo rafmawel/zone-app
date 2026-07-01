@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carré Cotons — Accessoires textiles utiles, beaux et faits main en France</title>
+<meta name="description" content="Accessoires de toilette zéro déchet, faits main en France : box démaquillantes lavables, trousses, headbands. Chaque pièce est pensée pour être utile, belle et bien finie.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Work+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --teal:#00646C; --teal-700:#004e54; --sage:#78A5A3; --sage-100:#E4ECE9;
+  --cream:#F9F9F9; --lin:#EFE9DE; --ink:#1C1C1C; --grey:#71706F; --magenta:#C8036F;
+  --serif:'Fraunces',Georgia,'Times New Roman',serif;
+  --sans:'Work Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --maxw:1240px; --r:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--sans);color:var(--ink);background:var(--cream);line-height:1.6;-webkit-font-smoothing:antialiased}
+img{display:block;max-width:100%;height:auto}
+a{color:inherit;text-decoration:none}
+h1,h2,h3{font-family:var(--serif);font-weight:500;line-height:1.08;letter-spacing:-.01em}
+.serif-i{font-family:var(--serif);font-style:italic;font-weight:400}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+.eyebrow{font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--sage);font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:.5em;font-family:var(--sans);font-weight:500;font-size:.95rem;padding:15px 30px;border-radius:100px;border:1.5px solid var(--teal);cursor:pointer;transition:all .25s ease;min-height:48px}
+.btn-primary{background:var(--teal);color:#fff}
+.btn-primary:hover{background:var(--teal-700);border-color:var(--teal-700);transform:translateY(-2px)}
+.btn-ghost{background:transparent;color:var(--teal)}
+.btn-ghost:hover{background:var(--teal);color:#fff}
+.btn-light{border-color:#fff;color:#fff}
+.btn-light:hover{background:#fff;color:var(--teal)}
+
+/* Announcement */
+.announce{background:var(--teal);color:#fff;text-align:center;font-size:.8rem;letter-spacing:.08em;padding:9px 16px;font-weight:500}
+.announce b{font-weight:600}
+
+/* Header */
+header{position:sticky;top:0;z-index:50;background:rgba(249,249,249,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--sage-100)}
+.nav{display:flex;align-items:center;justify-content:space-between;height:74px}
+.logo{font-family:var(--serif);font-size:1.5rem;font-weight:600;letter-spacing:.02em;color:var(--teal)}
+.logo small{display:block;font-family:var(--sans);font-size:.52rem;letter-spacing:.35em;text-transform:uppercase;color:var(--grey);font-weight:500;margin-top:-2px}
+.menu{display:flex;gap:30px;font-size:.9rem;font-weight:400}
+.menu a{position:relative;padding:4px 0}
+.menu a::after{content:"";position:absolute;left:0;bottom:-2px;width:0;height:1.5px;background:var(--teal);transition:width .25s}
+.menu a:hover::after{width:100%}
+.nav-icons{display:flex;gap:18px;align-items:center}
+.nav-icons svg{width:22px;height:22px;stroke:var(--ink);fill:none;stroke-width:1.5}
+.cart-dot{position:relative}
+.cart-dot span{position:absolute;top:-6px;right:-8px;background:var(--magenta);color:#fff;font-family:var(--sans);font-size:.6rem;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;font-weight:600}
+
+/* Hero */
+.hero{position:relative;min-height:82vh;display:flex;align-items:flex-end;color:#fff;overflow:hidden}
+.hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 35%}
+.hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,50,54,.15) 0%,rgba(0,50,54,.62) 100%)}
+.hero-inner{position:relative;z-index:2;padding-bottom:70px;max-width:660px}
+.hero h1{font-size:clamp(2.6rem,6vw,4.6rem);color:#fff;margin-bottom:18px}
+.hero p{font-size:1.12rem;max-width:520px;margin-bottom:30px;color:rgba(255,255,255,.92)}
+.hero .eyebrow{color:#fff;opacity:.85;margin-bottom:16px;display:block}
+
+/* Reassurance strip */
+.reassure{background:#fff;border-bottom:1px solid var(--sage-100)}
+.reassure .wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;padding-top:26px;padding-bottom:26px}
+.reassure .item{display:flex;align-items:center;gap:12px;justify-content:center;text-align:left}
+.reassure svg{width:28px;height:28px;stroke:var(--teal);fill:none;stroke-width:1.4;flex-shrink:0}
+.reassure .item b{display:block;font-size:.86rem;font-weight:600}
+.reassure .item small{font-size:.76rem;color:var(--grey)}
+
+/* Section base */
+section{padding:76px 0}
+.sec-head{max-width:620px;margin-bottom:44px}
+.sec-head.center{margin-left:auto;margin-right:auto;text-align:center}
+.sec-head h2{font-size:clamp(2rem,4vw,2.9rem);margin:12px 0 14px}
+.sec-head p{color:var(--grey);font-size:1.02rem}
+
+/* Category editorial grid */
+.cats{display:grid;grid-template-columns:repeat(6,1fr);grid-auto-rows:210px;gap:16px}
+.cat{position:relative;border-radius:var(--r);overflow:hidden;color:#fff;display:flex;align-items:flex-end;isolation:isolate}
+.cat img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2;transition:transform .7s cubic-bezier(.2,.7,.2,1)}
+.cat::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 35%,rgba(0,50,54,.6));z-index:-1}
+.cat:hover img{transform:scale(1.06)}
+.cat h3{font-size:1.5rem;padding:22px;font-weight:500}
+.cat .arrow{position:absolute;top:18px;right:18px;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.9);display:grid;place-items:center;transform:translateY(-6px);opacity:0;transition:.3s}
+.cat:hover .arrow{transform:translateY(0);opacity:1}
+.cat .arrow svg{width:18px;height:18px;stroke:var(--teal);fill:none;stroke-width:2}
+.cat-lg{grid-column:span 4;grid-row:span 2}
+.cat-sm{grid-column:span 2}
+.cat-md{grid-column:span 2;grid-row:span 2}
+.cat-w{grid-column:span 4}
+
+/* Bestsellers */
+.prod-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px}
+.card{background:#fff;border-radius:var(--r);overflow:hidden;transition:transform .3s,box-shadow .3s;border:1px solid var(--sage-100)}
+.card:hover{transform:translateY(-5px);box-shadow:0 18px 40px -20px rgba(0,80,84,.35)}
+.card-img{position:relative;aspect-ratio:1;overflow:hidden;background:var(--sage-100)}
+.card-img img{width:100%;height:100%;object-fit:cover;transition:transform .6s ease}
+.card:hover .card-img img{transform:scale(1.07)}
+.badge{position:absolute;top:12px;left:12px;background:var(--lin);color:var(--ink);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;font-weight:600;padding:5px 11px;border-radius:100px}
+.badge.new{background:var(--teal);color:#fff}
+.wish{position:absolute;top:12px;right:12px;width:34px;height:34px;background:rgba(255,255,255,.92);border-radius:50%;display:grid;place-items:center}
+.wish svg{width:17px;height:17px;stroke:var(--magenta);fill:none;stroke-width:1.6}
+.card-body{padding:16px 18px 20px}
+.stars{display:flex;align-items:center;gap:5px;margin-bottom:7px}
+.stars .s{color:#E8A93B;font-size:.8rem;letter-spacing:1px}
+.stars small{color:var(--grey);font-size:.72rem}
+.card h3{font-family:var(--sans);font-size:1rem;font-weight:500;margin-bottom:6px;line-height:1.3}
+.price{font-weight:600;color:var(--teal);font-size:1.02rem}
+.price s{color:var(--grey);font-weight:400;font-size:.85rem;margin-left:6px}
+.card .add{margin-top:14px;width:100%;justify-content:center;padding:12px;font-size:.85rem}
+
+/* Brand story split */
+.story{background:var(--lin)}
+.story .wrap{display:grid;grid-template-columns:1fr 1fr;gap:60px;align-items:center}
+.story-img{border-radius:var(--r);overflow:hidden;aspect-ratio:4/5}
+.story-img img{width:100%;height:100%;object-fit:cover}
+.story h2{font-size:clamp(2rem,3.6vw,2.8rem);margin:14px 0 20px}
+.story p{color:#5a564e;margin-bottom:16px}
+.story .pillars{display:flex;gap:30px;margin-top:26px;flex-wrap:wrap}
+.pillar b{font-family:var(--serif);font-size:1.9rem;color:var(--teal);display:block}
+.pillar small{font-size:.8rem;color:var(--grey)}
+
+/* Reviews */
+.reviews{background:var(--teal);color:#fff;text-align:center}
+.reviews .rating-big{font-family:var(--serif);font-size:3.4rem;line-height:1}
+.reviews .rating-big span{font-size:1.4rem;opacity:.7}
+.reviews .stars-lg{color:#F5C563;font-size:1.4rem;letter-spacing:3px;margin:10px 0}
+.reviews>.wrap>p.sub{opacity:.85;margin-bottom:46px}
+.rev-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;text-align:left}
+.rev{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:var(--r);padding:26px}
+.rev .s{color:#F5C563;font-size:.9rem;letter-spacing:2px}
+.rev p{margin:12px 0 16px;font-size:.96rem;line-height:1.6}
+.rev .who{font-size:.82rem;opacity:.8}
+.rev .who b{font-weight:600}
+
+/* Newsletter */
+.news{background:var(--sage-100)}
+.news .wrap{text-align:center;max-width:660px}
+.news h2{font-size:clamp(1.8rem,3.4vw,2.5rem);margin-bottom:12px}
+.news p{color:var(--grey);margin-bottom:28px}
+.news form{display:flex;gap:10px;max-width:470px;margin:0 auto}
+.news input{flex:1;padding:15px 20px;border-radius:100px;border:1.5px solid var(--sage);background:#fff;font-family:var(--sans);font-size:.95rem}
+.news input:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
+
+/* Footer */
+footer{background:var(--ink);color:#cfcfce;padding:64px 0 28px;font-size:.88rem}
+.foot-grid{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;gap:40px;padding-bottom:44px;border-bottom:1px solid rgba(255,255,255,.12)}
+footer .logo{color:#fff}
+footer .logo small{color:#8f8f8e}
+.foot-grid p{color:#9a9a99;margin-top:16px;max-width:280px}
+.foot-col h4{font-family:var(--sans);font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:#fff;margin-bottom:16px;font-weight:600}
+.foot-col a{display:block;padding:6px 0;color:#b7b7b6;transition:color .2s}
+.foot-col a:hover{color:#fff}
+.foot-bottom{display:flex;justify-content:space-between;align-items:center;padding-top:24px;flex-wrap:wrap;gap:16px}
+.pays{display:flex;gap:8px;align-items:center}
+.pays span{background:#fff;border-radius:4px;padding:3px 7px;font-size:.62rem;font-weight:700;color:#1c1c1c;letter-spacing:.02em}
+.foot-bottom small{color:#8f8f8e}
+
+/* reveal animation */
+.js .reveal{opacity:0;transform:translateY(24px);transition:opacity .7s ease,transform .7s ease}
+.js .reveal.in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){.js .reveal{opacity:1;transform:none;transition:none}*{scroll-behavior:auto}}
+
+/* Responsive */
+@media(max-width:900px){
+  .menu,.reassure .item small{display:none}
+  .reassure .wrap{grid-template-columns:repeat(2,1fr);gap:16px}
+  .cats{grid-template-columns:repeat(2,1fr);grid-auto-rows:160px}
+  .cat-lg,.cat-md,.cat-w{grid-column:span 2;grid-row:span 1}
+  .prod-grid{grid-template-columns:repeat(2,1fr);gap:16px}
+  .story .wrap{grid-template-columns:1fr;gap:34px}
+  .rev-grid{grid-template-columns:1fr}
+  .foot-grid{grid-template-columns:1fr 1fr;gap:28px}
+  .news form{flex-direction:column}
+  .hero{min-height:72vh}
+}
+</style>
+</head>
+<body>
+
+<div class="announce"><b>♡ LIVRAISON OFFERTE</b> &nbsp;dès 60&nbsp;€ d'achats — Fait main en France</div>
+
+<header>
+  <div class="wrap nav">
+    <div class="logo">Carré Cotons<small>Made in France</small></div>
+    <nav class="menu">
+      <a href="#cats">Boutique</a>
+      <a href="#best">Best-sellers</a>
+      <a href="#story">Notre histoire</a>
+      <a href="#reviews">Avis</a>
+      <a href="#news">Contact</a>
+    </nav>
+    <div class="nav-icons">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+      <svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/></svg>
+      <span class="cart-dot"><svg viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg><span>2</span></span>
+    </div>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero" style="padding:0">
+  <img src="assets/hero.jpg" alt="Créatrice de Carré Cotons cousant un accessoire en coton dans son atelier">
+  <div class="wrap hero-inner">
+    <span class="eyebrow">Accessoires textiles · Zéro déchet</span>
+    <h1>L'accessoire textile <span class="serif-i">utile</span>, beau et fait main en France.</h1>
+    <p>Chaque pièce est pensée pour durer : cousue à la main, dans des tissus choisis, pour remplacer le jetable par du beau.</p>
+    <div style="display:flex;gap:14px;flex-wrap:wrap">
+      <a href="#cats" class="btn btn-primary">Découvrir la boutique</a>
+      <a href="#story" class="btn btn-light">Notre démarche</a>
+    </div>
+  </div>
+</section>
+
+<!-- REASSURANCE -->
+<div class="reassure">
+  <div class="wrap">
+    <div class="item"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.5-7 10-7 10Z"/></svg><div><b>Fait main en France</b><small>Cousu dans notre atelier</small></div></div>
+    <div class="item"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0Z"/><path d="M12 7v5l3 2"/></svg><div><b>Expédié sous 48h</b><small>Colissimo suivi</small></div></div>
+    <div class="item"><svg viewBox="0 0 24 24"><path d="M21 12c0 5-4 8-9 9-5-1-9-4-9-9V6l9-3 9 3Z"/><path d="M9 12l2 2 4-4"/></svg><div><b>Paiement sécurisé</b><small>CB · PayPal · 3x</small></div></div>
+    <div class="item"><svg viewBox="0 0 24 24"><path d="M12 2C7 6 5 9 5 13a7 7 0 0 0 14 0c0-4-2-7-7-11Z"/></svg><div><b>Zéro déchet</b><small>Lavable & réutilisable</small></div></div>
+  </div>
+</div>
+
+<!-- CATEGORIES -->
+<section id="cats">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">La boutique</span>
+      <h2>Des essentiels du quotidien, <span class="serif-i">repensés</span>.</h2>
+      <p>Six familles d'accessoires, une même exigence : l'utile qui a du style.</p>
+    </div>
+    <div class="cats reveal">
+      <a class="cat cat-lg" href="#"><img loading="lazy" src="assets/cat-voyage.jpg" alt="Trousses de voyage en tissu"><div class="arrow"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div><h3>Trousses de voyage</h3></a>
+      <a class="cat cat-sm" href="#"><img loading="lazy" src="assets/cat-box.png" alt="Box démaquillante lavable"><div class="arrow"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div><h3>Box démaquillantes</h3></a>
+      <a class="cat cat-sm" href="#"><img loading="lazy" src="assets/cat-headband.jpg" alt="Headbands faits main"><div class="arrow"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div><h3>Headbands</h3></a>
+      <a class="cat cat-md" href="#"><img loading="lazy" src="assets/cat-toilette.jpg" alt="Trousses de toilette"><div class="arrow"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div><h3>Trousses de toilette</h3></a>
+      <a class="cat cat-w" href="#"><img loading="lazy" src="assets/cat-pochette.jpg" alt="Pochettes à savon et charlottes couvre-plats"><div class="arrow"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div><h3>Pochettes & charlottes</h3></a>
+    </div>
+  </div>
+</section>
+
+<!-- BESTSELLERS -->
+<section id="best" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">Les préférés</span>
+      <h2>Best-sellers de l'atelier</h2>
+    </div>
+    <div class="prod-grid">
+      <article class="card reveal">
+        <div class="card-img"><span class="badge new">Nouveauté</span><span class="wish"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.5-7 10-7 10Z"/></svg></span><img loading="lazy" src="assets/cat-box.png" alt="Box démaquillante Nénuphars"></div>
+        <div class="card-body"><div class="stars"><span class="s">★★★★★</span><small>(48)</small></div><h3>Box démaquillante Nénuphars</h3><div class="price">32,00 €</div><button class="btn btn-ghost add">Ajouter au panier</button></div>
+      </article>
+      <article class="card reveal">
+        <div class="card-img"><span class="wish"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.5-7 10-7 10Z"/></svg></span><img loading="lazy" src="assets/p-topbag.png" alt="Top Bag Tokyo en tissu japonais"></div>
+        <div class="card-body"><div class="stars"><span class="s">★★★★★</span><small>(31)</small></div><h3>Top Bag Tokyo — tissu japonais</h3><div class="price">36,00 €</div><button class="btn btn-ghost add">Ajouter au panier</button></div>
+      </article>
+      <article class="card reveal">
+        <div class="card-img"><span class="badge">Édition limitée</span><span class="wish"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.5-7 10-7 10Z"/></svg></span><img loading="lazy" src="assets/p-trousse.jpg" alt="Trousse de voyage Joli Mai"></div>
+        <div class="card-body"><div class="stars"><span class="s">★★★★★</span><small>(27)</small></div><h3>Trousse de voyage Joli Mai</h3><div class="price">45,00 €</div><button class="btn btn-ghost add">Ajouter au panier</button></div>
+      </article>
+      <article class="card reveal">
+        <div class="card-img"><span class="wish"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.5-7 10-7 10Z"/></svg></span><img loading="lazy" src="assets/p-headband.jpg" alt="Headband fleuri fait main"></div>
+        <div class="card-body"><div class="stars"><span class="s">★★★★☆</span><small>(19)</small></div><h3>Headband Daisy</h3><div class="price">18,00 €</div><button class="btn btn-ghost add">Ajouter au panier</button></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- STORY -->
+<section id="story" class="story">
+  <div class="wrap">
+    <div class="story-img reveal"><img loading="lazy" src="assets/story.jpg" alt="Détail d'un tissu cousu à la main"></div>
+    <div class="reveal">
+      <span class="eyebrow">Notre histoire</span>
+      <h2>Une marque <span class="serif-i">engagée</span>, une couturière passionnée.</h2>
+      <p>Carré Cotons est née d'une conviction simple : le quotidien mérite mieux que du jetable. Chaque box démaquillante, chaque trousse est imaginée puis cousue à la main, en France, dans des tissus sélectionnés pour leur beauté et leur durabilité.</p>
+      <p>Moins de déchets, plus de sens — et des objets qu'on a plaisir à garder des années.</p>
+      <div class="pillars">
+        <div class="pillar"><b>100%</b><small>Fait main en France</small></div>
+        <div class="pillar"><b>+15 000</b><small>Cotons lavables vendus</small></div>
+        <div class="pillar"><b>0</b><small>Déchet à l'usage</small></div>
+      </div>
+      <p style="margin-top:28px"><a href="#" class="btn btn-ghost">Découvrir la démarche</a></p>
+    </div>
+  </div>
+</section>
+
+<!-- REVIEWS -->
+<section id="reviews" class="reviews">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="rating-big">4,9<span>/5</span></div>
+      <div class="stars-lg">★★★★★</div>
+      <p class="sub">sur plus de 140 avis clients vérifiés</p>
+    </div>
+    <div class="rev-grid">
+      <div class="rev reveal"><div class="s">★★★★★</div><p>« La qualité est vraiment au rendez-vous, les finitions sont impeccables. On sent le fait-main. Je ne reviendrai jamais au coton jetable. »</p><div class="who"><b>Camille D.</b> · Box démaquillante</div></div>
+      <div class="rev reveal"><div class="s">★★★★★</div><p>« Ma trousse de voyage est magnifique et super pratique. Les tissus sont sublimes, l'emballage soigné. Un vrai coup de cœur. »</p><div class="who"><b>Léa M.</b> · Trousse Joli Mai</div></div>
+      <div class="rev reveal"><div class="s">★★★★★</div><p>« Commande reçue en 2 jours, produit conforme et encore plus beau en vrai. Service client adorable. Merci ! »</p><div class="who"><b>Sophie B.</b> · Headband Daisy</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- NEWSLETTER -->
+<section id="news" class="news">
+  <div class="wrap">
+    <span class="eyebrow">Rejoignez-nous</span>
+    <h2>Un peu de douceur dans votre boîte mail</h2>
+    <p>Nouveautés, coulisses de l'atelier et -10% sur votre première commande.</p>
+    <form onsubmit="return false">
+      <input type="email" placeholder="Votre adresse e-mail" aria-label="Votre adresse e-mail">
+      <button class="btn btn-primary" type="submit">Je m'inscris</button>
+    </form>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <div class="logo">Carré Cotons<small>Made in France</small></div>
+        <p>Accessoires textiles zéro déchet, imaginés et cousus à la main en France pour remplacer le jetable par du beau.</p>
+      </div>
+      <div class="foot-col"><h4>Boutique</h4><a href="#">Box démaquillantes</a><a href="#">Trousses de toilette</a><a href="#">Trousses de voyage</a><a href="#">Headbands</a><a href="#">Charlottes couvre-plats</a></div>
+      <div class="foot-col"><h4>La marque</h4><a href="#">Qui sommes-nous</a><a href="#">Où nous trouver</a><a href="#">Nos engagements</a><a href="#">Contact</a></div>
+      <div class="foot-col"><h4>Aide</h4><a href="#">Livraison & retours</a><a href="#">CGV</a><a href="#">Mentions légales</a><a href="#">Confidentialité</a></div>
+    </div>
+    <div class="foot-bottom">
+      <small>© 2026 Carré Cotons — Fait main avec ♡ en France</small>
+      <div class="pays"><span>VISA</span><span>MASTERCARD</span><span>PAYPAL</span><span>APPLE PAY</span><span>3× CB</span></div>
+    </div>
+  </div>
+</footer>
+
+<script>
+// Progressive enhancement: content is fully visible without JS.
+// Only when JS runs do we opt into the scroll-reveal animation.
+document.documentElement.classList.add('js');
+const io=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.12});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+</body>
+</html>
