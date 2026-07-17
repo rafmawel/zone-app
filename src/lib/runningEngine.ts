@@ -1,5 +1,42 @@
 export type RaceDistance = '5km' | '10km' | 'semi' | 'marathon';
 
+/**
+ * Canonical training goal driving session-type selection and durations.
+ * `running_profile.goal` is a free string set by two different screens with
+ * inconsistent spellings (`5km`/`5k`, `semi`/`semi_marathon`,
+ * `forme`/`forme_generale`, `trail`), so callers normalise it through
+ * `resolveRunningGoal` (falling back to the race distance) before reaching the
+ * engine.
+ */
+export type RunningGoal = '5k' | '10k' | 'semi_marathon' | 'marathon' | 'forme';
+
+export function resolveRunningGoal(
+  rawGoal: string | null | undefined,
+  raceDistance?: RaceDistance | null,
+): RunningGoal {
+  const g = (rawGoal ?? '').trim().toLowerCase();
+  if (g === '5k' || g === '5km') return '5k';
+  if (g === '10k' || g === '10km') return '10k';
+  if (g === 'semi' || g === 'semi_marathon' || g === 'half' || g === 'half_marathon') return 'semi_marathon';
+  if (g === 'marathon') return 'marathon';
+  if (g === 'forme' || g === 'forme_generale' || g === 'fitness') return 'forme';
+  // `trail` and anything unknown fall back to the race distance; a trail with no
+  // distance leans marathon (endurance, keep the long run), otherwise the
+  // endurance-oriented default keeps the existing SL-based programme.
+  switch (raceDistance) {
+    case '5km':
+      return '5k';
+    case '10km':
+      return '10k';
+    case 'semi':
+      return 'semi_marathon';
+    case 'marathon':
+      return 'marathon';
+    default:
+      return g === 'trail' ? 'marathon' : 'semi_marathon';
+  }
+}
+
 // Codes line up with Jack Daniels' VDOT zones (E/T/I/R) plus French shorthand
 // for the supporting work that doesn't sit on a Daniels zone:
 //   CO = Côtes (hill repeats, Block 1 strength work)
@@ -230,6 +267,10 @@ export interface BuildSessionParams {
   /** Goal finishing time in seconds; when set, race pace is derived from
    *  goal_time / distance instead of from VDOT zones. */
   goalTimeSeconds?: number;
+  /** Training goal. Drives session-type selection (via getWeeklySessionTypes)
+   *  and, for 5k, shorter easy runs / warm-ups. Defaults to `semi_marathon`
+   *  (the existing SL-based behaviour) when omitted. */
+  goal?: RunningGoal;
 }
 
 /**
@@ -493,7 +534,16 @@ export function getLongRunDuration(vdot: number, block: number, week: number): n
  * long run: +3 min per week within a block, +5 min per block; week 4 deload
  * (~75 % of base). Bounded 30-75 min.
  */
-export function getEFDuration(vdot: number, block: number, week: number): number {
+export function getEFDuration(
+  vdot: number,
+  block: number,
+  week: number,
+  goal: RunningGoal = 'semi_marathon',
+): number {
+  // 5k: easy runs stay deliberately short — they are recovery between the hard
+  // quality sessions, not volume builders. Week 4 trims further.
+  if (goal === '5k') return week === 4 ? 20 : 25;
+
   // Same VDOT tiers as the long run (shifted so VDOT 35 is the débutant tier).
   const baseByVdot =
     vdot < 40 ? 35 :
@@ -530,6 +580,12 @@ export function blockWeekForAbsoluteWeek(absoluteWeek: number): {
 
 export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan {
   const { type, paces, level, block, week, vdot } = params;
+  const goal = params.goal ?? 'semi_marathon';
+  // 5k sessions stay short (≤ ~40 min): lighter quality warm-up / cool-down and
+  // a capped tempo, so the athlete can absorb frequent hard work.
+  const short5k = goal === '5k';
+  const qWarm = short5k ? [warmup(paces, 8), ...stridesBlock(paces, 3)] : qualityWarmup(paces);
+  const cdMin = short5k ? 6 : 10;
   let steps: RunningSessionStep[] = [];
   let message = '';
 
@@ -537,7 +593,7 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
     case 'EF': {
       const isRecovery = params.recovery === true;
       // Duration scales with VDOT (and block/week); week 4 is the deload.
-      const baseMinutes = getEFDuration(vdot, block, week);
+      const baseMinutes = getEFDuration(vdot, block, week, goal);
       const efPace = isRecovery ? paces.E_slow : paces.E_fast;
       steps = [
         steady(
@@ -581,12 +637,13 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
     case 'TC': {
       // 10-min warm-up + 20-40 min tempo + 10-min cool-down (Daniels T pace).
       // Quality warm-up includes 4 strides to pre-activate the legs.
-      const minutes =
-        level === 'beginner' ? 20 : level === 'intermediate' ? 30 : 40;
+      const minutes = short5k
+        ? 20
+        : level === 'beginner' ? 20 : level === 'intermediate' ? 30 : 40;
       steps = [
-        ...qualityWarmup(paces),
+        ...qWarm,
         workStep(`Tempo continu · ${minutes} min`, minutes, paces.T),
-        cooldown(paces, 10),
+        cooldown(paces, cdMin),
       ];
       message =
         'Comfortably hard. Trois mots, pas une phrase complète. Tiens la même allure du début à la fin.';
@@ -596,59 +653,90 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
       // Cruise intervals: 3-4 × 8-10 min @ T with 1-min rest (Daniels).
       const blocks = level === 'beginner' ? 3 : 4;
       const blockMin = level === 'beginner' ? 8 : 10;
-      steps = [...qualityWarmup(paces)];
+      steps = [...qWarm];
       for (let i = 1; i <= blocks; i += 1) {
         steps.push(
           workStep(`Bloc tempo ${i}/${blocks} · ${blockMin} min`, blockMin, paces.T),
         );
         if (i < blocks) steps.push(recoveryStep(1, paces.E_slow));
       }
-      steps.push(cooldown(paces, 10));
+      steps.push(cooldown(paces, cdMin));
       message = 'Le seuil par paliers. Garde la même allure sur chaque bloc, 1 min de jog entre.';
       break;
     }
     case 'IV': {
       // Block 3: race-pace 800 m intervals (5-6 × 800 m, 2 min rest).
       // Block 1/2: classic VO2max 1000 m reps at I pace, 1:1 rest.
+      if (short5k) {
+        // 5k VO2max: short 800 m reps with a fixed 2-min recovery, rep count
+        // capped so the whole session stays ≲ 40 min even at low VDOT (where
+        // reps run slow). Block 3 uses race pace, earlier blocks I pace.
+        const reps = level === 'beginner' ? 3 : level === 'intermediate' ? 4 : 5;
+        const pace5k =
+          block === 3 ? racePace(paces, params.goalDistance, params.goalTimeSeconds) : paces.I;
+        steps = [...qWarm];
+        for (let i = 1; i <= reps; i += 1) {
+          steps.push(workDistance(`Intervalle ${i}/${reps} · 800 m`, 800, pace5k));
+          if (i < reps) steps.push(recoveryStep(1.5, paces.E_slow));
+        }
+        steps.push(cooldown(paces, cdMin));
+        message =
+          'VO2max format 5 km : reps courts et vifs, récup complète entre chaque. Régularité, pas héroïsme.';
+        break;
+      }
       if (block === 3) {
         const reps =
           level === 'beginner' ? 4 : level === 'intermediate' ? 5 : 6;
         const pace = racePace(paces, params.goalDistance, params.goalTimeSeconds);
-        steps = [...qualityWarmup(paces)];
+        steps = [...qWarm];
         for (let i = 1; i <= reps; i += 1) {
           steps.push(
             workDistance(`Intervalle ${i}/${reps} · 800 m allure course`, 800, pace),
           );
           if (i < reps) steps.push(recoveryStep(2, paces.E_slow));
         }
-        steps.push(cooldown(paces, 10));
+        steps.push(cooldown(paces, cdMin));
         message =
           'Intervalles à l’allure visée. Sens la cadence et la position du corps, pas la souffrance.';
       } else {
         const reps =
           level === 'beginner' ? 3 : level === 'intermediate' ? 4 : 5;
-        steps = [...qualityWarmup(paces)];
+        steps = [...qWarm];
         for (let i = 1; i <= reps; i += 1) {
           steps.push(workDistance(`Intervalle ${i}/${reps} · 1000 m`, 1000, paces.I));
           if (i < reps) steps.push(intervalRest(1000, paces.I, paces));
         }
-        steps.push(cooldown(paces, 10));
+        steps.push(cooldown(paces, cdMin));
         message = 'VO2max. Les premiers intervalles paraissent faciles, ne te grille pas.';
       }
       break;
     }
     case 'RV': {
       // 6-10 × 200 m or 4-6 × 400 m @ R, with 2-3 min rest between reps.
+      if (short5k) {
+        // 5k speed reps: compact 200 m at R with 90 s recovery — economy and
+        // top-end speed, kept ≲ 35 min total.
+        const reps5k = level === 'advanced' ? 8 : 6;
+        steps = [...qWarm];
+        for (let i = 1; i <= reps5k; i += 1) {
+          steps.push(workDistance(`Répétition ${i}/${reps5k} · 200 m`, 200, paces.R));
+          if (i < reps5k) steps.push(recoveryStep(1.5, paces.E_slow + 90));
+        }
+        steps.push(cooldown(paces, cdMin));
+        message =
+          'Vitesse pure sur 200 m : foulée vive et relâchée, récup complète. On travaille l’économie, pas le lactique.';
+        break;
+      }
       const distance = level === 'advanced' ? 400 : 200;
       const reps =
         level === 'beginner' ? 6 : level === 'intermediate' ? 8 : 5;
       const restMin = level === 'beginner' ? 2 : 3;
-      steps = [...qualityWarmup(paces)];
+      steps = [...qWarm];
       for (let i = 1; i <= reps; i += 1) {
         steps.push(workDistance(`Répétition ${i}/${reps} · ${distance} m`, distance, paces.R));
         if (i < reps) steps.push(recoveryStep(restMin, paces.E_slow + 90));
       }
-      steps.push(cooldown(paces, 10));
+      steps.push(cooldown(paces, cdMin));
       message = 'Court mais sec. Récupère complètement entre chaque répétition, allure vive mais détendue.';
       break;
     }
@@ -664,7 +752,7 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
       // the impact cost of flat speed work.
       const reps =
         level === 'beginner' ? 6 : level === 'intermediate' ? 8 : 10;
-      steps = [...qualityWarmup(paces)];
+      steps = [...qWarm];
       for (let i = 1; i <= reps; i += 1) {
         steps.push({
           kind: 'work',
@@ -681,7 +769,7 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
           distanceMeters: null,
         });
       }
-      steps.push(cooldown(paces, 10));
+      steps.push(cooldown(paces, cdMin));
       message =
         'Pousse contre la pente avec une foulée courte et active. Récupère complètement à la descente.';
       break;
@@ -693,9 +781,9 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
         level === 'beginner' ? 20 : level === 'intermediate' ? 25 : 30;
       const pace = racePace(paces, params.goalDistance, params.goalTimeSeconds);
       steps = [
-        ...qualityWarmup(paces),
+        ...qWarm,
         workStep(`Allure spécifique · ${minutes} min`, minutes, pace),
-        cooldown(paces, 10),
+        cooldown(paces, cdMin),
       ];
       message =
         'Ancre l’allure de course dans le corps. Cadence stable, foulée économique, respiration maîtrisée.';
@@ -788,16 +876,76 @@ type WeeklySessionType = RunningSessionType | 'EF_strides';
  * core and pad easy volume (one strides day, then plain EF) ahead of the long
  * run, so higher frequencies never collapse back to 3 sessions.
  */
+/**
+ * Pad a base weekly pattern up to `n` sessions, keeping a trailing SL last and
+ * adding easy volume (one strides day first, then plain EF) so higher
+ * frequencies never collapse back to the 2-3 session core.
+ */
+function padToCount(base: WeeklySessionType[], n: number): WeeklySessionType[] {
+  if (n <= base.length) return base;
+  const hasSL = base[base.length - 1] === 'SL';
+  const core = hasSL ? base.slice(0, base.length - 1) : base;
+  const filler: WeeklySessionType[] = [];
+  for (let i = 0; i < n - base.length; i += 1) filler.push(i === 0 ? 'EF_strides' : 'EF');
+  return hasSL ? [...core, ...filler, 'SL'] : [...core, ...filler];
+}
+
+/**
+ * 5k: no long run. Short tempo (TC), VO2max intervals (IV) and speed reps (RV)
+ * carry the work; the aerobic base still comes from EF / EF+strides. NB: the
+ * task brief's "CO"/"RA" shorthand map to TC / RV here — in this codebase CO is
+ * hill repeats and RA is active recovery, so using them literally would give a
+ * hills + active-recovery week instead of the intended tempo + speed reps.
+ */
+function fiveKBase(vdot: number, block: number, n: number): WeeklySessionType[] {
+  if (vdot < 35) {
+    return n === 2 ? ['EF_strides', 'IV'] : ['EF', 'EF_strides', 'IV'];
+  }
+  if (vdot < 40) {
+    if (block === 1) return n === 2 ? ['EF_strides', 'IV'] : ['EF', 'EF_strides', 'IV'];
+    return n === 2 ? ['TC', 'IV'] : ['EF_strides', 'TC', 'IV'];
+  }
+  if (vdot < 45) {
+    if (block === 1) return n === 2 ? ['TC', 'IV'] : ['EF', 'TC', 'IV'];
+    return n === 2 ? ['IV', 'RV'] : ['TC', 'IV', 'RV'];
+  }
+  return n === 2 ? ['IV', 'RV'] : ['TC', 'IV', 'RV'];
+}
+
+/** 10k: threshold (TC) + VO2max, with a medium long run (SL) from block 2. */
+function tenKBase(vdot: number, block: number, n: number): WeeklySessionType[] {
+  if (vdot < 40) {
+    return n === 2 ? ['EF_strides', 'TC'] : ['EF', 'EF_strides', 'TC'];
+  }
+  if (block === 1) {
+    return n === 2 ? ['TC', 'IV'] : ['EF', 'TC', 'IV'];
+  }
+  return n === 2 ? ['TC', 'SL'] : ['EF', 'TC', 'SL'];
+}
+
+/** Forme (stay fit): mostly easy, at most one light tempo. */
+function formeBase(n: number): WeeklySessionType[] {
+  return n === 2 ? ['EF', 'EF_strides'] : ['EF', 'EF_strides', 'TC'];
+}
+
 export function getWeeklySessionTypes(
   vdot: number,
   block: number,
   sessionsPerWeek: number,
   isDeload: boolean,
+  goal: RunningGoal = 'semi_marathon',
 ): WeeklySessionType[] {
   const n = Math.max(2, Math.min(6, Math.round(sessionsPerWeek)));
 
   // Deload week: easy only, no long run — exactly n easy runs.
   if (isDeload) return Array<WeeklySessionType>(n).fill('EF');
+
+  // Goal-specific vocabularies. 5k drops the long run entirely; 10k keeps a
+  // medium SL; forme stays almost all easy. Semi/marathon fall through to the
+  // original SL-based periodisation below.
+  if (goal === '5k') return padToCount(fiveKBase(vdot, block, n), n);
+  if (goal === '10k') return padToCount(tenKBase(vdot, block, n), n);
+  if (goal === 'forme') return padToCount(formeBase(n), n);
 
   // VDOT < 40 — pure aerobic base: (n-1) easy runs (last carries strides) + SL.
   if (vdot < 40) {
@@ -851,10 +999,11 @@ export function getWeeklyDistribution(
   block: ProgramBlockRunning,
   week: WeekIndexRunning,
   vdot: number,
+  goal: RunningGoal = 'semi_marathon',
 ): WeeklyPlan {
   const sessions = Math.max(2, Math.min(6, sessionsPerWeek));
   const deload = week === 4;
-  const seq: TemplateSlot[] = getWeeklySessionTypes(vdot, block, sessions, deload).map(toTemplateSlot);
+  const seq: TemplateSlot[] = getWeeklySessionTypes(vdot, block, sessions, deload, goal).map(toTemplateSlot);
   const days = DAY_LAYOUT[sessions] ?? [0, 2, 4, 6];
   // On deload, getWeeklySessionTypes already returns easy-only (no long run);
   // mark every slot recovery so the pace eases (E_slow) and the duration uses
