@@ -23,7 +23,7 @@ import {
   type TrainingSession,
   type UserProgram,
 } from '@/lib/firestore';
-import { estimateVDOT, raceLabel, raceMeters } from '@/lib/runningEngine';
+import { formatElapsed, raceLabel, raceMeters, raceTimeForVdot } from '@/lib/runningEngine';
 import { colors, type SportColorKey } from '@/theme/colors';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { SafeScreen } from '@/components/ui/SafeScreen';
@@ -82,18 +82,6 @@ function recoveryFromSoreness(s: number | undefined): string {
   if (s <= 2) return 'Bonne';
   if (s === 3) return 'En cours';
   return 'Courbatures';
-}
-
-/** Invert estimateVDOT to predict a race time (seconds) at a target VDOT. */
-function predictRaceTime(vdot: number, meters: number): number {
-  let lo = 60; // fast bound (s)
-  let hi = meters; // ~1 m/s slow bound (s)
-  for (let i = 0; i < 50; i += 1) {
-    const mid = (lo + hi) / 2;
-    if (estimateVDOT(meters, mid) > vdot) lo = mid;
-    else hi = mid;
-  }
-  return Math.round((lo + hi) / 2);
 }
 
 function formatRaceTime(sec: number): string {
@@ -247,16 +235,38 @@ export default function AnalyticsScreen(): React.ReactElement {
     const dist = (data.runningProfile.race_distance ??
       data.runningProfile.reference_distance ??
       '10km') as RunningRaceDistance;
-    const predicted = formatRaceTime(predictRaceTime(projected, raceMeters(dist)));
-    items.push({
-      sport: 'run',
-      emoji: '🏃',
-      name: 'Course',
-      enoughData: data.runs.length >= 3,
-      primary: { label: 'VDOT actuel', value: String(vdot) },
-      secondary: { label: 'Dans 8 semaines', value: `→ ${projected}`, color: colors.scoreGreen },
-      phrase: `Tu pourrais courir le ${raceLabel(dist).toLowerCase()} en ${predicted} dans 8 semaines.`,
-    });
+    const meters = raceMeters(dist);
+    const distLabel = raceLabel(dist);
+    const goalSeconds = data.runningProfile.goal_time_seconds ?? 0;
+    if (goalSeconds > 0) {
+      // Goal time set: show the current estimated time on that distance, the
+      // target, and how much is left to shave off.
+      const currentTime = raceTimeForVdot(vdot, meters);
+      const remaining = Math.max(0, currentTime - goalSeconds);
+      items.push({
+        sport: 'run',
+        emoji: '🏃',
+        name: 'Course',
+        enoughData: data.runs.length >= 3,
+        primary: { label: `${distLabel} estimé`, value: formatElapsed(currentTime) },
+        secondary: { label: 'Objectif', value: formatElapsed(goalSeconds), color: colors.scoreGreen },
+        phrase:
+          remaining > 0
+            ? `Il te reste ${formatElapsed(remaining)} à gagner sur ${distLabel.toLowerCase()} pour atteindre ton objectif.`
+            : `Objectif déjà à portée sur ${distLabel.toLowerCase()} — continue pour le sécuriser.`,
+      });
+    } else {
+      const predicted = formatRaceTime(raceTimeForVdot(projected, meters));
+      items.push({
+        sport: 'run',
+        emoji: '🏃',
+        name: 'Course',
+        enoughData: data.runs.length >= 3,
+        primary: { label: 'VDOT actuel', value: String(vdot) },
+        secondary: { label: 'Dans 8 semaines', value: `→ ${projected}`, color: colors.scoreGreen },
+        phrase: `Tu pourrais courir le ${distLabel.toLowerCase()} en ${predicted} dans 8 semaines.`,
+      });
+    }
   }
   if (data.muscleProfile) {
     const count = data.sessions.filter((s) => s.discipline === 'musculation').length;
