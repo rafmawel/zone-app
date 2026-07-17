@@ -15,6 +15,7 @@ import {
   blockWeekForAbsoluteWeek,
   buildSessionPlan,
   calculateVDOTPaces,
+  resolveRunningGoal,
   runningPaceFactor,
 } from './runningEngine';
 import { generateMuscleSession } from './muscleEngine';
@@ -129,6 +130,11 @@ export async function launchSessionForItem(
     // so the long-run duration (and any block-specific work) matches the session
     // shown in the queue instead of always building week 1.
     const { block, week } = blockWeekForAbsoluteWeek(item.week);
+    // Goal drives session-type selection and 5k-specific durations.
+    const goal = resolveRunningGoal(
+      runningProfile.goal,
+      runningProfile.race_distance ?? runningProfile.reference_distance,
+    );
     const plan = buildSessionPlan({
       type: item.runningType,
       paces,
@@ -136,6 +142,7 @@ export async function launchSessionForItem(
       block,
       week,
       vdot,
+      goal,
       paceFactor: runningPaceFactor(recentRunRir),
       withStrides: item.runningWithStrides,
       recovery: item.runningRecovery,

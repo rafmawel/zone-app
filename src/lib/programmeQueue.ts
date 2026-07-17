@@ -4,6 +4,7 @@ import {
   buildSessionPlan,
   calculateVDOTPaces,
   getWeeklyDistribution,
+  resolveRunningGoal,
   sessionName,
   type RunningSessionType,
 } from './runningEngine';
@@ -212,13 +213,18 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
     );
     const goalDistance = runningProfile.reference_distance ?? undefined;
     const goalTimeSeconds = runningProfile.goal_time_seconds ?? undefined;
+    // Goal drives session-type selection (no SL for 5k, etc.) and 5k durations.
+    const goal = resolveRunningGoal(
+      runningProfile.goal,
+      runningProfile.race_distance ?? runningProfile.reference_distance,
+    );
     for (let w = 1; w <= POOL_WEEKS; w += 1) {
       // The queue key keeps the legacy block-1 / absolute-week shape (no data
       // migration), but the session content needs the real block / week-in-block:
       // both the session types (getWeeklyDistribution) and the durations depend
       // on it, so the distribution is recomputed per week rather than reused.
       const { block: slBlock, week: slWeek } = blockWeekForAbsoluteWeek(w);
-      const dist = getWeeklyDistribution(runPerWeek, slBlock, slWeek, vdot);
+      const dist = getWeeklyDistribution(runPerWeek, slBlock, slWeek, vdot, goal);
       const slots = dist.items.filter((i) => i.type !== 'REST');
       slots.forEach((slot, idx) => {
         const s = idx + 1;
@@ -230,6 +236,7 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
           block: slBlock,
           week: slWeek,
           vdot,
+          goal,
           withStrides: slot.withStrides,
           recovery: slot.recovery,
           goalDistance,
