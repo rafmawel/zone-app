@@ -24,11 +24,12 @@ import {
   formatPace,
   raceLabel,
   raceMeters,
+  raceTimeForVdot,
   vdotLevelLabel,
 } from '@/lib/runningEngine';
 import { planPhases, weeksUntilRace } from '@/lib/programmePhases';
 import { resetSportWeek } from '@/lib/weekTracking';
-import { frenchLongDate } from '@/lib/frenchDate';
+import { frenchLongDate, frenchMonthYear } from '@/lib/frenchDate';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { Button } from '@/components/ui/Button';
@@ -56,6 +57,16 @@ function formatHHMMSS(total: number, withHours: boolean): string {
   const [h, m, s] = secondsToParts(total);
   if (withHours) return `${h}h${m.toString().padStart(2, '0')}`;
   return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/** A date `months` months from today, with its ISO string and "Mois AAAA" label. */
+function futureMonth(months: number): { iso: string; label: string } {
+  const d = new Date();
+  d.setMonth(d.getMonth() + months);
+  const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate(),
+  ).padStart(2, '0')}`;
+  return { iso, label: frenchMonthYear(d) };
 }
 
 interface PaceLine {
@@ -142,6 +153,20 @@ export default function RaceGoalScreen(): React.ReactElement {
   }, [numericDistance, goalSeconds]);
 
   const paces = useMemo(() => calculateVDOTPaces(currentVdot), [currentVdot]);
+
+  // VDOT-based goal suggestions: project ~+1 VDOT per month of regular training
+  // and convert to a realistic time on the chosen distance at 3 / 6 / 12 months.
+  // Tapping one prefills the goal time + race date.
+  const suggestions = useMemo(() => {
+    if (!numericDistance) return [];
+    const meters = raceMeters(numericDistance);
+    return [3, 6, 12].map((months) => {
+      const projVdot = Math.min(85, currentVdot + months);
+      const seconds = raceTimeForVdot(projVdot, meters);
+      const { iso, label } = futureMonth(months);
+      return { months, seconds, iso, label, time: formatHHMMSS(seconds, showHours) };
+    });
+  }, [numericDistance, currentVdot, showHours]);
 
   const vdotGap = targetVdot !== null ? targetVdot - currentVdot : null;
   const goalRating: { color: string; message: string } | null = useMemo(() => {
@@ -434,6 +459,44 @@ export default function RaceGoalScreen(): React.ReactElement {
             </View>
           </View>
 
+          {/* 5. SUGGESTIONS BASÉES SUR LE VDOT */}
+          {numericDistance && suggestions.length > 0 ? (
+            <>
+              <ZoneText variant="caption" color={colors.text.muted} style={styles.sectionLabel}>
+                SUGGESTIONS SELON TON NIVEAU
+              </ZoneText>
+              <View style={styles.suggestCard}>
+                <ZoneText variant="caption" color={colors.text.secondary} style={styles.suggestIntro}>
+                  Avec ton VDOT actuel ({currentVdot}) et un entraînement régulier
+                  (~+1 VDOT/mois), tu pourrais viser :
+                </ZoneText>
+                {suggestions.map((s) => {
+                  const active = raceDate === s.iso && goalSeconds === s.seconds;
+                  return (
+                    <TouchableOpacity
+                      key={s.months}
+                      onPress={() => {
+                        setGoalSeconds(s.seconds);
+                        setRaceDate(s.iso);
+                        setCalendarOpen(false);
+                      }}
+                      activeOpacity={0.7}
+                      style={[styles.suggestRow, active ? styles.suggestRowActive : null]}
+                    >
+                      <ZoneText variant="caption" color={colors.text.secondary} style={styles.suggestWhen}>
+                        Dans {s.months} mois · {s.label}
+                      </ZoneText>
+                      <ZoneText style={styles.suggestTime}>~{s.time}</ZoneText>
+                    </TouchableOpacity>
+                  );
+                })}
+                <ZoneText variant="caption" color={colors.text.muted} style={styles.suggestHint}>
+                  Touche une ligne pour la définir comme objectif.
+                </ZoneText>
+              </View>
+            </>
+          ) : null}
+
           {error ? (
             <ZoneText variant="caption" color={colors.danger} style={styles.error}>
               {error}
@@ -571,6 +634,30 @@ const styles = StyleSheet.create({
   },
   timeSuffix: { marginLeft: 4, fontSize: 12 },
   goalClear: { marginLeft: 8, paddingVertical: 8, paddingHorizontal: 6 },
+  suggestCard: {
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 12,
+  },
+  suggestIntro: { lineHeight: 17, marginBottom: 6 },
+  suggestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg.elevated,
+  },
+  suggestRowActive: { borderColor: colors.scoreGreen },
+  suggestWhen: { flex: 1, marginRight: 8 },
+  suggestTime: { color: colors.scoreGreen, fontFamily: 'Inter_700Bold', fontSize: 16 },
+  suggestHint: { marginTop: 8, lineHeight: 15 },
   vdotRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
   vdotValue: { color: colors.scoreGreen, fontFamily: 'Inter_700Bold', fontSize: 22 },
   vdotPickerCard: {

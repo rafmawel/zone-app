@@ -119,6 +119,23 @@ export function estimateVDOT(distanceMeters: number, timeSeconds: number): numbe
   return Math.max(20, Math.min(90, Math.round(vdot)));
 }
 
+/**
+ * Inverse of {@link estimateVDOT}: predict the race time (seconds) an athlete
+ * of the given VDOT would run over `meters`. Binary-searches the monotonic
+ * estimateVDOT curve (faster time → higher VDOT). Returns 0 for invalid input.
+ */
+export function raceTimeForVdot(vdot: number, meters: number): number {
+  if (vdot <= 0 || meters <= 0) return 0;
+  let lo = 60; // fast bound (s)
+  let hi = meters; // ~1 m/s slow bound (s)
+  for (let i = 0; i < 50; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (estimateVDOT(meters, mid) > vdot) lo = mid;
+    else hi = mid;
+  }
+  return Math.round((lo + hi) / 2);
+}
+
 export function vdotFromEasyPace(easyPaceSecPerKm: number): number {
   if (easyPaceSecPerKm <= 0) return 30;
   const easyPaceMin = easyPaceSecPerKm / 60;
