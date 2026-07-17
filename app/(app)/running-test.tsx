@@ -48,7 +48,7 @@ import { TreadmillInclineCard } from '@/components/TreadmillInclineCard';
 
 type TestType = 'cooper' | 'time_trial';
 type TrialDistance = 1000 | 2000 | 5000 | 10000;
-type Step = 'choose' | 'warmup' | 'test' | 'result';
+type Step = 'choose' | 'manual' | 'warmup' | 'test' | 'result';
 
 interface CooperResult {
   type: 'cooper';
@@ -146,7 +146,12 @@ export default function RunningTestScreen(): React.ReactElement {
           trialDistance={trialDistance}
           onSelectTrial={setTrialDistance}
           onContinue={() => setStep('warmup')}
+          onManual={() => setStep('manual')}
         />
+      ) : null}
+
+      {step === 'manual' ? (
+        <ManualStep onComplete={onTestComplete} onBack={() => setStep('choose')} />
       ) : null}
 
       {step === 'warmup' ? (
@@ -185,12 +190,14 @@ function ChooseStep({
   trialDistance,
   onSelectTrial,
   onContinue,
+  onManual,
 }: {
   testType: TestType;
   onSelect: (t: TestType) => void;
   trialDistance: TrialDistance;
   onSelectTrial: (d: TrialDistance) => void;
   onContinue: () => void;
+  onManual: () => void;
 }): React.ReactElement {
   return (
     <ScrollView contentContainerStyle={styles.body}>
@@ -254,6 +261,95 @@ function ChooseStep({
 
       <View style={styles.cta}>
         <Button title="Continuer" onPress={onContinue} />
+        <View style={styles.skipRow}>
+          <TouchableOpacity onPress={onManual} hitSlop={8} activeOpacity={0.7}>
+            <ZoneText variant="caption" color={colors.scoreGreen}>
+              J&apos;ai déjà un résultat · Saisir manuellement →
+            </ZoneText>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </ScrollView>
+  );
+}
+
+function ManualStep({
+  onComplete,
+  onBack,
+}: {
+  onComplete: (r: TrialResult) => void;
+  onBack: () => void;
+}): React.ReactElement {
+  const [distance, setDistance] = useState<TrialDistance>(5000);
+  const [timeText, setTimeText] = useState<string>('');
+
+  const onSubmit = (): void => {
+    const timeSeconds = parseTimeToSeconds(timeText);
+    if (timeSeconds <= 0) {
+      Alert.alert('Temps invalide', 'Entre ton temps au format MM:SS (ou HH:MM:SS).');
+      return;
+    }
+    onComplete({ type: 'time_trial', distanceMeters: distance, timeSeconds });
+  };
+
+  return (
+    <ScrollView contentContainerStyle={styles.body}>
+      <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
+        SAISIR UN RÉSULTAT
+      </ZoneText>
+
+      <ZoneText variant="body" color={colors.text.secondary} style={styles.cardBody}>
+        Tu as déjà couru un test ou une course récente ? Entre la distance et
+        ton temps, on en déduit ton VDOT — pas besoin de refaire un test.
+      </ZoneText>
+
+      <ZoneText variant="label" style={styles.label}>
+        Distance
+      </ZoneText>
+      <View style={styles.pillRow}>
+        {TRIAL_OPTIONS.map((o) => (
+          <TouchableOpacity
+            key={o.meters}
+            onPress={() => setDistance(o.meters)}
+            activeOpacity={0.7}
+            style={[styles.pill, o.meters === distance ? styles.pillActive : null]}
+          >
+            <ZoneText
+              variant="caption"
+              color={o.meters === distance ? colors.bg.primary : colors.text.primary}
+              style={styles.pillText}
+            >
+              {o.label}
+            </ZoneText>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <ZoneText variant="label" style={styles.label}>
+        Temps (MM:SS)
+      </ZoneText>
+      <TextInput
+        value={timeText}
+        onChangeText={setTimeText}
+        placeholder="ex: 22:30"
+        placeholderTextColor={colors.text.muted}
+        keyboardType="numbers-and-punctuation"
+        style={styles.input}
+      />
+      <ZoneText variant="caption" color={colors.text.muted} style={styles.hint}>
+        Utilise le temps de ta meilleure sortie récente sur cette distance,
+        effort proche du maximum.
+      </ZoneText>
+
+      <View style={styles.cta}>
+        <Button title="Calculer mon VDOT" onPress={onSubmit} />
+        <View style={styles.skipRow}>
+          <TouchableOpacity onPress={onBack} hitSlop={8} activeOpacity={0.7}>
+            <ZoneText variant="caption" color={colors.text.muted}>
+              ← Faire un test à la place
+            </ZoneText>
+          </TouchableOpacity>
+        </View>
       </View>
     </ScrollView>
   );
