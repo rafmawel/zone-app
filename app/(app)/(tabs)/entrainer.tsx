@@ -55,7 +55,14 @@ import type { ProSport } from '@/lib/weekProgression';
 import { generateMuscleSession } from '@/lib/muscleEngine';
 import { blockFromWeeksToRace, type HyroxBlockPhase } from '@/lib/hyroxScience';
 import type { MuscleGroup } from '@/data/exercises';
-import { buildSessionPlan, calculateVDOTPaces, raceLabel, runningPaceFactor } from '@/lib/runningEngine';
+import {
+  blockWeekForAbsoluteWeek,
+  buildSessionPlan,
+  calculateVDOTPaces,
+  raceLabel,
+  runningPaceFactor,
+} from '@/lib/runningEngine';
+import { getRunningPhaseNote, getRunningSessionNote } from '@/data/coachingContext';
 import { weeksUntilRace } from '@/lib/programmePhases';
 import { sportColor, type SchedulerSport } from '@/lib/multiSportScheduler';
 import { frenchShortDate } from '@/lib/frenchDate';
@@ -246,8 +253,35 @@ export default function EntrainerScreen(): React.ReactElement {
       const block = (item.block || 1) as ProgramBlock;
       return `Bloc ${block} · ${getBlockName(block)} · Semaine ${Math.min(4, item.week)} · ~${item.estimatedMinutes} min`;
     }
+    if (item.sport === 'running') {
+      const { block, week } = blockWeekForAbsoluteWeek(item.week);
+      const phase = getRunningPhaseNote(block);
+      return `Bloc ${block}${phase ? ` · ${phase.name}` : ''} · Semaine ${week}/4 · ~${item.estimatedMinutes} min`;
+    }
     return `Semaine ${item.week} · ~${item.estimatedMinutes} min`;
   }, []);
+
+  // Deload = week 4 of a block (both sports). Running items carry the absolute
+  // pool week, so recover the week-in-block first.
+  const isDeloadItem = useCallback((item: QueueItem): boolean => {
+    if (item.sport === 'running') return blockWeekForAbsoluteWeek(item.week).week === 4;
+    if (item.sport === 'weightlifting') return Math.min(4, Math.max(1, item.week)) === 4;
+    return false;
+  }, []);
+
+  // Pedagogical context for the running preview sheet (phase + session note).
+  const previewCtx = (() => {
+    if (!previewItem || previewItem.sport !== 'running') return null;
+    const bw = blockWeekForAbsoluteWeek(previewItem.week);
+    return {
+      block: bw.block,
+      phase: getRunningPhaseNote(bw.block),
+      note: getRunningSessionNote(previewItem.runningType ?? 'EF', {
+        withStrides: previewItem.runningWithStrides,
+        isDeload: bw.week === 4,
+      }),
+    };
+  })();
 
   // ── Launch + skip ───────────────────────────────────────────────────────────
   const launchQueueItem = async (item: QueueItem): Promise<void> => {
@@ -449,6 +483,11 @@ export default function EntrainerScreen(): React.ReactElement {
                         <ZoneText variant="caption" color="rgba(255,255,255,0.7)" style={styles.qSubtitle}>
                           {cardSubtitle(item)}
                         </ZoneText>
+                        {isDeloadItem(item) ? (
+                          <View style={styles.deloadBadge}>
+                            <ZoneText style={styles.deloadBadgeText}>DÉCHARGE</ZoneText>
+                          </View>
+                        ) : null}
                         {urgentRunning ? (
                           <ZoneText
                             variant="caption"
@@ -673,6 +712,25 @@ export default function EntrainerScreen(): React.ReactElement {
                 <ZoneText variant="body" color={colors.text.muted} style={styles.previewMeta}>
                   ~{previewItem.estimatedMinutes} min · semaine {previewItem.weekNumber}
                 </ZoneText>
+                {previewCtx?.phase ? (
+                  <View style={styles.previewContext}>
+                    <ZoneText variant="caption" color={colors.text.muted} style={styles.previewContextEyebrow}>
+                      CONTEXTE
+                    </ZoneText>
+                    <ZoneText variant="label" color={colors.text.primary} style={styles.previewContextTitle}>
+                      Bloc {previewCtx.block} · {previewCtx.phase.name}
+                    </ZoneText>
+                    <ZoneText variant="caption" color={colors.text.secondary} style={styles.previewContextBody}>
+                      {previewCtx.phase.short}
+                    </ZoneText>
+                    {previewCtx.note ? (
+                      <ZoneText variant="caption" color={colors.text.secondary} style={styles.previewContextBody}>
+                        {previewCtx.note.name ? `${previewCtx.note.name} — ` : ''}
+                        {previewCtx.note.short}
+                      </ZoneText>
+                    ) : null}
+                  </View>
+                ) : null}
                 {previewItem.exercises.length > 0 ? (
                   <View style={styles.previewExList}>
                     {previewItem.exercises.map((ex, i) => (
@@ -774,6 +832,31 @@ const styles = StyleSheet.create({
   qCardColored: { borderRadius: 22, padding: 20, marginBottom: 10 },
   qTitle: { marginBottom: 2 },
   qSubtitle: { marginTop: 4 },
+  deloadBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    backgroundColor: colors.orbe.amber,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  deloadBadgeText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    letterSpacing: 1,
+    color: colors.bg.primary,
+  },
+  previewContext: {
+    backgroundColor: colors.bg.elevated,
+    borderRadius: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.scoreGreen,
+    padding: 12,
+    marginBottom: 14,
+  },
+  previewContextEyebrow: { letterSpacing: 1.5, fontFamily: 'Inter_700Bold', fontSize: 10 },
+  previewContextTitle: { marginTop: 6 },
+  previewContextBody: { marginTop: 4, lineHeight: 17 },
   qActions: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 },
   qLaunchBtn: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 999, paddingVertical: 14, alignItems: 'center' },
   qLaunchText: { fontFamily: 'Inter_700Bold', fontSize: 15, color: colors.background },
