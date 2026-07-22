@@ -37,7 +37,7 @@ import { recordSessionComplete, setCurrentWeek, startWeek } from '@/lib/weekTrac
 import { ZoneOrbe } from '@/components/ZoneOrbe';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { getExerciseById, type Exercise } from '@/data/exercises';
-import { DELOAD_RIR_TARGET } from '@/data/coachingContext';
+import { DELOAD_RIR_TARGET, getTargetRIR, type TargetRIR } from '@/data/coachingContext';
 import { useSession, formatRestMS } from '@/context/SessionContext';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
@@ -404,6 +404,9 @@ export default function SessionScreen(): React.ReactElement {
   const wlWeek = program ? Math.min(4, Math.max(1, program.current_week)) : null;
   const wlBlock = program?.current_block ?? null;
   const wlDeload = wlWeek === 4;
+  // Target reps-in-reserve for this block/week — shown on every set and used to
+  // highlight the RIR picker + drive adaptive feedback.
+  const wlTargetRir = getTargetRIR(wlBlock ?? 1, wlWeek ?? 1, wlDeload);
 
   return (
     <SafeScreen edges={['top', 'left', 'right']}>
@@ -485,7 +488,7 @@ export default function SessionScreen(): React.ReactElement {
           onChangeRpe={setSetRpe}
           onDone={handleSetDone}
           onShowInfo={() => setInfoVisible(true)}
-          isDeload={wlDeload}
+          targetRir={wlTargetRir}
         />
       )}
 
@@ -819,7 +822,7 @@ function WorkView({
   onChangeRpe,
   onDone,
   onShowInfo,
-  isDeload,
+  targetRir,
 }: {
   exerciseName: string;
   canShowInfo: boolean;
@@ -834,16 +837,28 @@ function WorkView({
   onChangeRpe: (n: number) => void;
   onDone: () => void;
   onShowInfo: () => void;
-  isDeload: boolean;
+  targetRir: TargetRIR;
 }): React.ReactElement {
   const target = parseTargetReps(plannedSet.target_reps, plannedSet.target_complexes);
   const repOptions = buildRepOptions(target);
-  const rirOptions: { label: string; rpe: number }[] = [
-    { label: '0', rpe: 10 },
-    { label: '1', rpe: 9 },
-    { label: '2', rpe: 8 },
-    { label: '3+', rpe: 7 },
+  const rirOptions: { label: string; rpe: number; rir: number }[] = [
+    { label: '0', rpe: 10, rir: 0 },
+    { label: '1', rpe: 9, rir: 1 },
+    { label: '2', rpe: 8, rir: 2 },
+    { label: '3', rpe: 7, rir: 3 },
+    { label: '4', rpe: 6, rir: 4 },
+    { label: '5+', rpe: 5, rir: 5 },
   ];
+  const selectedRir = setRpe !== null ? 10 - setRpe : null;
+  // Non-intrusive feedback when the logged RIR is far from the block target.
+  const rirFeedback =
+    selectedRir === null
+      ? null
+      : selectedRir < targetRir.min
+        ? 'Charge peut-être trop lourde. Considère de réduire de 2.5 kg.'
+        : selectedRir >= targetRir.max + 2
+          ? 'Charge peut-être trop légère. Tu peux monter de 2.5 kg.'
+          : null;
 
   return (
     <View style={styles.workWrap}>
@@ -895,7 +910,6 @@ function WorkView({
         <ZoneText variant="caption" color={colors.text.muted} style={styles.objective}>
           Objectif: {formatObjective(plannedSet.target_reps, plannedSet.target_complexes)}
           {plannedSet.target_weight_kg ? ` · cible ${plannedSet.target_weight_kg} kg` : ''}
-          {isDeload ? ` · RIR cible : ${DELOAD_RIR_TARGET}` : ''}
         </ZoneText>
         {(() => {
           const hint = explainComplexReps(
@@ -913,6 +927,15 @@ function WorkView({
             </ZoneText>
           ) : null;
         })()}
+      </View>
+
+      <View style={styles.rirTargetBox}>
+        <ZoneText variant="label" color={colors.haltero} style={styles.rirTargetTitle}>
+          💡 RIR cible : {targetRir.label}
+        </ZoneText>
+        <ZoneText variant="caption" color={colors.text.secondary} style={styles.rirTargetDesc}>
+          {targetRir.description}
+        </ZoneText>
       </View>
 
       {/* Reps tap targets — complexes get a single completion button so the
@@ -975,12 +998,19 @@ function WorkView({
         <View style={styles.rirRow}>
           {rirOptions.map((o) => {
             const active = setRpe === o.rpe;
+            const isTarget =
+              o.label === '5+'
+                ? targetRir.max >= 5
+                : o.rir >= targetRir.min && o.rir <= targetRir.max;
             return (
               <TouchableOpacity
                 key={o.label}
                 onPress={() => onChangeRpe(o.rpe)}
                 activeOpacity={0.85}
-                style={[styles.rirCell, active ? styles.rirCellActive : null]}
+                style={[
+                  styles.rirCell,
+                  active ? styles.rirCellActive : isTarget ? styles.rirCellTarget : null,
+                ]}
               >
                 <ZoneText
                   variant="caption"
@@ -994,15 +1024,11 @@ function WorkView({
           })}
         </View>
         <ZoneText variant="caption" color={colors.text.muted} style={styles.rirHint}>
-          Reps en réserve · 0 = échec, 3+ = très facile
+          Cible mise en évidence · 0 = échec · 1-2 = lourd · 3-4 = modéré · 5+ = facile
         </ZoneText>
-        {setRpe !== null ? (
-          <ZoneText
-            variant="caption"
-            color={colors.haltero}
-            style={styles.rirProSuggestion}
-          >
-            {weightSuggestionForRpe(setRpe, actualWeight)}
+        {rirFeedback ? (
+          <ZoneText variant="caption" color={colors.orbe.amber} style={styles.rirProSuggestion}>
+            {rirFeedback}
           </ZoneText>
         ) : null}
       </View>
@@ -1019,13 +1045,6 @@ function WorkView({
  * they just completed. Follows a simple RIR-based autoregulation: large
  * reserve unlocks +2.5 kg, target reserve maintains, no reserve cuts.
  */
-function weightSuggestionForRpe(rpe: number, weight: number): string {
-  if (rpe <= 7) return `Réserve confortable. Tu peux pousser +2,5 kg la prochaine série (${weight + 2.5} kg).`;
-  if (rpe <= 8) return 'Charge bien calibrée. Maintiens la charge sur la prochaine série.';
-  if (rpe <= 9) return 'Effort élevé. Maintiens ou réduis légèrement (-2,5 kg) selon les sensations.';
-  return `RPE 10 / échec. Réduis de 2,5 kg pour la prochaine série (${Math.max(0, weight - 2.5)} kg).`;
-}
-
 function NumberStepper({
   label,
   value,
@@ -1490,6 +1509,16 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   objective: { textAlign: 'center', marginTop: 16 },
+  rirTargetBox: {
+    marginTop: 16,
+    backgroundColor: 'rgba(201,168,76,0.08)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.haltero,
+    padding: 12,
+  },
+  rirTargetTitle: { fontFamily: 'Inter_700Bold', letterSpacing: 0.3, textAlign: 'center' },
+  rirTargetDesc: { marginTop: 4, lineHeight: 16, textAlign: 'center' },
   notationHint: { textAlign: 'center', marginTop: 6, fontStyle: 'italic', lineHeight: 16 },
   repsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 24, gap: 8 },
   repCell: {
@@ -1542,6 +1571,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   rirCellActive: { backgroundColor: colors.haltero, borderColor: colors.haltero },
+  rirCellTarget: { borderColor: colors.haltero, borderWidth: 2, backgroundColor: 'rgba(201,168,76,0.12)' },
   rirCellText: { fontFamily: 'Inter_700Bold' },
   restWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
   restEyebrow: { letterSpacing: 3, fontFamily: 'Inter_700Bold', marginBottom: 16 },

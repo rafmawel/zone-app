@@ -22,7 +22,7 @@ import {
 } from '@/lib/programEngine';
 import { createWeightliftingSession } from '@/lib/sessionLaunch';
 import { getExerciseById } from '@/data/exercises';
-import { getWeekNote, getWeightliftingBlockNote } from '@/data/coachingContext';
+import { getTargetRIR, getWeekNote, getWeightliftingBlockNote } from '@/data/coachingContext';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
@@ -250,6 +250,10 @@ export default function SessionPreviewScreen(): React.ReactElement {
 
   const wlBlockNote =
     computed && computed.blockNum != null ? getWeightliftingBlockNote(computed.blockNum) : null;
+  const targetRir =
+    computed && computed.blockNum != null
+      ? getTargetRIR(computed.blockNum, computed.weekNum ?? 1, computed.isDeload)
+      : null;
 
   const onLaunch = async (): Promise<void> => {
     const user = auth.currentUser;
@@ -365,8 +369,17 @@ export default function SessionPreviewScreen(): React.ReactElement {
                   )}
                   <ZoneText variant="caption" color={colors.text.muted} style={styles.exMeta}>
                     Repos entre séries : {formatRest(row.restSeconds)}
-                    {row.pct != null ? ` · Intensité : ${row.pct}% du 1RM` : ''}
                   </ZoneText>
+                  {targetRir ? (
+                    <View style={styles.rirBox}>
+                      <ZoneText variant="label" color={colors.haltero} style={styles.rirTitle}>
+                        💡 RIR cible : {targetRir.label}
+                      </ZoneText>
+                      <ZoneText variant="caption" color={colors.text.secondary} style={styles.rirDesc}>
+                        {targetRir.description}
+                      </ZoneText>
+                    </View>
+                  ) : null}
                   {ex ? (
                     <TouchableOpacity
                       onPress={() => router.push(`/(app)/exercise/${row.exerciseId}`)}
@@ -488,6 +501,14 @@ const styles = StyleSheet.create({
   setColMid: { flex: 1 },
   setColRight: { width: 90, textAlign: 'right' },
   exMeta: { marginTop: 10, lineHeight: 17 },
+  rirBox: {
+    marginTop: 10,
+    backgroundColor: 'rgba(201,168,76,0.08)',
+    borderRadius: 10,
+    padding: 10,
+  },
+  rirTitle: { fontFamily: 'Inter_700Bold', letterSpacing: 0.3 },
+  rirDesc: { marginTop: 4, lineHeight: 16 },
   techLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   techText: { fontFamily: 'Inter_500Medium' },
   scienceCard: {

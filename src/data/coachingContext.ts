@@ -85,6 +85,51 @@ export function getWeekNote(isDeload: boolean): WeekNote {
   return isDeload ? WEIGHTLIFTING_WEEKS.deload : WEIGHTLIFTING_WEEKS.normal;
 }
 
+export interface TargetRIR {
+  min: number;
+  max: number;
+  /** "2-3" — ready-to-render range label. */
+  label: string;
+  description: string;
+}
+
+/**
+ * Target reps-in-reserve for a weightlifting set (Prilepin-aligned): block 1
+ * accumulation 2-3, block 2 intensification 1-2, block 3 réalisation 0-1, and a
+ * deload week 5-6. More reliable than "% of 1RM" once the real max has drifted.
+ * `week` is accepted for API symmetry; the deload signal comes via `isDeload`.
+ */
+export function getTargetRIR(block: number, week: number, isDeload: boolean): TargetRIR {
+  void week;
+  if (isDeload) {
+    return { min: 5, max: 6, label: '5-6', description: "Semaine de décharge : reste très loin de l'échec." };
+  }
+  switch (block) {
+    case 2:
+      return {
+        min: 1,
+        max: 2,
+        label: '1-2',
+        description: 'Séries lourdes : encore 1 à 2 reps possible après chaque série.',
+      };
+    case 3:
+      return {
+        min: 0,
+        max: 1,
+        label: '0-1',
+        description: 'Séries maximales : proche ou à l’échec sur les dernières séries.',
+      };
+    case 1:
+    default:
+      return {
+        min: 2,
+        max: 3,
+        label: '2-3',
+        description: 'Arrête chaque série en ayant encore 2 à 3 reps en réserve.',
+      };
+  }
+}
+
 // ── Running ─────────────────────────────────────────────────────────────────
 
 export interface RunningPhaseNote extends BlockNote {
