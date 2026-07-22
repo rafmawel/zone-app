@@ -49,6 +49,14 @@ export interface QueueItem {
    *  disappear on tap). */
   runningWithStrides?: boolean;
   runningRecovery?: boolean;
+  /** Detailed step structure (warm-up, work, recovery…) for the running preview. */
+  runningSteps?: {
+    kind: string;
+    label: string;
+    durationSeconds: number | null;
+    targetPaceSecPerKm: number | null;
+    distanceMeters: number | null;
+  }[];
   hyroxType?: HyroxSessionType;
 }
 
@@ -282,6 +290,13 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
           runningType: t,
           runningWithStrides: slot.withStrides,
           runningRecovery: slot.recovery,
+          runningSteps: plan.steps.map((st) => ({
+            kind: st.kind,
+            label: st.label,
+            durationSeconds: st.durationSeconds,
+            targetPaceSecPerKm: st.targetPaceSecPerKm,
+            distanceMeters: st.distanceMeters,
+          })),
         });
       });
     }
