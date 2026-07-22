@@ -22,6 +22,7 @@ import {
 } from '@/lib/programEngine';
 import { createWeightliftingSession } from '@/lib/sessionLaunch';
 import { getExerciseById } from '@/data/exercises';
+import { getWeekNote, getWeightliftingBlockNote } from '@/data/coachingContext';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
@@ -170,6 +171,9 @@ export default function SessionPreviewScreen(): React.ReactElement {
         totalSets,
         durationMin,
         prilepin: null as string | null,
+        blockNum: null as number | null,
+        weekNum: null as number | null,
+        isDeload: false,
         canLaunch: docSession.status === 'planned',
         launchRoute:
           docSession.discipline === 'musculation'
@@ -200,12 +204,18 @@ export default function SessionPreviewScreen(): React.ReactElement {
         totalSets,
         durationMin: preview.durationMin,
         prilepin,
+        blockNum: projected.current_block as number | null,
+        weekNum: preview.week as number | null,
+        isDeload: preview.week >= 4,
         canLaunch: launchable && isCurrent,
         launchRoute: null as string | null,
       };
     }
     return null;
   }, [docSession, program, maxes, day, block, week, launchable]);
+
+  const wlBlockNote =
+    computed && computed.blockNum != null ? getWeightliftingBlockNote(computed.blockNum) : null;
 
   const onLaunch = async (): Promise<void> => {
     const user = auth.currentUser;
@@ -262,6 +272,30 @@ export default function SessionPreviewScreen(): React.ReactElement {
             <ZoneText variant="caption" color={colors.text.muted} style={styles.meta}>
               ~{computed.durationMin} min · {computed.rows.length} exercices · {computed.totalSets} séries total
             </ZoneText>
+
+            {wlBlockNote && computed.blockNum != null ? (
+              <View style={styles.contextCard}>
+                <ZoneText variant="caption" color={colors.text.muted} style={styles.contextEyebrow}>
+                  CONTEXTE
+                </ZoneText>
+                <ZoneText variant="titleSm" color={colors.text.primary} style={styles.contextTitle}>
+                  Bloc {computed.blockNum} · {wlBlockNote.name} · Semaine {computed.weekNum}/4
+                </ZoneText>
+                <ZoneText variant="caption" color={colors.text.secondary} style={styles.contextBody}>
+                  {wlBlockNote.short}
+                </ZoneText>
+                {computed.isDeload ? (
+                  <View style={styles.deloadBox}>
+                    <ZoneText variant="caption" color={colors.orbe.amber} style={styles.deloadTitle}>
+                      ⚠️ SEMAINE DE DÉCHARGE · RIR cible : 5-6
+                    </ZoneText>
+                    <ZoneText variant="caption" color={colors.text.secondary} style={styles.deloadBody}>
+                      {getWeekNote(true).long}
+                    </ZoneText>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
 
             {computed.rows.map((row, i) => {
               const ex = getExerciseById(row.exerciseId);
@@ -347,6 +381,29 @@ const styles = StyleSheet.create({
   skelGap: { marginTop: 12 },
   title: { letterSpacing: 0.5 },
   meta: { marginTop: 6, marginBottom: 20 },
+  contextCard: {
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.haltero,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  contextEyebrow: { letterSpacing: 1.5, fontFamily: 'Inter_700Bold', fontSize: 10 },
+  contextTitle: { marginTop: 8, letterSpacing: 0.3 },
+  contextBody: { marginTop: 6, lineHeight: 18 },
+  deloadBox: {
+    marginTop: 12,
+    backgroundColor: 'rgba(230,168,90,0.10)',
+    borderWidth: 1,
+    borderColor: colors.orbe.amber,
+    borderRadius: 12,
+    padding: 12,
+  },
+  deloadTitle: { fontFamily: 'Inter_700Bold', letterSpacing: 0.3 },
+  deloadBody: { marginTop: 6, lineHeight: 18 },
   exCard: {
     backgroundColor: colors.bg.card,
     borderWidth: 1,

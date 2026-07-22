@@ -20,6 +20,7 @@ import {
   type RunningSessionStepPlanned,
 } from '@/lib/firestore';
 import {
+  blockWeekForAbsoluteWeek,
   calculateVDOTPaces,
   formatPace,
   sessionName,
@@ -27,6 +28,7 @@ import {
   sessionRpe,
   type RunningSessionType,
 } from '@/lib/runningEngine';
+import { getRunningPhaseNote, getRunningSessionNote } from '@/data/coachingContext';
 import { formatSpeed } from '@/utils/paceUtils';
 import { computeAndSaveWorkloadEntry } from '@/lib/pro';
 import { readCurrentWeek, readProgrammeQueue, recordSessionComplete, startWeek } from '@/lib/weekTracking';
@@ -189,6 +191,21 @@ export default function RunSessionScreen(): React.ReactElement {
 
   const steps = run?.steps ?? [];
   const sessionType = run?.session_type ?? 'EF';
+  // The run doc stores no block/week; recover them from the queue key
+  // (running_b1_w{absWeek}_s{n}) to show the phase + deload context.
+  const runContext = useMemo(() => {
+    const m = run?.queue_key?.match(/_w(\d+)_/);
+    if (!m) return null;
+    const { block, week } = blockWeekForAbsoluteWeek(parseInt(m[1], 10));
+    const withStrides = (run?.steps ?? []).some((s) => /foulée/i.test(s.label));
+    return {
+      block,
+      week,
+      isDeload: week === 4,
+      phase: getRunningPhaseNote(block),
+      note: getRunningSessionNote(sessionType, { withStrides, isDeload: week === 4 }),
+    };
+  }, [run?.queue_key, run?.steps, sessionType]);
   const zoneScore = run?.zone_score_at_start ?? null;
   const zoneLevel = useMemo(() => (zoneScore !== null ? getZoneLevel(zoneScore) : null), [zoneScore]);
   const accentColor = zoneLevel?.color ?? colors.run;
@@ -628,6 +645,44 @@ export default function RunSessionScreen(): React.ReactElement {
             {sessionPurpose(sessionType)} · {sessionRpe(sessionType)}
           </ZoneText>
 
+          {runContext ? (
+            <ZoneText variant="caption" color={colors.run} style={styles.blockLine}>
+              Bloc {runContext.block}
+              {runContext.phase ? ` · ${runContext.phase.name}` : ''} · Semaine {runContext.week}/4
+            </ZoneText>
+          ) : null}
+
+          {runContext?.isDeload ? (
+            <View style={styles.ctxDeloadBanner}>
+              <ZoneText variant="caption" color={colors.orbe.amber} style={styles.ctxDeloadText}>
+                ⚠️ Semaine de décharge · RPE 3-4/10 max — cours confortablement, c&apos;est voulu.
+              </ZoneText>
+            </View>
+          ) : null}
+
+          {runContext && (runContext.phase || runContext.note) ? (
+            <View style={styles.ctxCard}>
+              <ZoneText variant="caption" color={colors.text.muted} style={styles.ctxEyebrow}>
+                CONTEXTE
+              </ZoneText>
+              {runContext.phase ? (
+                <ZoneText variant="caption" color={colors.text.secondary} style={styles.ctxBody}>
+                  {runContext.phase.name} — {runContext.phase.short}
+                </ZoneText>
+              ) : null}
+              {runContext.note ? (
+                <ZoneText variant="caption" color={colors.text.secondary} style={styles.ctxBody}>
+                  {runContext.note.long}
+                </ZoneText>
+              ) : null}
+              {runContext.note?.tip ? (
+                <ZoneText variant="caption" color={colors.run} style={styles.ctxTip}>
+                  💡 {runContext.note.tip}
+                </ZoneText>
+              ) : null}
+            </View>
+          ) : null}
+
           <View style={styles.structureCard}>
             <ZoneText variant="caption" color={colors.text.muted} style={styles.cardLabel}>
               STRUCTURE
@@ -719,6 +774,22 @@ export default function RunSessionScreen(): React.ReactElement {
           </ZoneText>
         </View>
       </View>
+
+      {runContext ? (
+        <View style={styles.activeContextWrap}>
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.activeBlockLine}>
+            Bloc {runContext.block}
+            {runContext.phase ? ` · ${runContext.phase.name}` : ''} · Semaine {runContext.week}/4
+          </ZoneText>
+          {runContext.isDeload ? (
+            <View style={styles.ctxDeloadBanner}>
+              <ZoneText variant="caption" color={colors.orbe.amber} style={styles.ctxDeloadText}>
+                ⚠️ Semaine de décharge · reste en RPE 3-4/10, c&apos;est voulu.
+              </ZoneText>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
 
       <View style={styles.activeWrap}>
         <ZoneText style={styles.bigTimer}>{mmss(elapsed)}</ZoneText>
@@ -846,6 +917,32 @@ const styles = StyleSheet.create({
   // Active
   activeHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 8 },
   activeName: { flex: 1, fontSize: 15 },
+  activeContextWrap: { paddingHorizontal: 16, paddingTop: 6, gap: 6 },
+  activeBlockLine: { textAlign: 'center' },
+  blockLine: { marginTop: 6, fontFamily: 'Inter_700Bold', letterSpacing: 0.3 },
+  ctxDeloadBanner: {
+    marginTop: 12,
+    backgroundColor: 'rgba(230,168,90,0.12)',
+    borderWidth: 1,
+    borderColor: colors.orbe.amber,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  ctxDeloadText: { fontFamily: 'Inter_500Medium', lineHeight: 17 },
+  ctxCard: {
+    marginTop: 12,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.run,
+    borderRadius: 14,
+    padding: 14,
+  },
+  ctxEyebrow: { letterSpacing: 1.5, fontFamily: 'Inter_700Bold', fontSize: 10 },
+  ctxBody: { marginTop: 8, lineHeight: 18 },
+  ctxTip: { marginTop: 8, lineHeight: 18, fontFamily: 'Inter_500Medium' },
   modeBadge: { backgroundColor: colors.surface, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
   modeBadgeText: { fontFamily: 'Inter_600SemiBold', fontSize: 11, color: colors.text.secondary },
   activeWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },

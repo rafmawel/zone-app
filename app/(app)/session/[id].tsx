@@ -37,6 +37,7 @@ import { recordSessionComplete, setCurrentWeek, startWeek } from '@/lib/weekTrac
 import { ZoneOrbe } from '@/components/ZoneOrbe';
 import { getZoneLevel } from '@/lib/zoneScore';
 import { getExerciseById, type Exercise } from '@/data/exercises';
+import { DELOAD_RIR_TARGET } from '@/data/coachingContext';
 import { useSession, formatRestMS } from '@/context/SessionContext';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
@@ -398,6 +399,12 @@ export default function SessionScreen(): React.ReactElement {
 
   const totalSets = currentExercise.sets.length;
 
+  // Deload = week 4 of any block (mirrors the engine's selectBlueprint). The
+  // session doc has no block/week, so derive it from the loaded programme.
+  const wlWeek = program ? Math.min(4, Math.max(1, program.current_week)) : null;
+  const wlBlock = program?.current_block ?? null;
+  const wlDeload = wlWeek === 4;
+
   return (
     <SafeScreen edges={['top', 'left', 'right']}>
       {pr ? <PRFlash pr={pr} /> : null}
@@ -423,10 +430,26 @@ export default function SessionScreen(): React.ReactElement {
         >
           <X size={24} color={colors.text.primary} />
         </TouchableOpacity>
-        <ZoneText variant="caption" color={colors.text.muted}>
-          Exercice {exerciseIdx + 1}/{exercises.length}
-        </ZoneText>
+        <View style={styles.headerRight}>
+          {wlBlock != null ? (
+            <ZoneText variant="caption" color={colors.haltero} style={styles.blockBadge}>
+              Bloc {wlBlock} · S{wlWeek}
+            </ZoneText>
+          ) : null}
+          <ZoneText variant="caption" color={colors.text.muted}>
+            Exercice {exerciseIdx + 1}/{exercises.length}
+          </ZoneText>
+        </View>
       </View>
+
+      {wlDeload ? (
+        <View style={styles.deloadBanner}>
+          <ZoneText variant="caption" color={colors.orbe.amber} style={styles.deloadBannerText}>
+            ⚠️ Semaine de décharge · RIR cible : {DELOAD_RIR_TARGET} — si c&apos;est facile, c&apos;est
+            voulu, ne monte pas la charge.
+          </ZoneText>
+        </View>
+      ) : null}
 
       {isResting ? (
         <RestView
@@ -462,6 +485,7 @@ export default function SessionScreen(): React.ReactElement {
           onChangeRpe={setSetRpe}
           onDone={handleSetDone}
           onShowInfo={() => setInfoVisible(true)}
+          isDeload={wlDeload}
         />
       )}
 
@@ -795,6 +819,7 @@ function WorkView({
   onChangeRpe,
   onDone,
   onShowInfo,
+  isDeload,
 }: {
   exerciseName: string;
   canShowInfo: boolean;
@@ -809,6 +834,7 @@ function WorkView({
   onChangeRpe: (n: number) => void;
   onDone: () => void;
   onShowInfo: () => void;
+  isDeload: boolean;
 }): React.ReactElement {
   const target = parseTargetReps(plannedSet.target_reps, plannedSet.target_complexes);
   const repOptions = buildRepOptions(target);
@@ -869,6 +895,7 @@ function WorkView({
         <ZoneText variant="caption" color={colors.text.muted} style={styles.objective}>
           Objectif: {formatObjective(plannedSet.target_reps, plannedSet.target_complexes)}
           {plannedSet.target_weight_kg ? ` · cible ${plannedSet.target_weight_kg} kg` : ''}
+          {isDeload ? ` · RIR cible : ${DELOAD_RIR_TARGET}` : ''}
         </ZoneText>
         {(() => {
           const hint = explainComplexReps(
@@ -1329,6 +1356,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 22,
   },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  blockBadge: { fontFamily: 'Inter_700Bold', letterSpacing: 0.3 },
+  deloadBanner: {
+    marginHorizontal: 16,
+    marginBottom: 4,
+    backgroundColor: 'rgba(230,168,90,0.12)',
+    borderWidth: 1,
+    borderColor: colors.orbe.amber,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  deloadBannerText: { fontFamily: 'Inter_500Medium', lineHeight: 17 },
   workWrap: { flex: 1, paddingHorizontal: 24 },
   exerciseNameRow: {
     flexDirection: 'row',
