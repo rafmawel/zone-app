@@ -202,6 +202,17 @@ export interface RunningProfile {
    * easy pace was too aggressive for them today.
    */
   ef_pace_adjustment?: number | null;
+  /** Cached adaptive phase split (weeks) for the full programme length. A
+   *  snapshot recomputed when vdot / goal_time / target date change; queue
+   *  generation recomputes on the fly, so this is informational / for display. */
+  phase_distribution?: {
+    base: number;
+    developpement: number;
+    specifique: number;
+    affutage: number;
+    total: number;
+    calculated_at: string | null;
+  } | null;
   updated_at: Timestamp | null;
 }
 

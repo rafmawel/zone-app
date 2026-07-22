@@ -19,6 +19,7 @@ import {
   type RunningRaceDistance,
 } from '@/lib/firestore';
 import {
+  calculatePhaseDistribution,
   calculateVDOTPaces,
   estimateVDOT,
   formatPace,
@@ -233,6 +234,20 @@ export default function RaceGoalScreen(): React.ReactElement {
         programme_weeks: totalWeeks,
         programme_start_date: profile?.programme_start_date ?? todayDateString(),
         ef_pace_adjustment: profile?.ef_pace_adjustment ?? null,
+        // Snapshot the adaptive phase split for the full programme length,
+        // recomputed here whenever the goal (vdot / time / date) changes.
+        phase_distribution:
+          goalVdot != null && numericDistance
+            ? {
+                ...calculatePhaseDistribution(
+                  totalWeeks,
+                  goalVdot - currentVdot,
+                  currentVdot,
+                  numericDistance,
+                ),
+                calculated_at: todayDateString(),
+              }
+            : (profile?.phase_distribution ?? null),
       };
       await saveRunningProfile(user.uid, next);
       // Changing the goal restructures the programme phases, so the queue
