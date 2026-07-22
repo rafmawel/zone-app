@@ -45,7 +45,17 @@ interface PreviewRow {
   pct: number | null;
   weightKg: number | null;
   restMin: number;
+  restSeconds: number;
+  /** Per-set charge + reps, so the preview can render a set-by-set table. */
+  setDetails: { weightKg: number | null; reps: string }[];
   display?: string;
+}
+
+/** "3 min" / "2 min 30" for the rest-between-sets line. */
+function formatRest(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return s === 0 ? `${m} min` : `${m} min ${s.toString().padStart(2, '0')}`;
 }
 
 function firstInt(reps: string): number {
@@ -67,21 +77,32 @@ function formatRepsLine(reps: string, complexes?: number): string {
 }
 
 function rowsFromPreview(exs: SessionExercisePreview[]): PreviewRow[] {
-  return exs.map((ex) => ({
-    exerciseId: ex.exerciseId,
-    sets: ex.sets,
-    reps: ex.reps,
-    complexes: ex.complexes,
-    pct: ex.pct,
-    weightKg: ex.weightKg,
-    restMin: Math.round(restBaseForExercise(ex.exerciseId) / 60),
-    display: ex.display,
-  }));
+  return exs.map((ex) => {
+    const restSeconds = restBaseForExercise(ex.exerciseId);
+    return {
+      exerciseId: ex.exerciseId,
+      sets: ex.sets,
+      reps: ex.reps,
+      complexes: ex.complexes,
+      pct: ex.pct,
+      weightKg: ex.weightKg,
+      restMin: Math.round(restSeconds / 60),
+      restSeconds,
+      // A block's sets share the same charge / reps, so mirror the summary
+      // across the set count.
+      setDetails: Array.from({ length: Math.max(1, ex.sets) }, () => ({
+        weightKg: ex.weightKg,
+        reps: ex.reps,
+      })),
+      display: ex.display,
+    };
+  });
 }
 
 function rowsFromDoc(exs: SessionExercise[]): PreviewRow[] {
   return exs.map((ex) => {
     const first = ex.sets[0];
+    const restSeconds = first?.rest_seconds ?? 120;
     return {
       exerciseId: ex.exercise_id,
       sets: ex.sets.length,
@@ -89,7 +110,12 @@ function rowsFromDoc(exs: SessionExercise[]): PreviewRow[] {
       complexes: first?.target_complexes,
       pct: null,
       weightKg: first?.target_weight_kg ?? null,
-      restMin: Math.round((first?.rest_seconds ?? 120) / 60),
+      restMin: Math.round(restSeconds / 60),
+      restSeconds,
+      setDetails: ex.sets.map((s) => ({
+        weightKg: s.target_weight_kg ?? null,
+        reps: s.target_reps ?? '-',
+      })),
     };
   });
 }
@@ -164,6 +190,14 @@ export default function SessionPreviewScreen(): React.ReactElement {
             ? 'COURSE'
             : 'HALTÉROPHILIE';
       const durationMin = docSession.duration_minutes ?? Math.round(10 + totalSets * 3);
+      // The session doc stores no block / week. For a weightlifting session,
+      // derive the pedagogical context from the current programme so CONTEXTE
+      // still renders (the doc-branch previously left it null → hidden).
+      const isWeightliftingDoc =
+        docSession.discipline !== 'musculation' && docSession.sport_key !== 'running';
+      const blockNum = isWeightliftingDoc && program ? (program.current_block as number) : null;
+      const weekNum =
+        isWeightliftingDoc && program ? Math.min(4, Math.max(1, program.current_week)) : null;
       return {
         title: `SÉANCE · ${sportLabel}`,
         sportLabel,
@@ -171,9 +205,9 @@ export default function SessionPreviewScreen(): React.ReactElement {
         totalSets,
         durationMin,
         prilepin: null as string | null,
-        blockNum: null as number | null,
-        weekNum: null as number | null,
-        isDeload: false,
+        blockNum: blockNum as number | null,
+        weekNum: weekNum as number | null,
+        isDeload: weekNum === 4,
         canLaunch: docSession.status === 'planned',
         launchRoute:
           docSession.discipline === 'musculation'
@@ -297,6 +331,10 @@ export default function SessionPreviewScreen(): React.ReactElement {
               </View>
             ) : null}
 
+            <ZoneText variant="caption" color={colors.text.muted} style={styles.sectionEyebrow}>
+              EXERCICES
+            </ZoneText>
+
             {computed.rows.map((row, i) => {
               const ex = getExerciseById(row.exerciseId);
               return (
@@ -304,13 +342,30 @@ export default function SessionPreviewScreen(): React.ReactElement {
                   <ZoneText variant="titleSm" color={colors.text.primary} style={styles.exName}>
                     {(ex?.name ?? row.exerciseId).toUpperCase()}
                   </ZoneText>
-                  <ZoneText variant="body" size={14} color={colors.text.primary} style={styles.exLine}>
-                    {row.display
-                      ? row.display
-                      : `${row.sets} séries × ${formatRepsLine(row.reps, row.complexes)}${row.weightKg ? ` @ ${row.weightKg} kg` : ''}`}
-                  </ZoneText>
-                  <ZoneText variant="caption" color={colors.text.muted}>
-                    {row.pct != null ? `${row.pct}% de ton max · ` : ''}repos {row.restMin} min
+                  {row.display ? (
+                    <ZoneText variant="body" size={14} color={colors.text.primary} style={styles.exLine}>
+                      {row.display}
+                    </ZoneText>
+                  ) : (
+                    <View style={styles.setTable}>
+                      {row.setDetails.map((set, si) => (
+                        <View key={si} style={styles.setRow}>
+                          <ZoneText variant="caption" color={colors.text.muted} style={styles.setColLeft}>
+                            Série {si + 1}
+                          </ZoneText>
+                          <ZoneText variant="label" color={colors.text.primary} style={styles.setColMid}>
+                            {set.weightKg != null ? `${set.weightKg} kg` : '—'}
+                          </ZoneText>
+                          <ZoneText variant="caption" color={colors.text.secondary} style={styles.setColRight}>
+                            {formatRepsLine(set.reps, row.complexes)}
+                          </ZoneText>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                  <ZoneText variant="caption" color={colors.text.muted} style={styles.exMeta}>
+                    Repos entre séries : {formatRest(row.restSeconds)}
+                    {row.pct != null ? ` · Intensité : ${row.pct}% du 1RM` : ''}
                   </ZoneText>
                   {ex ? (
                     <TouchableOpacity
@@ -414,6 +469,25 @@ const styles = StyleSheet.create({
   },
   exName: { letterSpacing: 0.3 },
   exLine: { marginTop: 6 },
+  sectionEyebrow: {
+    letterSpacing: 1.5,
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  setTable: { marginTop: 10 },
+  setRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  setColLeft: { width: 70 },
+  setColMid: { flex: 1 },
+  setColRight: { width: 90, textAlign: 'right' },
+  exMeta: { marginTop: 10, lineHeight: 17 },
   techLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   techText: { fontFamily: 'Inter_500Medium' },
   scienceCard: {

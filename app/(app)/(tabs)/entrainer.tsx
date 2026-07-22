@@ -59,10 +59,16 @@ import {
   blockWeekForAbsoluteWeek,
   buildSessionPlan,
   calculateVDOTPaces,
+  formatPace,
   raceLabel,
   runningPaceFactor,
 } from '@/lib/runningEngine';
-import { getRunningPhaseNote, getRunningSessionNote } from '@/data/coachingContext';
+import { formatSpeed } from '@/utils/paceUtils';
+import {
+  getRunningPhaseNote,
+  getRunningSessionNote,
+  getWeightliftingBlockNote,
+} from '@/data/coachingContext';
 import { weeksUntilRace } from '@/lib/programmePhases';
 import { sportColor, type SchedulerSport } from '@/lib/multiSportScheduler';
 import { frenchShortDate } from '@/lib/frenchDate';
@@ -283,6 +289,29 @@ export default function EntrainerScreen(): React.ReactElement {
     };
   })();
 
+  // Pedagogical context for the weightlifting preview sheet (block note).
+  const wlPreviewCtx = (() => {
+    if (!previewItem || previewItem.sport !== 'weightlifting') return null;
+    const note = getWeightliftingBlockNote(previewItem.block);
+    if (!note) return null;
+    return { block: previewItem.block, week: Math.min(4, Math.max(1, previewItem.week)), note };
+  })();
+
+  // Weightlifting opens the full detailed preview SCREEN (per-set charges + reps,
+  // % 1RM, rest, CONTEXTE); the other sports use the bottom-sheet modal.
+  const openPreview = useCallback(
+    (item: QueueItem): void => {
+      if (item.sport === 'weightlifting') {
+        router.push(
+          `/(app)/session-preview?day=${item.day}&block=${item.block}&week=${Math.min(4, Math.max(1, item.week))}`,
+        );
+      } else {
+        setPreviewItem(item);
+      }
+    },
+    [router],
+  );
+
   // ── Launch + skip ───────────────────────────────────────────────────────────
   const launchQueueItem = async (item: QueueItem): Promise<void> => {
     const user = auth.currentUser;
@@ -473,7 +502,7 @@ export default function EntrainerScreen(): React.ReactElement {
                   key={sport}
                   style={[styles.qCardColored, { backgroundColor: sportColor(sport as SchedulerSport) }]}
                 >
-                  <TouchableOpacity activeOpacity={0.85} onPress={() => setPreviewItem(item)}>
+                  <TouchableOpacity activeOpacity={0.85} onPress={() => openPreview(item)}>
                     <View style={styles.qCardHead}>
                       <ZoneText style={styles.qIcon}>{SPORT_ICON[sport]}</ZoneText>
                       <View style={styles.qMain}>
@@ -513,7 +542,7 @@ export default function EntrainerScreen(): React.ReactElement {
                       </ZoneText>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      onPress={() => setPreviewItem(item)}
+                      onPress={() => openPreview(item)}
                       activeOpacity={0.85}
                       style={styles.qApercuBtn}
                     >
@@ -731,7 +760,56 @@ export default function EntrainerScreen(): React.ReactElement {
                     ) : null}
                   </View>
                 ) : null}
-                {previewItem.exercises.length > 0 ? (
+                {wlPreviewCtx ? (
+                  <View style={styles.previewContext}>
+                    <ZoneText variant="caption" color={colors.text.muted} style={styles.previewContextEyebrow}>
+                      CONTEXTE
+                    </ZoneText>
+                    <ZoneText variant="label" color={colors.text.primary} style={styles.previewContextTitle}>
+                      💪 Bloc {wlPreviewCtx.block} · {wlPreviewCtx.note.name} · Semaine {wlPreviewCtx.week}/4
+                    </ZoneText>
+                    <ZoneText variant="caption" color={colors.text.secondary} style={styles.previewContextBody}>
+                      {wlPreviewCtx.note.short}
+                    </ZoneText>
+                  </View>
+                ) : null}
+                {previewItem.sport === 'running' &&
+                previewItem.runningSteps &&
+                previewItem.runningSteps.length > 0 ? (
+                  <View style={styles.previewStructure}>
+                    <ZoneText variant="caption" color={colors.text.muted} style={styles.previewContextEyebrow}>
+                      STRUCTURE
+                    </ZoneText>
+                    {previewItem.runningSteps.map((st, i) => {
+                      const dur = st.durationSeconds
+                        ? `${Math.round(st.durationSeconds / 60)} min`
+                        : st.distanceMeters
+                          ? `${st.distanceMeters} m`
+                          : '';
+                      const pace = st.targetPaceSecPerKm
+                        ? `${formatPace(st.targetPaceSecPerKm)} · ${formatSpeed(st.targetPaceSecPerKm)}`
+                        : '';
+                      return (
+                        <View key={i} style={styles.structRow}>
+                          <ZoneText
+                            variant="caption"
+                            color={colors.text.primary}
+                            style={styles.structLabel}
+                            numberOfLines={1}
+                          >
+                            {st.label}
+                          </ZoneText>
+                          <ZoneText variant="caption" color={colors.text.secondary} style={styles.structMeta}>
+                            {[dur, pace].filter(Boolean).join(' · ')}
+                          </ZoneText>
+                        </View>
+                      );
+                    })}
+                    <ZoneText variant="caption" color={colors.text.muted} style={styles.structTotal}>
+                      DURÉE TOTALE : ~{previewItem.estimatedMinutes} min
+                    </ZoneText>
+                  </View>
+                ) : previewItem.exercises.length > 0 ? (
                   <View style={styles.previewExList}>
                     {previewItem.exercises.map((ex, i) => (
                       <View key={`${ex}-${i}`} style={styles.previewExRow}>
@@ -857,6 +935,24 @@ const styles = StyleSheet.create({
   previewContextEyebrow: { letterSpacing: 1.5, fontFamily: 'Inter_700Bold', fontSize: 10 },
   previewContextTitle: { marginTop: 6 },
   previewContextBody: { marginTop: 4, lineHeight: 17 },
+  previewStructure: {
+    backgroundColor: colors.bg.elevated,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  structRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: 8,
+  },
+  structLabel: { flex: 1 },
+  structMeta: { flexShrink: 0 },
+  structTotal: { marginTop: 8, fontFamily: 'Inter_700Bold', letterSpacing: 0.3 },
   qActions: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 },
   qLaunchBtn: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 999, paddingVertical: 14, alignItems: 'center' },
   qLaunchText: { fontFamily: 'Inter_700Bold', fontSize: 15, color: colors.background },
