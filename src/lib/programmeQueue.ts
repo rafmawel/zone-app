@@ -3,9 +3,13 @@ import {
   blockWeekForAbsoluteWeek,
   buildSessionPlan,
   calculateVDOTPaces,
+  getPhaseForWeek,
   getWeeklyDistribution,
+  resolvePhaseDistribution,
   resolveRunningGoal,
   sessionName,
+  weekWithinPhase,
+  type RunningPhase,
   type RunningSessionType,
 } from './runningEngine';
 import { generateMuscleSession } from './muscleEngine';
@@ -218,13 +222,32 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
       runningProfile.goal,
       runningProfile.race_distance ?? runningProfile.reference_distance,
     );
+    // Adaptive phase distribution across the rolling 12-week pool. Null when
+    // there's no time goal → fall back to the fixed block model (unchanged
+    // behaviour). The stored running_profile.phase_distribution holds the
+    // full-length plan; the queue applies the same algorithm to its window.
+    const distribution = resolvePhaseDistribution({
+      vdot,
+      goalTimeSeconds: runningProfile.goal_time_seconds,
+      raceDistance: runningProfile.race_distance ?? runningProfile.reference_distance,
+      totalWeeks: POOL_WEEKS,
+    });
     for (let w = 1; w <= POOL_WEEKS; w += 1) {
       // The queue key keeps the legacy block-1 / absolute-week shape (no data
-      // migration), but the session content needs the real block / week-in-block:
-      // both the session types (getWeeklyDistribution) and the durations depend
-      // on it, so the distribution is recomputed per week rather than reused.
+      // migration). Session content comes from the phase (adaptive) when a goal
+      // is set, else from the block / week-in-block.
       const { block: slBlock, week: slWeek } = blockWeekForAbsoluteWeek(w);
-      const dist = getWeeklyDistribution(runPerWeek, slBlock, slWeek, vdot, goal);
+      let phaseCtx:
+        | { phase: RunningPhase; affutageWeek: number; isDeload: boolean }
+        | undefined;
+      if (distribution) {
+        const phase = getPhaseForWeek(w, distribution);
+        const inPhase = weekWithinPhase(w, distribution);
+        const affutageWeek =
+          phase === 'affutage' ? Math.max(1, Math.min(4, 4 - distribution.affutage + inPhase)) : 1;
+        phaseCtx = { phase, affutageWeek, isDeload: phase !== 'affutage' && w % 4 === 0 };
+      }
+      const dist = getWeeklyDistribution(runPerWeek, slBlock, slWeek, vdot, goal, phaseCtx);
       const slots = dist.items.filter((i) => i.type !== 'REST');
       slots.forEach((slot, idx) => {
         const s = idx + 1;
@@ -241,6 +264,7 @@ export function buildProgrammeQueue(inputs: BuildQueueInputs): QueueItem[][] {
           recovery: slot.recovery,
           goalDistance,
           goalTimeSeconds,
+          volumeMultiplier: slot.volumeMultiplier,
         });
         const labelSuffix = slot.recovery && t === 'EF' ? ' · récup' : slot.withStrides && t === 'EF' ? ' + foulées' : '';
         perSport.running.push({

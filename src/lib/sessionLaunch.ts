@@ -15,8 +15,12 @@ import {
   blockWeekForAbsoluteWeek,
   buildSessionPlan,
   calculateVDOTPaces,
+  getPhaseForWeek,
+  getPhaseVolumeMultiplier,
+  resolvePhaseDistribution,
   resolveRunningGoal,
   runningPaceFactor,
+  weekWithinPhase,
 } from './runningEngine';
 import { generateMuscleSession } from './muscleEngine';
 import type { QueueItem } from './programmeQueue';
@@ -135,6 +139,22 @@ export async function launchSessionForItem(
       runningProfile.goal,
       runningProfile.race_distance ?? runningProfile.reference_distance,
     );
+    // Match the queue's adaptive phase (same 12-week pool) so the launched
+    // session's volume equals its preview — notably the affûtage taper.
+    const distribution = resolvePhaseDistribution({
+      vdot,
+      goalTimeSeconds: runningProfile.goal_time_seconds,
+      raceDistance: runningProfile.race_distance ?? runningProfile.reference_distance,
+      totalWeeks: 12, // = POOL_WEEKS in programmeQueue
+    });
+    let volumeMultiplier = 1;
+    if (distribution) {
+      const phase = getPhaseForWeek(item.week, distribution);
+      const inPhase = weekWithinPhase(item.week, distribution);
+      const affutageWeek =
+        phase === 'affutage' ? Math.max(1, Math.min(4, 4 - distribution.affutage + inPhase)) : 1;
+      volumeMultiplier = getPhaseVolumeMultiplier(phase, affutageWeek);
+    }
     const plan = buildSessionPlan({
       type: item.runningType,
       paces,
@@ -143,6 +163,7 @@ export async function launchSessionForItem(
       week,
       vdot,
       goal,
+      volumeMultiplier,
       paceFactor: runningPaceFactor(recentRunRir),
       withStrides: item.runningWithStrides,
       recovery: item.runningRecovery,

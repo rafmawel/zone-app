@@ -288,6 +288,8 @@ export interface BuildSessionParams {
    *  and, for 5k, shorter easy runs / warm-ups. Defaults to `semi_marathon`
    *  (the existing SL-based behaviour) when omitted. */
   goal?: RunningGoal;
+  /** Scales easy / long-run / tempo durations (< 1 during the affûtage taper). */
+  volumeMultiplier?: number;
 }
 
 /**
@@ -603,6 +605,8 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
   const short5k = goal === '5k';
   const qWarm = short5k ? [warmup(paces, 8), ...stridesBlock(paces, 3)] : qualityWarmup(paces);
   const cdMin = short5k ? 6 : 10;
+  // Affûtage taper scales the easy / long / tempo durations down.
+  const vol = params.volumeMultiplier ?? 1;
   let steps: RunningSessionStep[] = [];
   let message = '';
 
@@ -610,7 +614,7 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
     case 'EF': {
       const isRecovery = params.recovery === true;
       // Duration scales with VDOT (and block/week); week 4 is the deload.
-      const baseMinutes = getEFDuration(vdot, block, week, goal);
+      const baseMinutes = Math.round(getEFDuration(vdot, block, week, goal) * vol);
       const efPace = isRecovery ? paces.E_slow : paces.E_fast;
       steps = [
         steady(
@@ -638,7 +642,7 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
       // block (see getLongRunDuration); week 4 is the deload. The last quarter
       // (capped at 20 min) drops to E_slow so fatigue accumulates without
       // breaking form. Distance is derived from duration × easy pace below.
-      const minutes = getLongRunDuration(vdot, block, week);
+      const minutes = Math.round(getLongRunDuration(vdot, block, week) * vol);
       const slowMinutes = Math.min(20, Math.round(minutes / 4));
       const fastMinutes = Math.max(10, minutes - slowMinutes);
       steps = [
@@ -654,9 +658,10 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
     case 'TC': {
       // 10-min warm-up + 20-40 min tempo + 10-min cool-down (Daniels T pace).
       // Quality warm-up includes 4 strides to pre-activate the legs.
-      const minutes = short5k
+      const tempoBase = short5k
         ? 20
         : level === 'beginner' ? 20 : level === 'intermediate' ? 30 : 40;
+      const minutes = Math.max(10, Math.round(tempoBase * vol));
       steps = [
         ...qWarm,
         workStep(`Tempo continu · ${minutes} min`, minutes, paces.T),
@@ -859,6 +864,8 @@ export interface WeeklyPlanItem {
   withStrides?: boolean;
   /** EF / SL slot used as a deliberate recovery day (shorter, slower). */
   recovery?: boolean;
+  /** Scales session durations (< 1 during the affûtage taper). */
+  volumeMultiplier?: number;
 }
 
 export interface WeeklyPlan {
@@ -945,6 +952,179 @@ function formeBase(n: number): WeeklySessionType[] {
   return n === 2 ? ['EF', 'EF_strides'] : ['EF', 'EF_strides', 'TC'];
 }
 
+// ── Adaptive phase distribution ─────────────────────────────────────────────
+
+export type RunningPhase = 'base' | 'developpement' | 'specifique' | 'affutage';
+
+export interface PhaseDistribution {
+  base: number;
+  developpement: number;
+  specifique: number;
+  affutage: number;
+  total: number;
+}
+
+/** Target VDOT implied by a goal time over a race distance (inverse of pace). */
+export function getTargetVdot(goalTimeSeconds: number, raceDistance: RaceDistance): number {
+  if (goalTimeSeconds <= 0) return 0;
+  return estimateVDOT(raceMeters(raceDistance), goalTimeSeconds);
+}
+
+/**
+ * Adaptive phase split (weeks) from the total programme length, the VDOT gap to
+ * close, the current VDOT and the race distance. Base ratios per distance are
+ * nudged by the gap (big gap → more base, small gap → more specific) and by the
+ * athlete's level (beginner → more base, advanced → more specific), with
+ * `développement` acting as the flex reservoir. A ~10 % taper is carved first,
+ * the rest split proportionally.
+ *
+ * NB: this intentionally departs from the brief's literal pseudocode (which
+ * adjusts `spécifique`, rounds to 4-week blocks and floors the taper at 4) —
+ * that formula yields 12/20/4/4 for the worked example, whereas this one yields
+ * the brief's stated 12/16/8/4 (and 4/6/4/2 for the second example).
+ */
+export function calculatePhaseDistribution(
+  totalWeeks: number,
+  vdotDelta: number,
+  currentVdot: number,
+  raceDistance: RaceDistance,
+): PhaseDistribution {
+  const total = Math.max(4, Math.round(totalWeeks));
+  const BASE_RATIO: Record<RaceDistance, { base: number; dev: number; spec: number; affutage: number }> = {
+    '5km': { base: 0.25, dev: 0.45, spec: 0.2, affutage: 0.1 },
+    '10km': { base: 0.3, dev: 0.4, spec: 0.2, affutage: 0.1 },
+    semi: { base: 0.35, dev: 0.35, spec: 0.2, affutage: 0.1 },
+    marathon: { base: 0.4, dev: 0.35, spec: 0.15, affutage: 0.1 },
+  };
+  const r = BASE_RATIO[raceDistance] ?? BASE_RATIO['5km'];
+  let base = r.base;
+  let dev = r.dev;
+  let spec = r.spec;
+
+  if (vdotDelta > 10) {
+    base += 0.05;
+    dev -= 0.05;
+  } else if (vdotDelta < 5) {
+    spec += 0.05;
+    dev -= 0.05;
+  }
+  if (currentVdot < 35) {
+    base += 0.05;
+    dev -= 0.05;
+  } else if (currentVdot > 45) {
+    spec += 0.05;
+    dev -= 0.05;
+  }
+
+  const affutage = Math.max(2, Math.min(total - 3, Math.round(total * r.affutage)));
+  const remaining = total - affutage;
+  const sum = base + dev + spec;
+  const baseWeeks = Math.max(1, Math.round((remaining * base) / sum));
+  const devWeeks = Math.max(1, Math.round((remaining * dev) / sum));
+  const specWeeks = Math.max(1, remaining - baseWeeks - devWeeks);
+  return { base: baseWeeks, developpement: devWeeks, specifique: specWeeks, affutage, total };
+}
+
+/** Which phase an absolute programme week falls in. */
+export function getPhaseForWeek(absoluteWeek: number, d: PhaseDistribution): RunningPhase {
+  if (absoluteWeek <= d.base) return 'base';
+  if (absoluteWeek <= d.base + d.developpement) return 'developpement';
+  if (absoluteWeek <= d.base + d.developpement + d.specifique) return 'specifique';
+  return 'affutage';
+}
+
+/** 1-based week index inside the current phase. */
+export function weekWithinPhase(absoluteWeek: number, d: PhaseDistribution): number {
+  const phase = getPhaseForWeek(absoluteWeek, d);
+  if (phase === 'base') return absoluteWeek;
+  if (phase === 'developpement') return absoluteWeek - d.base;
+  if (phase === 'specifique') return absoluteWeek - d.base - d.developpement;
+  return absoluteWeek - d.base - d.developpement - d.specifique;
+}
+
+/**
+ * Resolve the phase distribution from a running profile's goal fields. Returns
+ * null when there's no time goal / race distance / programme length, so callers
+ * fall back to the fixed block-based periodisation.
+ */
+export function resolvePhaseDistribution(args: {
+  vdot: number;
+  goalTimeSeconds?: number | null;
+  raceDistance?: RaceDistance | null;
+  totalWeeks?: number | null;
+}): PhaseDistribution | null {
+  const { vdot, goalTimeSeconds, raceDistance, totalWeeks } = args;
+  if (!goalTimeSeconds || goalTimeSeconds <= 0 || !raceDistance || !totalWeeks || totalWeeks < 4) {
+    return null;
+  }
+  const targetVdot = getTargetVdot(goalTimeSeconds, raceDistance);
+  return calculatePhaseDistribution(totalWeeks, targetVdot - vdot, vdot, raceDistance);
+}
+
+// Affûtage (taper): session types + volume multiplier for each of the final
+// weeks (index 1 = furthest from race → 4 = race week).
+const AFFUTAGE_TYPES: Record<number, WeeklySessionType[]> = {
+  1: ['EF_strides', 'IV'],
+  2: ['EF_strides', 'TC'],
+  3: ['EF', 'RV'],
+  4: ['EF', 'EF_strides'],
+};
+const AFFUTAGE_VOLUME: Record<number, number> = { 1: 0.8, 2: 0.7, 3: 0.6, 4: 0.4 };
+
+export function getPhaseVolumeMultiplier(phase: RunningPhase, affutageWeek: number): number {
+  if (phase !== 'affutage') return 1;
+  return AFFUTAGE_VOLUME[Math.max(1, Math.min(4, affutageWeek))] ?? 0.6;
+}
+
+/**
+ * Session types for a phase, adapted to VDOT and goal. Base = pure aerobic
+ * (endurance goals keep a long run); développement introduces tempo + VO2max;
+ * spécifique is race-pace (5k → TC/IV/RV, 10k → TC/IV/SL, semi/marathon →
+ * TC/AS/SL); affûtage follows the per-week taper table. Padded to `n`.
+ */
+export function getPhaseSessionTypes(
+  vdot: number,
+  phase: RunningPhase,
+  sessionsPerWeek: number,
+  goal: RunningGoal,
+  affutageWeek = 1,
+): WeeklySessionType[] {
+  const n = Math.max(2, Math.min(6, Math.round(sessionsPerWeek)));
+  const endurance = goal === '10k' || goal === 'semi_marathon' || goal === 'marathon';
+
+  let seq: WeeklySessionType[];
+  if (phase === 'affutage') {
+    seq = AFFUTAGE_TYPES[Math.max(1, Math.min(4, affutageWeek))] ?? ['EF', 'EF_strides'];
+  } else if (phase === 'base') {
+    seq = endurance
+      ? n === 2
+        ? ['EF_strides', 'SL']
+        : ['EF', 'EF_strides', 'SL']
+      : n === 2
+        ? ['EF', 'EF_strides']
+        : ['EF', 'EF', 'EF_strides'];
+  } else if (phase === 'developpement') {
+    if (goal === 'forme') seq = n === 2 ? ['EF', 'EF_strides'] : ['EF', 'EF_strides', 'TC'];
+    else if (goal === '5k')
+      seq =
+        vdot < 40
+          ? n === 2
+            ? ['EF_strides', 'IV']
+            : ['EF', 'EF_strides', 'IV']
+          : n === 2
+            ? ['TC', 'IV']
+            : ['EF_strides', 'TC', 'IV'];
+    else seq = n === 2 ? ['TC', 'IV'] : ['TC', 'IV', 'SL'];
+  } else {
+    // spécifique
+    if (goal === 'forme') seq = n === 2 ? ['EF', 'EF_strides'] : ['EF', 'EF_strides', 'TC'];
+    else if (goal === '5k') seq = n === 2 ? ['IV', 'RV'] : ['TC', 'IV', 'RV'];
+    else if (goal === '10k') seq = n === 2 ? ['TC', 'IV'] : ['TC', 'IV', 'SL'];
+    else seq = n === 2 ? ['AS', 'SL'] : ['TC', 'AS', 'SL'];
+  }
+  return padToCount(seq, n);
+}
+
 export function getWeeklySessionTypes(
   vdot: number,
   block: number,
@@ -1017,14 +1197,24 @@ export function getWeeklyDistribution(
   week: WeekIndexRunning,
   vdot: number,
   goal: RunningGoal = 'semi_marathon',
+  phaseCtx?: { phase: RunningPhase; affutageWeek: number; isDeload: boolean },
 ): WeeklyPlan {
   const sessions = Math.max(2, Math.min(6, sessionsPerWeek));
-  const deload = week === 4;
-  const seq: TemplateSlot[] = getWeeklySessionTypes(vdot, block, sessions, deload, goal).map(toTemplateSlot);
+  // With an adaptive phase context, session types come from the phase (and the
+  // affûtage taper scales volume); otherwise fall back to the fixed block model.
+  const deload = phaseCtx ? phaseCtx.isDeload : week === 4;
+  const volumeMultiplier = phaseCtx
+    ? getPhaseVolumeMultiplier(phaseCtx.phase, phaseCtx.affutageWeek)
+    : 1;
+  const rawTypes: WeeklySessionType[] = phaseCtx
+    ? deload
+      ? Array<WeeklySessionType>(sessions).fill('EF')
+      : getPhaseSessionTypes(vdot, phaseCtx.phase, sessions, goal, phaseCtx.affutageWeek)
+    : getWeeklySessionTypes(vdot, block, sessions, deload, goal);
+  const seq: TemplateSlot[] = rawTypes.map(toTemplateSlot);
   const days = DAY_LAYOUT[sessions] ?? [0, 2, 4, 6];
-  // On deload, getWeeklySessionTypes already returns easy-only (no long run);
-  // mark every slot recovery so the pace eases (E_slow) and the duration uses
-  // getEFDuration's week-4 branch.
+  // On deload, the types are already easy-only (no long run); mark every slot
+  // recovery so the pace eases (E_slow) and the duration uses the deload branch.
   const adjusted: TemplateSlot[] = deload
     ? seq.map((slot) => ({ type: slot.type, recovery: true }))
     : seq;
@@ -1041,6 +1231,7 @@ export function getWeeklyDistribution(
       type: slot.type,
       withStrides: slot.withStrides,
       recovery: slot.recovery,
+      volumeMultiplier,
     });
   }
   return { items };
