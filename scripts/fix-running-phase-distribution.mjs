@@ -50,7 +50,7 @@ const CONFIG = {
   currentVdot: 35,
   goalTimeSeconds: 1200, // 5 km in 20:00
   raceDistance: '5km',
-  targetRaceDate: '2027-05-16', // May 2027 (a Sunday); weeks counted from today
+  targetRaceDate: '2027-05-11', // 11 May 2027; weeks counted from today at run time
   sessionsPerWeek: 2,
 };
 
