@@ -48,10 +48,10 @@ const CONFIG = {
   level: 'debutant',
   goal: 'force_pure',
   sessions_per_week: 3,
-  current_block: 2,
+  current_block: 3,
   current_week: 1,
   current_day: 1,
-  mesocycle_start_block: 2,
+  mesocycle_start_block: 3,
   equipment: 'salle_complete',
 };
 
