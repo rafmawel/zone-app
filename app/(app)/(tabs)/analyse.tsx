@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { auth } from '@/lib/firebase';
 import {
   getCompletedRuns,
@@ -36,6 +37,7 @@ import {
   SportProgressionCard,
   type ProgressionItem,
 } from '@/components/analytics/SportProgressionCard';
+import { Max1RMChart } from '@/components/analytics/Max1RMChart';
 
 interface AnalyticsData {
   loaded: boolean;
@@ -94,48 +96,52 @@ function formatRaceTime(sec: number): string {
 export default function AnalyticsScreen(): React.ReactElement {
   const [data, setData] = useState<AnalyticsData>(EMPTY);
 
-  useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) {
-      setData((p) => ({ ...p, loaded: true }));
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const [checkins, sessions, runs, hyrox, maxes, runningProfile, muscleProfile, hyroxProfile, program] =
-          await Promise.all([
-            getLatestCheckins(user.uid, 90),
-            getCompletedSessions(user.uid),
-            getCompletedRuns(user.uid, 80),
-            getHyroxSessionHistory(user.uid, 40),
-            getExerciseMaxes(user.uid),
-            getRunningProfile(user.uid),
-            getMuscleProfile(user.uid),
-            getHyroxProfile(user.uid),
-            getUserProgram(user.uid),
-          ]);
-        if (cancelled) return;
-        setData({
-          loaded: true,
-          checkins,
-          sessions,
-          runs,
-          hyrox,
-          maxes,
-          runningProfile,
-          muscleProfile,
-          hyroxProfile,
-          program,
-        });
-      } catch {
-        if (!cancelled) setData((p) => ({ ...p, loaded: true }));
+  // Reload on every focus (not just mount) so returning from a session shows
+  // the fresh sessions / maxes / check-ins instead of stale "0 séance" data.
+  useFocusEffect(
+    useCallback(() => {
+      const user = auth.currentUser;
+      if (!user) {
+        setData((p) => ({ ...p, loaded: true }));
+        return;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      let cancelled = false;
+      void (async () => {
+        try {
+          const [checkins, sessions, runs, hyrox, maxes, runningProfile, muscleProfile, hyroxProfile, program] =
+            await Promise.all([
+              getLatestCheckins(user.uid, 90),
+              getCompletedSessions(user.uid),
+              getCompletedRuns(user.uid, 80),
+              getHyroxSessionHistory(user.uid, 40),
+              getExerciseMaxes(user.uid),
+              getRunningProfile(user.uid),
+              getMuscleProfile(user.uid),
+              getHyroxProfile(user.uid),
+              getUserProgram(user.uid),
+            ]);
+          if (cancelled) return;
+          setData({
+            loaded: true,
+            checkins,
+            sessions,
+            runs,
+            hyrox,
+            maxes,
+            runningProfile,
+            muscleProfile,
+            hyroxProfile,
+            program,
+          });
+        } catch {
+          if (!cancelled) setData((p) => ({ ...p, loaded: true }));
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
 
   if (!data.loaded) {
     return (
@@ -330,6 +336,9 @@ export default function AnalyticsScreen(): React.ReactElement {
             ))}
           </>
         ) : null}
+
+        <View style={styles.gap} />
+        <Max1RMChart sessions={data.sessions} />
       </ScrollView>
     </SafeScreen>
   );
