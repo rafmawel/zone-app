@@ -791,9 +791,18 @@ export default function ProfileScreen(): React.ReactElement {
                       {frenchShortDate(m.date)}
                     </ZoneText>
                   </View>
-                  <ZoneText variant="number" style={styles.maxWeight}>
-                    {m.weight_kg} kg
-                  </ZoneText>
+                  <View style={styles.maxRight}>
+                    {/* Show the estimated 1RM (Epley) as the headline; a rep-max
+                        of 1 IS a true 1RM, so show the lifted weight directly. */}
+                    <ZoneText variant="number" style={styles.maxWeight}>
+                      {m.reps === 1 ? m.weight_kg : m.estimated_1rm} kg
+                    </ZoneText>
+                    {m.reps > 1 ? (
+                      <ZoneText variant="caption" color={colors.text.muted} style={styles.maxSub}>
+                        estimé · {m.weight_kg} kg × {m.reps} reps
+                      </ZoneText>
+                    ) : null}
+                  </View>
                 </View>
               );
             })
@@ -1797,7 +1806,9 @@ const styles = StyleSheet.create({
   },
   maxMain: { flex: 1 },
   maxName: { fontSize: 14, color: colors.text.primary },
+  maxRight: { alignItems: 'flex-end', flexShrink: 0, marginLeft: 12 },
   maxWeight: { fontSize: 22, color: colors.scoreGreen, lineHeight: 26 },
+  maxSub: { marginTop: 2, textAlign: 'right' },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
