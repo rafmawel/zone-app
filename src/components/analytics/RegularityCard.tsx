@@ -14,6 +14,20 @@ export interface RegularityCardProps {
   weeks: RegularityDay[][];
   totalSessions: number;
   streakDays: number;
+  weightliftingCount: number;
+  runningCount: number;
+}
+
+const HALTERO_COLOR = '#4F46E5'; // violet / indigo — weightlifting
+const COURSE_COLOR = '#F97316'; // orange — running
+const REST_COLOR = 'rgba(255,255,255,0.08)';
+
+/** Dot colour by sport, so the grid matches the legend below it. */
+function sportDot(sport: SportColorKey | undefined): string {
+  if (sport === 'haltero' || sport === 'muscu') return HALTERO_COLOR;
+  if (sport === 'run') return COURSE_COLOR;
+  if (sport === 'hyrox') return colors.orbe.amber;
+  return REST_COLOR;
 }
 
 /** Section 2 — "Ta régularité" : an 8×7 dot grid of completed sessions. */
@@ -21,6 +35,8 @@ export function RegularityCard({
   weeks,
   totalSessions,
   streakDays,
+  weightliftingCount,
+  runningCount,
 }: RegularityCardProps): React.ReactElement {
   return (
     <View style={styles.card}>
@@ -34,10 +50,7 @@ export function RegularityCard({
                 key={di}
                 style={[
                   styles.dot,
-                  {
-                    backgroundColor:
-                      day.done && day.sport ? colors[day.sport] : 'rgba(255,255,255,0.08)',
-                  },
+                  { backgroundColor: day.done ? sportDot(day.sport) : REST_COLOR },
                   day.isToday ? styles.today : null,
                 ]}
               />
@@ -45,10 +58,27 @@ export function RegularityCard({
           </View>
         ))}
       </View>
+
+      <View style={styles.legend}>
+        <LegendItem color={HALTERO_COLOR} label="Haltérophilie" />
+        <LegendItem color={COURSE_COLOR} label="Course" />
+        <LegendItem color={REST_COLOR} label="Repos" />
+      </View>
+
       <ZoneText style={styles.footer}>
-        {totalSessions} séance{totalSessions > 1 ? 's' : ''} en 8 semaines · {streakDays} jour
-        {streakDays > 1 ? 's' : ''} consécutif{streakDays > 1 ? 's' : ''}
+        {totalSessions} séance{totalSessions > 1 ? 's' : ''} · {weightliftingCount} haltéro ·{' '}
+        {runningCount} course · {streakDays} jour{streakDays > 1 ? 's' : ''} consécutif
+        {streakDays > 1 ? 's' : ''}
       </ZoneText>
+    </View>
+  );
+}
+
+function LegendItem({ color, label }: { color: string; label: string }): React.ReactElement {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+      <ZoneText style={styles.legendLabel}>{label}</ZoneText>
     </View>
   );
 }
@@ -66,6 +96,10 @@ const styles = StyleSheet.create({
   weekRow: { flexDirection: 'row', justifyContent: 'space-between' },
   dot: { width: 10, height: 10, borderRadius: 5 },
   today: { borderWidth: 1.5, borderColor: '#FFFFFF' },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 14 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 9, height: 9, borderRadius: 5 },
+  legendLabel: { fontFamily: 'Inter_400Regular', fontSize: 12, color: 'rgba(255,255,255,0.7)' },
   footer: {
     fontFamily: 'Inter_400Regular',
     fontSize: 12,

@@ -5,7 +5,7 @@ import { colors } from '@/theme/colors';
 import { ZoneText } from '@/components/ui/ZoneText';
 import { getExerciseById } from '@/data/exercises';
 import { parseISODate } from '@/lib/frenchDate';
-import type { TrainingSession } from '@/lib/firestore';
+import type { ExerciseMax, TrainingSession } from '@/lib/firestore';
 
 const INDIGO = '#4F46E5';
 const CHART_HEIGHT = 160;
@@ -65,11 +65,28 @@ function shortDate(d: Date): string {
   return `${d.getDate()} ${MONTHS[d.getMonth()] ?? ''}`;
 }
 
-export function Max1RMChart({ sessions }: { sessions: TrainingSession[] }): React.ReactElement | null {
-  // Offer only lifts that actually have a PR history.
+export function Max1RMChart({
+  sessions,
+  maxes,
+}: {
+  sessions: TrainingSession[];
+  maxes: ExerciseMax[];
+}): React.ReactElement | null {
+  // Current max from maxes/ (a 1-rep max IS a true 1RM) — the fallback when the
+  // session history has no completed sets yet.
+  const maxOf = (id: string): number => {
+    const m = maxes.find((x) => x.exercise_id === id);
+    return m ? (m.reps === 1 ? m.weight_kg : m.estimated_1rm) : 0;
+  };
+  // Offer lifts with a PR history OR at least a stored current max.
   const available = useMemo(
-    () => CHART_EXERCISES.filter((id) => buildMaxHistory(sessions, id).length > 0),
-    [sessions],
+    () =>
+      CHART_EXERCISES.filter(
+        (id) =>
+          buildMaxHistory(sessions, id).length > 0 ||
+          (maxes.find((x) => x.exercise_id === id)?.estimated_1rm ?? 0) > 0,
+      ),
+    [sessions, maxes],
   );
   const [selected, setSelected] = useState<string>('');
   const activeId = available.includes(selected) ? selected : available[0] ?? '';
@@ -86,8 +103,8 @@ export function Max1RMChart({ sessions }: { sessions: TrainingSession[] }): Reac
   const innerW = chartW - pad * 2;
   const innerH = CHART_HEIGHT - pad * 2;
 
-  const current = history.length > 0 ? history[history.length - 1].estimated1rm : 0;
-  const first = history.length > 0 ? history[0].estimated1rm : 0;
+  const current = history.length > 0 ? history[history.length - 1].estimated1rm : maxOf(activeId);
+  const first = history.length > 0 ? history[0].estimated1rm : current;
   const deltaKg = current - first;
   const deltaPct = first > 0 ? Math.round((deltaKg / first) * 1000) / 10 : 0;
 

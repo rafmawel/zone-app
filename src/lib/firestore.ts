@@ -501,6 +501,9 @@ export interface CompleteSessionSummary {
   rpe?: number;
   duration_minutes: number;
   total_volume_kg: number;
+  /** Authoritative full set list — written here so the finished doc always
+   *  carries every set, without depending on the racy per-set appends. */
+  completed_sets?: CompletedSet[];
 }
 
 export async function completeSession(
@@ -512,6 +515,7 @@ export async function completeSession(
     status: 'completed',
     completed_at: serverTimestamp(),
     ...(summary.rpe !== undefined ? { rpe: summary.rpe } : {}),
+    ...(summary.completed_sets ? { completed_sets: summary.completed_sets } : {}),
     duration_minutes: summary.duration_minutes,
     total_volume_kg: summary.total_volume_kg,
   });
