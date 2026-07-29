@@ -187,7 +187,13 @@ export default function AnalyticsScreen(): React.ReactElement {
     }
     weeks.push(row);
   }
-  const totalSessions = activities.filter((a) => a.date >= todayDateString(start) && a.date <= todayStr).length;
+  const inWindow = (a: { date: string }): boolean =>
+    a.date >= todayDateString(start) && a.date <= todayStr;
+  const totalSessions = activities.filter(inWindow).length;
+  const weightliftingCount = activities.filter(
+    (a) => inWindow(a) && (a.sport === 'haltero' || a.sport === 'muscu'),
+  ).length;
+  const runningCount = activities.filter((a) => inWindow(a) && a.sport === 'run').length;
   let streakDays = 0;
   let cursor = doneSet.has(todayStr) ? today : addDays(today, -1);
   while (doneSet.has(todayDateString(cursor))) {
@@ -320,7 +326,13 @@ export default function AnalyticsScreen(): React.ReactElement {
         />
 
         <View style={styles.gap} />
-        <RegularityCard weeks={weeks} totalSessions={totalSessions} streakDays={streakDays} />
+        <RegularityCard
+          weeks={weeks}
+          totalSessions={totalSessions}
+          streakDays={streakDays}
+          weightliftingCount={weightliftingCount}
+          runningCount={runningCount}
+        />
 
         <View style={styles.gap} />
         <FormFatigueCard weeklyScores={weeklyScores} average={average} trend={trend} />
@@ -338,7 +350,7 @@ export default function AnalyticsScreen(): React.ReactElement {
         ) : null}
 
         <View style={styles.gap} />
-        <Max1RMChart sessions={data.sessions} />
+        <Max1RMChart sessions={data.sessions} maxes={data.maxes} />
       </ScrollView>
     </SafeScreen>
   );

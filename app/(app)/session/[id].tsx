@@ -296,6 +296,9 @@ export default function SessionScreen(): React.ReactElement {
       await completeSession(user.uid, sessionId, {
         duration_minutes: duration,
         total_volume_kg: volume,
+        // Persist the full set list authoritatively so the history detail is
+        // never empty (the per-set appends above are best-effort / racy).
+        completed_sets: allSets,
       });
       if (state.session.queue_key) {
         await updateQueueItem(user.uid, state.session.queue_key, 'completed').catch(() => undefined);

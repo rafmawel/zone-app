@@ -216,7 +216,13 @@ export default function HistoryScreen(): React.ReactElement {
                 );
               }
               if (item.kind === 'run') {
-                return <RunRow key={item.id} run={item.run} />;
+                return (
+                  <RunRow
+                    key={item.id}
+                    run={item.run}
+                    onPress={() => router.push(`/(app)/run-detail/${item.run.id}`)}
+                  />
+                );
               }
               return <HyroxRow key={item.id} record={item.hyrox} />;
             })
@@ -338,11 +344,11 @@ function runTypeColor(t: RunningSessionType): string {
   }
 }
 
-function RunRow({ run }: { run: RunSession }): React.ReactElement {
+function RunRow({ run, onPress }: { run: RunSession; onPress: () => void }): React.ReactElement {
   const color = runTypeColor(run.session_type);
   return (
     <View style={[styles.sessionCard, { borderLeftColor: color }]}>
-      <View style={styles.sessionMain}>
+      <TouchableOpacity style={styles.sessionMain} activeOpacity={0.85} onPress={onPress}>
         <View style={styles.sessionRow}>
           <ZoneText variant="label" color={colors.scoreGreen} style={styles.sessionDate}>
             {frenchShortDate(run.date)}
@@ -354,7 +360,8 @@ function RunRow({ run }: { run: RunSession }): React.ReactElement {
         <ZoneText variant="caption" color={colors.text.muted} style={styles.runMeta}>
           {sessionName(run.session_type)} · {(run.actual_distance_km ?? 0).toFixed(2)} km · {formatPaceShort(run.avg_pace_sec_per_km ?? 0)} /km{run.avg_pace_sec_per_km ? ` · ${formatSpeed(run.avg_pace_sec_per_km)}` : ''} · {Math.round((run.actual_duration_seconds ?? 0) / 60)} min
         </ZoneText>
-      </View>
+      </TouchableOpacity>
+      <ChevronRight size={16} color={colors.text.muted} />
     </View>
   );
 }
