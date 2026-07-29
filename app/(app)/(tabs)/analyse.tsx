@@ -31,7 +31,7 @@ import { SafeScreen } from '@/components/ui/SafeScreen';
 import { AnalyticsSkeleton } from '@/components/analytics/AnalyticsSkeleton';
 import { CheckinBanner } from '@/components/CheckinBanner';
 import { ProReadinessCard } from '@/components/analytics/ProReadinessCard';
-import { RegularityCard, type RegularityDay } from '@/components/analytics/RegularityCard';
+import { RegularityCard, type RegularityActivity } from '@/components/analytics/RegularityCard';
 import { FormFatigueCard } from '@/components/analytics/FormFatigueCard';
 import {
   SportProgressionCard,
@@ -162,8 +162,10 @@ export default function AnalyticsScreen(): React.ReactElement {
   const energyLabel = energyFromFeeling(todayCheckin?.feeling);
   const recoveryLabel = recoveryFromSoreness(todayCheckin?.muscle_soreness);
 
-  // ── Section 2: regularity grid (8×7) ─────────────────────────────────────
-  const activities: { date: string; sport: SportColorKey }[] = [
+  // ── Section 2: regularity grid (ISO weeks) ───────────────────────────────
+  // The card builds the sliding 8-week ISO grid, per-sport counters and streak
+  // itself; it only needs the flat list of completed activities.
+  const activities: RegularityActivity[] = [
     ...data.sessions.map((s) => ({
       date: s.date,
       sport: (s.discipline === 'musculation' ? 'muscu' : 'haltero') as SportColorKey,
@@ -171,35 +173,6 @@ export default function AnalyticsScreen(): React.ReactElement {
     ...data.runs.map((r) => ({ date: r.date, sport: 'run' as SportColorKey })),
     ...data.hyrox.map((h) => ({ date: h.date, sport: 'hyrox' as SportColorKey })),
   ];
-  const doneMap = new Map<string, SportColorKey>();
-  const doneSet = new Set<string>();
-  for (const a of activities) {
-    doneSet.add(a.date);
-    if (!doneMap.has(a.date)) doneMap.set(a.date, a.sport);
-  }
-  const weeks: RegularityDay[][] = [];
-  for (let w = 0; w < 8; w += 1) {
-    const row: RegularityDay[] = [];
-    for (let dy = 0; dy < 7; dy += 1) {
-      const ds = todayDateString(addDays(start, w * 7 + dy));
-      const sport = doneMap.get(ds);
-      row.push({ done: sport != null, sport, isToday: ds === todayStr });
-    }
-    weeks.push(row);
-  }
-  const inWindow = (a: { date: string }): boolean =>
-    a.date >= todayDateString(start) && a.date <= todayStr;
-  const totalSessions = activities.filter(inWindow).length;
-  const weightliftingCount = activities.filter(
-    (a) => inWindow(a) && (a.sport === 'haltero' || a.sport === 'muscu'),
-  ).length;
-  const runningCount = activities.filter((a) => inWindow(a) && a.sport === 'run').length;
-  let streakDays = 0;
-  let cursor = doneSet.has(todayStr) ? today : addDays(today, -1);
-  while (doneSet.has(todayDateString(cursor))) {
-    streakDays += 1;
-    cursor = addDays(cursor, -1);
-  }
 
   // ── Section 3: weekly Zone score ─────────────────────────────────────────
   const weeklyScores: number[] = [];
@@ -326,13 +299,7 @@ export default function AnalyticsScreen(): React.ReactElement {
         />
 
         <View style={styles.gap} />
-        <RegularityCard
-          weeks={weeks}
-          totalSessions={totalSessions}
-          streakDays={streakDays}
-          weightliftingCount={weightliftingCount}
-          runningCount={runningCount}
-        />
+        <RegularityCard activities={activities} />
 
         <View style={styles.gap} />
         <FormFatigueCard weeklyScores={weeklyScores} average={average} trend={trend} />
