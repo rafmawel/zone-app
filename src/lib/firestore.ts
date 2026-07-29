@@ -563,15 +563,21 @@ export async function countCompletedWeightliftingSessionsSince(
 }
 
 export async function getCompletedSessions(uid: string): Promise<TrainingSession[]> {
-  const q = query(
-    collection(db, 'users', uid, 'sessions'),
-    where('status', '==', 'completed'),
-    orderBy('date', 'desc'),
-    limit(60),
-  );
+  // No orderBy → no composite index required. `where(status) + orderBy(date)`
+  // needs a composite index; if it isn't deployed the query throws and the
+  // catch silently returns [] ("0 séance"). Sort + cap client-side instead.
+  const q = query(collection(db, 'users', uid, 'sessions'), where('status', '==', 'completed'));
   try {
     const snap = await getDocs(q);
-    return snap.docs.map((d) => d.data() as TrainingSession);
+    return snap.docs
+      .map((d) => d.data() as TrainingSession)
+      .sort((a, b) => {
+        const tb = b.completed_at?.toMillis?.() ?? 0;
+        const ta = a.completed_at?.toMillis?.() ?? 0;
+        if (tb !== ta) return tb - ta;
+        return (b.date ?? '').localeCompare(a.date ?? '');
+      })
+      .slice(0, 60);
   } catch {
     return [];
   }
@@ -644,19 +650,19 @@ export async function getAllTimeStats(uid: string): Promise<AllTimeStats> {
 }
 
 export async function getDaysSinceLastSession(uid: string): Promise<number> {
-  const q = query(
-    collection(db, 'users', uid, 'sessions'),
-    where('status', '==', 'completed'),
-    orderBy('date', 'desc'),
-    limit(1),
-  );
+  // No orderBy (no composite index): find the most recent completed session
+  // client-side.
+  const q = query(collection(db, 'users', uid, 'sessions'), where('status', '==', 'completed'));
   try {
     const snap = await getDocs(q);
     if (snap.empty) return 2;
-    const last = snap.docs[0].data() as TrainingSession;
-    const lastDate = new Date(last.date);
-    const today = new Date();
-    const diffMs = today.getTime() - lastDate.getTime();
+    let latest = '';
+    snap.docs.forEach((d) => {
+      const s = d.data() as TrainingSession;
+      if ((s.date ?? '') > latest) latest = s.date ?? '';
+    });
+    if (!latest) return 2;
+    const diffMs = new Date().getTime() - new Date(latest).getTime();
     return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
   } catch {
     return 2;
@@ -760,16 +766,15 @@ export async function completeRunSession(
 }
 
 export async function getCompletedRuns(uid: string, max: number): Promise<RunSession[]> {
+  // No orderBy → no composite index; sort + cap client-side.
   try {
     const snap = await getDocs(
-      query(
-        collection(db, 'users', uid, 'runs'),
-        where('status', '==', 'completed'),
-        orderBy('date', 'desc'),
-        limit(max),
-      ),
+      query(collection(db, 'users', uid, 'runs'), where('status', '==', 'completed')),
     );
-    return snap.docs.map((d) => d.data() as RunSession);
+    return snap.docs
+      .map((d) => d.data() as RunSession)
+      .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
+      .slice(0, max);
   } catch {
     return [];
   }
