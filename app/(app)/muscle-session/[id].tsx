@@ -28,7 +28,7 @@ import {
   type SessionExercise,
   type TrainingSession,
 } from '@/lib/firestore';
-import { estimateOneRepMax } from '@/lib/programEngine';
+import { estimateOneRepMax, isFailedSet } from '@/lib/programEngine';
 import { getMuscleProfile } from '@/lib/firestore';
 import { readCurrentWeek, readProgrammeQueue, recordSessionComplete, startWeek } from '@/lib/weekTracking';
 import { getZoneLevel } from '@/lib/zoneScore';
@@ -690,9 +690,16 @@ function seedWeight(exerciseId: string, history: TrainingSession[], maxes: Exerc
   return 20;
 }
 
+/**
+ * Refresh stored 1RMs from the session's best set per exercise.
+ *
+ * Sets taken to failure (RIR 0) are skipped — a failed set is not a
+ * performance and must not become the max later loads are derived from.
+ */
 async function reconcileMaxes(uid: string, sets: CompletedSet[], maxes: ExerciseMax[]): Promise<void> {
   const best = new Map<string, { weight: number; reps: number; est: number }>();
   for (const s of sets) {
+    if (isFailedSet(s.rpe)) continue;
     if (s.actual_weight_kg <= 0 || s.actual_reps <= 0) continue;
     const est = estimateOneRepMax(s.actual_weight_kg, s.actual_reps);
     const cur = best.get(s.exercise_id);

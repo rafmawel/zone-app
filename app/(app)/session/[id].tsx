@@ -31,7 +31,13 @@ import {
   type TrainingSession,
   type UserProgram,
 } from '@/lib/firestore';
-import { checkAndAdvanceProgram, computeRestSeconds, estimateOneRepMax } from '@/lib/programEngine';
+import {
+  checkAndAdvanceProgram,
+  computeRestSeconds,
+  estimateOneRepMax,
+  isFailedSet,
+} from '@/lib/programEngine';
+import { parseQueueKey } from '@/lib/queueKeys';
 import { computeAndSaveWorkloadEntry } from '@/lib/pro';
 import { recordSessionComplete, setCurrentWeek, startWeek } from '@/lib/weekTracking';
 import { ZoneOrbe } from '@/components/ZoneOrbe';
@@ -214,6 +220,7 @@ export default function SessionScreen(): React.ReactElement {
       currentExercise.exercise_id,
       actualWeight,
       actualReps,
+      setRpe,
       maxes,
     );
     if (detected) {
@@ -402,10 +409,17 @@ export default function SessionScreen(): React.ReactElement {
 
   const totalSets = currentExercise.sets.length;
 
-  // Deload = week 4 of any block (mirrors the engine's selectBlueprint). The
-  // session doc has no block/week, so derive it from the loaded programme.
-  const wlWeek = program ? Math.min(4, Math.max(1, program.current_week)) : null;
-  const wlBlock = program?.current_block ?? null;
+  // Deload = week 4 of any block (mirrors the engine's selectBlueprint).
+  //
+  // The session doc has no block/week fields, so they come from its queue_key:
+  // the session was generated for the week that key names, and state/program
+  // only advances once the session is finished. Reading current_week here would
+  // show block-3 targets (RIR 0-1) on a deload session the preview correctly
+  // announced as 5-6. The programme is the fallback for sessions with no key.
+  const planned = state.session.queue_key ? parseQueueKey(state.session.queue_key) : null;
+  const rawWeek = planned?.week ?? program?.current_week ?? null;
+  const wlWeek = rawWeek !== null ? Math.min(4, Math.max(1, rawWeek)) : null;
+  const wlBlock = planned?.block ?? program?.current_block ?? null;
   const wlDeload = wlWeek === 4;
   // Target reps-in-reserve for this block/week — shown on every set and used to
   // highlight the RIR picker + drive adaptive feedback.
@@ -612,6 +626,9 @@ function computeAverageIntensityPercent(
  * with the stored max. We save when there is no record yet (first time
  * the lift is logged) or when the session beat the stored value, so
  * maxes stay current even without an explicit PR.
+ *
+ * Sets taken to failure (RIR 0) are skipped: the athlete did not own the
+ * weight, so it must not become the reference every later load derives from.
  */
 async function reconcileMaxesFromSession(
   uid: string,
@@ -620,6 +637,7 @@ async function reconcileMaxesFromSession(
 ): Promise<void> {
   const bestByExercise = new Map<string, { weight: number; reps: number; est: number }>();
   for (const s of sets) {
+    if (isFailedSet(s.rpe)) continue;
     if (s.actual_weight_kg <= 0 || s.actual_reps <= 0) continue;
     const est = estimateOneRepMax(s.actual_weight_kg, s.actual_reps);
     const current = bestByExercise.get(s.exercise_id);
@@ -652,8 +670,12 @@ async function detectAndApplyPR(
   exerciseId: string,
   weight: number,
   reps: number,
+  rpe: number | null,
   maxes: ExerciseMax[],
 ): Promise<ResultPR | null> {
+  // A set taken to failure is not a PR: no 1RM estimate, no write to maxes/,
+  // no "nouveau PR" flash, and nothing added to the end-of-session summary.
+  if (isFailedSet(rpe)) return null;
   if (weight <= 0 || reps <= 0) return null;
   const newEstimate = estimateOneRepMax(weight, reps);
   const existing = maxes.find((m) => m.exercise_id === exerciseId);

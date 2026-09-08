@@ -23,6 +23,7 @@ import {
 import { createWeightliftingSession } from '@/lib/sessionLaunch';
 import { getExerciseById } from '@/data/exercises';
 import { getTargetRIR, getWeekNote, getWeightliftingBlockNote } from '@/data/coachingContext';
+import { parseQueueKey } from '@/lib/queueKeys';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { ZoneText } from '@/components/ui/ZoneText';
@@ -190,14 +191,21 @@ export default function SessionPreviewScreen(): React.ReactElement {
             ? 'COURSE'
             : 'HALTÉROPHILIE';
       const durationMin = docSession.duration_minutes ?? Math.round(10 + totalSets * 3);
-      // The session doc stores no block / week. For a weightlifting session,
-      // derive the pedagogical context from the current programme so CONTEXTE
-      // still renders (the doc-branch previously left it null → hidden).
+      // The session doc stores no block / week, so they come from its queue_key
+      // — the week the session was actually generated for. state/program only
+      // advances once the session is finished, so it lags during a session and
+      // would mislabel a deload; it stays the fallback for keyless docs. Same
+      // derivation as the execution screen, so the two never disagree.
       const isWeightliftingDoc =
         docSession.discipline !== 'musculation' && docSession.sport_key !== 'running';
-      const blockNum = isWeightliftingDoc && program ? (program.current_block as number) : null;
-      const weekNum =
-        isWeightliftingDoc && program ? Math.min(4, Math.max(1, program.current_week)) : null;
+      const plannedKey = docSession.queue_key ? parseQueueKey(docSession.queue_key) : null;
+      const blockNum = isWeightliftingDoc
+        ? (plannedKey?.block ?? (program ? (program.current_block as number) : null))
+        : null;
+      const rawWeekNum = isWeightliftingDoc
+        ? (plannedKey?.week ?? program?.current_week ?? null)
+        : null;
+      const weekNum = rawWeekNum !== null ? Math.min(4, Math.max(1, rawWeekNum)) : null;
       return {
         title: `SÉANCE · ${sportLabel}`,
         sportLabel,

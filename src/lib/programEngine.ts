@@ -17,6 +17,21 @@ export function estimateOneRepMax(weight: number, reps: number): number {
 }
 
 /**
+ * Was this set taken to failure (RIR 0)?
+ *
+ * A failed set is not a performance: the athlete did not own the weight, so it
+ * must never establish a 1RM, be written to `maxes/` or be announced as a PR.
+ *
+ * RIR is stored in `CompletedSet.rpe` as `10 - rir` (see the RIR picker in the
+ * session screen), so failure is normally written as `rpe: 10`. A literal
+ * `rpe: 0` is not produced by any picker and means a raw RIR reached the field
+ * unconverted — it denotes the same thing, so both count as failure.
+ */
+export function isFailedSet(rpe: number | null | undefined): boolean {
+  return rpe === 10 || rpe === 0;
+}
+
+/**
  * Round a target weight to a loadable barbell value.
  *
  * Plates come in 2.5 kg pairs, so round to the nearest 2.5 kg and never

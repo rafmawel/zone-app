@@ -52,6 +52,40 @@ export function migrateLegacyQueueKey(raw: string): string {
   return `${m[1]}_b1_w${m[2]}_s${m[3]}`;
 }
 
+/** Canonical shape: `{sport}_b{block}_w{week}_s{sessionIndex}`. */
+const CANONICAL_KEY = /^([a-z]+)_b(\d+)_w(\d+)_s(\d+)$/;
+
+export interface ParsedQueueKey {
+  sport: QueueSport;
+  block: number;
+  week: number;
+  sessionIndex: number;
+}
+
+/**
+ * Read back the block/week a queue item was planned for.
+ *
+ * A session document carries its `queue_key` but no block/week fields, and
+ * `state/program` only advances once the session is finished — so during the
+ * session the programme position is one step behind the work being done. The
+ * key is therefore the authority on which week a session belongs to (a deload
+ * week 4 stays a deload while `current_week` still reads 3).
+ *
+ * Legacy keys are migrated first, so both formats parse. Returns `null` when
+ * the key is malformed or its prefix isn't a known sport.
+ */
+export function parseQueueKey(raw: string): ParsedQueueKey | null {
+  const m = migrateLegacyQueueKey(raw).match(CANONICAL_KEY);
+  if (!m) return null;
+  if (!SPORT_PREFIXES.has(m[1] as QueueSport)) return null;
+  return {
+    sport: m[1] as QueueSport,
+    block: Number(m[2]),
+    week: Number(m[3]),
+    sessionIndex: Number(m[4]),
+  };
+}
+
 /**
  * Apply `migrateLegacyQueueKey` to every key in `state`. When migration
  * touched at least one key, returns a fresh object; otherwise returns the

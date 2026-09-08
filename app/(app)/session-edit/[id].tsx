@@ -13,7 +13,7 @@ import {
   type ExerciseMax,
   type TrainingSession,
 } from '@/lib/firestore';
-import { estimateOneRepMax } from '@/lib/programEngine';
+import { estimateOneRepMax, isFailedSet } from '@/lib/programEngine';
 import { getExerciseById } from '@/data/exercises';
 import { frenchShortDate } from '@/lib/frenchDate';
 import { colors } from '@/theme/colors';
@@ -159,10 +159,14 @@ export default function SessionEditScreen(): React.ReactElement {
       }
       await updateSessionCompletedSets(user.uid, sessionId, completed, volume);
 
-      // Bump maxes when an edited weight beats the current record.
+      // Bump maxes when an edited weight beats the current record. Sets taken
+      // to failure (RIR 0) are ignored, as they are during the session itself.
       for (const ex of rows) {
         let best: EditSet | null = null;
-        for (const s of ex.sets) if (s.weight > 0 && (!best || s.weight > best.weight)) best = s;
+        for (const s of ex.sets) {
+          if (isFailedSet(s.rpe)) continue;
+          if (s.weight > 0 && (!best || s.weight > best.weight)) best = s;
+        }
         if (!best) continue;
         const cur = maxes.find((m) => m.exercise_id === ex.exerciseId);
         if (!cur || best.weight > cur.weight_kg) {
