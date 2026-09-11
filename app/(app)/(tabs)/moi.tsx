@@ -4,12 +4,13 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
-import { ChevronRight, Sparkles } from 'lucide-react-native';
+import { ChevronRight, Pencil, Sparkles } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
 import {
   connectHealthConnect,
@@ -28,8 +29,10 @@ import {
   getUserSports,
   getVacationState,
   resetSportProfile,
+  saveExerciseMax,
   saveUserProgram,
   setUserSport,
+  todayDateString,
   updateSessionsPerWeek,
   updateUserProfile,
   type AllTimeStats,
@@ -45,7 +48,7 @@ import {
   type UserSport,
   type VacationState,
 } from '@/lib/firestore';
-import { getBlockName } from '@/lib/programEngine';
+import { estimateOneRepMax, getBlockName } from '@/lib/programEngine';
 import { readCurrentWeek, readProgrammeQueue, resetSportWeek } from '@/lib/weekTracking';
 import type { ProSport as ProSportKey } from '@/lib/weekProgression';
 import {
@@ -119,6 +122,15 @@ const SESSIONS_OPTIONS: { key: string; label: string }[] = [1, 2, 3, 4, 5, 6, 7]
   key: String(n),
   label: `${n} séance${n > 1 ? 's' : ''} / semaine`,
 }));
+
+const EQUIPMENT_OPTIONS: { key: string; label: string }[] = [
+  { key: 'barre_disques', label: 'Barre + disques' },
+  { key: 'salle_complete', label: 'Salle complète' },
+];
+
+const EQUIPMENT_LABELS: Record<string, string> = Object.fromEntries(
+  EQUIPMENT_OPTIONS.map((o) => [o.key, o.label]),
+);
 
 /** Map the sports/{id} key onto the programme sport used by the queue/profile. */
 const SPORTKEY_TO_RESETTABLE: Partial<Record<SportKey, ResettableSport>> = {
@@ -238,6 +250,8 @@ export default function ProfileScreen(): React.ReactElement {
   const [resettingSport, setResettingSport] = useState<ResettableSport | null>(null);
   const [zoneInfoVisible, setZoneInfoVisible] = useState<boolean>(false);
   const [picker, setPicker] = useState<PickerConfig | null>(null);
+  const [bwVisible, setBwVisible] = useState<boolean>(false);
+  const [editingMax, setEditingMax] = useState<ExerciseMax | null>(null);
   const [vacation, setVacation] = useState<VacationState | null>(null);
   const [vacationSheetVisible, setVacationSheetVisible] = useState<boolean>(false);
   const [vacationDays, setVacationDays] = useState<number>(7);
@@ -350,8 +364,20 @@ export default function ProfileScreen(): React.ReactElement {
   const onSelectLevel = async (key: string): Promise<void> => {
     const user = auth.currentUser;
     if (!user) return;
+    // Update the profile, the primary sport AND the live programme — the engine
+    // reads program.level for tier/exercise selection. Only the level field
+    // changes; block/week/day and the queue are untouched (no reset).
+    const sp = sports[0];
     setProfile((p) => (p ? { ...p, level: key as Level } : p));
+    if (program) setProgram((pr) => (pr ? { ...pr, level: key } : pr));
+    if (sp) setSports((arr) => arr.map((s, i) => (i === 0 ? { ...s, level: key as Level } : s)));
     await updateUserProfile(user.uid, { level: key as Level }).catch(() => undefined);
+    if (program) await saveUserProgram(user.uid, { ...program, level: key }).catch(() => undefined);
+    if (sp) {
+      await setUserSport(user.uid, sp.sport_key, { ...sp, level: key as Level }).catch(
+        () => undefined,
+      );
+    }
   };
 
   const onSelectGoal = async (key: string): Promise<void> => {
@@ -400,6 +426,52 @@ export default function ProfileScreen(): React.ReactElement {
       current: String(sp.sessions_per_week),
       onSelect: (k) => void onSelectPrimarySessions(Number(k)),
     });
+  };
+
+  const onSelectEquipment = async (key: string): Promise<void> => {
+    const user = auth.currentUser;
+    const sp = sports[0];
+    if (!user || !sp) return;
+    // Only the equipment field changes — no reset of progression or queue.
+    setSports((arr) => arr.map((s, i) => (i === 0 ? { ...s, equipment: key } : s)));
+    if (program) setProgram((pr) => (pr ? { ...pr, equipment: key } : pr));
+    await setUserSport(user.uid, sp.sport_key, { ...sp, equipment: key }).catch(() => undefined);
+    if (program) await saveUserProgram(user.uid, { ...program, equipment: key }).catch(() => undefined);
+  };
+
+  const openEquipmentPicker = (): void => {
+    const sp = sports[0];
+    if (!sp) return;
+    setPicker({
+      title: 'Équipement',
+      options: EQUIPMENT_OPTIONS,
+      current: sp.equipment ?? '',
+      onSelect: (k) => void onSelectEquipment(k),
+    });
+  };
+
+  // Save the body weight (users/{uid}.bodyweight_kg) — used for the Snatch/PDC
+  // ratio in level detection. Nothing else is touched.
+  const onSaveBodyweight = async (value: number): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const clamped = Math.max(30, Math.min(250, Math.round(value * 2) / 2));
+    setProfile((p) => (p ? { ...p, bodyweight_kg: clamped } : p));
+    setBwVisible(false);
+    await updateUserProfile(user.uid, { bodyweight_kg: clamped }).catch(() => undefined);
+  };
+
+  // Save a single 1RM (maxes/{exercise_id}) — no other max is touched.
+  const onSaveMax = async (next: ExerciseMax): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) return;
+    setMaxes((arr) =>
+      arr.some((m) => m.exercise_id === next.exercise_id)
+        ? arr.map((m) => (m.exercise_id === next.exercise_id ? next : m))
+        : [...arr, next],
+    );
+    setEditingMax(null);
+    await saveExerciseMax(user.uid, next).catch(() => undefined);
   };
 
   const onRestartProgramme = (sport: ProSportKey): void => {
@@ -803,6 +875,15 @@ export default function ProfileScreen(): React.ReactElement {
                       </ZoneText>
                     ) : null}
                   </View>
+                  <TouchableOpacity
+                    onPress={() => setEditingMax(m)}
+                    hitSlop={10}
+                    activeOpacity={0.7}
+                    style={styles.maxEditBtn}
+                    accessibilityLabel={`Modifier ${ex?.name ?? m.exercise_id}`}
+                  >
+                    <Pencil size={16} color={colors.scoreGreen} />
+                  </TouchableOpacity>
                 </View>
               );
             })
@@ -813,6 +894,11 @@ export default function ProfileScreen(): React.ReactElement {
           <ZoneText variant="caption" color={colors.text.muted} style={styles.eyebrow}>
             MON PROFIL
           </ZoneText>
+          <InfoRow
+            label="Poids de corps"
+            value={profile?.bodyweight_kg ? `${profile.bodyweight_kg} kg` : '—'}
+            onPress={() => setBwVisible(true)}
+          />
           <InfoRow
             label="Niveau"
             value={profile?.level ? (LEVEL_LABEL[profile.level] ?? profile.level) : '-'}
@@ -827,6 +913,15 @@ export default function ProfileScreen(): React.ReactElement {
             label="Séances par semaine"
             value={primarySport ? `${primarySport.sessions_per_week}` : '-'}
             onPress={primarySport ? openSessionsPicker : undefined}
+          />
+          <InfoRow
+            label="Équipement"
+            value={
+              primarySport
+                ? (EQUIPMENT_LABELS[primarySport.equipment ?? ''] ?? primarySport.equipment ?? '-')
+                : '-'
+            }
+            onPress={primarySport ? openEquipmentPicker : undefined}
           />
           {profile?.health_data_source === 'health_connect' ||
           profile?.health_data_source === 'both' ? (
@@ -1054,6 +1149,21 @@ export default function ProfileScreen(): React.ReactElement {
         </TouchableOpacity>
       </Modal>
 
+      <BodyweightModal
+        visible={bwVisible}
+        initialValue={profile?.bodyweight_kg ?? 75}
+        onClose={() => setBwVisible(false)}
+        onSave={(v) => void onSaveBodyweight(v)}
+      />
+
+      {editingMax ? (
+        <MaxEditModal
+          max={editingMax}
+          onClose={() => setEditingMax(null)}
+          onSave={(m) => void onSaveMax(m)}
+        />
+      ) : null}
+
       {/* Vacation duration sheet */}
       <Modal
         visible={vacationSheetVisible}
@@ -1224,6 +1334,212 @@ export default function ProfileScreen(): React.ReactElement {
         </View>
       </Modal>
     </SafeScreen>
+  );
+}
+
+function BodyweightModal({
+  visible,
+  initialValue,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  initialValue: number;
+  onClose: () => void;
+  onSave: (value: number) => void;
+}): React.ReactElement {
+  const [value, setValue] = useState<number>(initialValue);
+  const [text, setText] = useState<string>(String(initialValue));
+
+  // Re-sync when reopened (the initial value may have changed).
+  useEffect(() => {
+    if (visible) {
+      setValue(initialValue);
+      setText(String(initialValue));
+    }
+  }, [visible, initialValue]);
+
+  const step = (delta: number): void => {
+    const next = Math.max(30, Math.min(250, Math.round((value + delta) * 2) / 2));
+    setValue(next);
+    setText(String(next));
+  };
+
+  const onChangeText = (t: string): void => {
+    setText(t);
+    const parsed = parseFloat(t.replace(',', '.'));
+    if (Number.isFinite(parsed)) setValue(parsed);
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.pickerBackdrop} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={styles.pickerSheet}>
+          <View style={styles.sheetHandleBar} />
+          <ZoneText variant="heading" style={styles.pickerTitle}>
+            Poids de corps
+          </ZoneText>
+          <View style={styles.bwRow}>
+            <TouchableOpacity onPress={() => step(-0.5)} activeOpacity={0.7} style={styles.bwStepBtn}>
+              <ZoneText style={styles.bwStepSign}>−</ZoneText>
+            </TouchableOpacity>
+            <View style={styles.bwValueBox}>
+              <TextInput
+                value={text}
+                onChangeText={onChangeText}
+                keyboardType="decimal-pad"
+                style={styles.bwInput}
+                selectTextOnFocus
+              />
+              <ZoneText variant="caption" color={colors.text.muted}>
+                kg
+              </ZoneText>
+            </View>
+            <TouchableOpacity onPress={() => step(0.5)} activeOpacity={0.7} style={styles.bwStepBtn}>
+              <ZoneText style={styles.bwStepSign}>+</ZoneText>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity onPress={() => onSave(value)} activeOpacity={0.85} style={styles.bwSaveBtn}>
+            <ZoneText variant="label" color={colors.bg.primary} style={styles.bwSaveText}>
+              ENREGISTRER
+            </ZoneText>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+function MaxEditModal({
+  max,
+  onClose,
+  onSave,
+}: {
+  max: ExerciseMax;
+  onClose: () => void;
+  onSave: (next: ExerciseMax) => void;
+}): React.ReactElement {
+  const name = getExerciseById(max.exercise_id)?.name ?? max.exercise_id;
+  const initialOneRm = max.reps === 1 ? max.weight_kg : max.estimated_1rm;
+  const [oneRm, setOneRm] = useState<number>(initialOneRm);
+  const [perfWeight, setPerfWeight] = useState<string>(String(max.weight_kg));
+  const [perfReps, setPerfReps] = useState<string>(String(max.reps));
+
+  const stepOneRm = (delta: number): void => {
+    setOneRm((v) => Math.max(20, Math.round((v + delta) / 2.5) * 2.5));
+  };
+
+  const perfW = parseFloat(perfWeight.replace(',', '.'));
+  const perfR = parseInt(perfReps, 10);
+  const perfValid = Number.isFinite(perfW) && perfW > 0 && Number.isFinite(perfR) && perfR > 0;
+  const perfEstimate = perfValid ? estimateOneRepMax(perfW, perfR) : 0;
+
+  const saveDirect = (): void => {
+    const v = Math.max(20, Math.round(oneRm / 2.5) * 2.5);
+    onSave({
+      exercise_id: max.exercise_id,
+      weight_kg: v,
+      reps: 1,
+      estimated_1rm: v,
+      date: todayDateString(),
+      is_pr: true,
+    });
+  };
+
+  const saveFromPerf = (): void => {
+    if (!perfValid) return;
+    onSave({
+      exercise_id: max.exercise_id,
+      weight_kg: Math.round(perfW * 2) / 2,
+      reps: perfR,
+      estimated_1rm: perfEstimate,
+      date: todayDateString(),
+      is_pr: true,
+    });
+  };
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.pickerBackdrop} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={styles.pickerSheet}>
+          <View style={styles.sheetHandleBar} />
+          <ZoneText variant="heading" style={styles.pickerTitle}>
+            Modifier {name}
+          </ZoneText>
+
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.maxEditEyebrow}>
+            1RM ESTIMÉ
+          </ZoneText>
+          <View style={styles.bwRow}>
+            <TouchableOpacity onPress={() => stepOneRm(-2.5)} activeOpacity={0.7} style={styles.bwStepBtn}>
+              <ZoneText style={styles.bwStepSign}>−</ZoneText>
+            </TouchableOpacity>
+            <View style={styles.bwValueBox}>
+              <ZoneText variant="heading" style={styles.maxEditValue}>
+                {oneRm} kg
+              </ZoneText>
+            </View>
+            <TouchableOpacity onPress={() => stepOneRm(2.5)} activeOpacity={0.7} style={styles.bwStepBtn}>
+              <ZoneText style={styles.bwStepSign}>+</ZoneText>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity onPress={saveDirect} activeOpacity={0.85} style={styles.bwSaveBtn}>
+            <ZoneText variant="label" color={colors.bg.primary} style={styles.bwSaveText}>
+              ENREGISTRER LE 1RM
+            </ZoneText>
+          </TouchableOpacity>
+
+          <ZoneText variant="caption" color={colors.text.muted} style={styles.maxEditEyebrow}>
+            OU SAISIR UNE PERFORMANCE
+          </ZoneText>
+          <View style={styles.perfRow}>
+            <View style={styles.perfField}>
+              <ZoneText variant="caption" color={colors.text.muted}>
+                Poids (kg)
+              </ZoneText>
+              <TextInput
+                value={perfWeight}
+                onChangeText={setPerfWeight}
+                keyboardType="decimal-pad"
+                style={styles.perfInput}
+                selectTextOnFocus
+              />
+            </View>
+            <View style={styles.perfField}>
+              <ZoneText variant="caption" color={colors.text.muted}>
+                Reps
+              </ZoneText>
+              <TextInput
+                value={perfReps}
+                onChangeText={setPerfReps}
+                keyboardType="number-pad"
+                style={styles.perfInput}
+                selectTextOnFocus
+              />
+            </View>
+          </View>
+          <ZoneText variant="caption" color={colors.text.secondary} style={styles.perfEstimate}>
+            → 1RM estimé : {perfValid ? `${perfEstimate} kg` : '—'}
+          </ZoneText>
+          <TouchableOpacity
+            onPress={saveFromPerf}
+            activeOpacity={0.85}
+            disabled={!perfValid}
+            style={[styles.bwSaveBtn, styles.perfSaveBtn, !perfValid ? styles.bwSaveBtnDisabled : null]}
+          >
+            <ZoneText variant="label" color={colors.bg.primary} style={styles.bwSaveText}>
+              ENREGISTRER DEPUIS LA PERF
+            </ZoneText>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={onClose} activeOpacity={0.7} style={styles.maxEditCancel}>
+            <ZoneText variant="caption" color={colors.text.muted}>
+              Annuler
+            </ZoneText>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
   );
 }
 
@@ -1890,6 +2206,72 @@ const styles = StyleSheet.create({
   pickerOptionTextActive: { color: colors.background },
   infoValueRow: { flexDirection: 'row', alignItems: 'center' },
   infoValue: { color: colors.text.primary, fontFamily: 'Inter_500Medium', fontSize: 13, marginRight: 6 },
+  maxEditBtn: { padding: 6, marginLeft: 10 },
+  bwRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+  bwStepBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  bwStepSign: { fontFamily: 'Inter_700Bold', fontSize: 24, color: colors.scoreGreen, lineHeight: 28 },
+  bwValueBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  bwInput: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 28,
+    color: colors.textPrimary,
+    minWidth: 80,
+    textAlign: 'center',
+    padding: 0,
+  },
+  bwSaveBtn: {
+    backgroundColor: colors.scoreGreen,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  bwSaveBtnDisabled: { opacity: 0.4 },
+  bwSaveText: { letterSpacing: 1, fontFamily: 'Inter_700Bold' },
+  maxEditEyebrow: {
+    letterSpacing: 1.5,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11,
+    marginTop: 18,
+    marginBottom: 10,
+  },
+  maxEditValue: { fontSize: 26, color: colors.textPrimary },
+  perfRow: { flexDirection: 'row', gap: 12 },
+  perfField: { flex: 1 },
+  perfInput: {
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.textPrimary,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 18,
+    backgroundColor: colors.surface,
+  },
+  perfEstimate: { marginTop: 10, marginBottom: 12 },
+  perfSaveBtn: { marginTop: 0 },
+  maxEditCancel: { alignSelf: 'center', paddingVertical: 12, marginTop: 6 },
   empty: {
     backgroundColor: colors.surface,
     borderRadius: 14,
