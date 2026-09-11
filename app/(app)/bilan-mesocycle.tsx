@@ -65,6 +65,7 @@ export default function BilanMesocycleScreen(): React.ReactElement {
                   ...b,
                   progression: b.progression ?? [],
                   weak_points: b.weak_points ?? [],
+                  estimated_maxes: b.estimated_maxes ?? [],
                   unevaluated_weak_points: b.unevaluated_weak_points ?? [],
                   new_exercises: b.new_exercises ?? [],
                 }
@@ -190,6 +191,14 @@ export default function BilanMesocycleScreen(): React.ReactElement {
                   </ZoneText>
                 </View>
               ))}
+              {(bilan.estimated_maxes ?? []).map((e) => (
+                <View key={`est-${e.exercise_id}`} style={styles.bulletRow}>
+                  <View style={[styles.bullet, styles.bulletEstimated]} />
+                  <ZoneText variant="caption" color={colors.textSecondary} style={styles.bulletText}>
+                    {exName(e.exercise_id)} : {e.estimated} kg (estimé depuis ta progression)
+                  </ZoneText>
+                </View>
+              ))}
               {(bilan.unevaluated_weak_points ?? []).map((u) => (
                 <View key={u.weak_point} style={styles.bulletRow}>
                   <View style={[styles.bullet, styles.bulletMuted]} />
@@ -298,6 +307,7 @@ const styles = StyleSheet.create({
   bulletRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5, gap: 10 },
   bullet: { width: 8, height: 8, borderRadius: 4 },
   bulletMuted: { backgroundColor: colors.textMuted },
+  bulletEstimated: { backgroundColor: colors.hyrox },
   bulletText: { fontSize: 15, color: colors.textPrimary, flex: 1 },
   newSub: { marginBottom: 8 },
   footer: { marginTop: 28 },

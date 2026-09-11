@@ -451,7 +451,13 @@ export interface MesocycleBilan {
   snatch_ratio: number;
   bodyweight_kg: number;
   weak_points: string[];
-  /** Weak points not evaluated because a required max is stale (>6 weeks). */
+  /** Stale maxes whose current value was estimated from progression. */
+  estimated_maxes?: {
+    exercise_id: string;
+    estimated: number;
+    weeks_ago: number;
+  }[];
+  /** Weak points not evaluated: a required max is stale and no rate exists. */
   unevaluated_weak_points?: {
     weak_point: string;
     exercise_id: string;

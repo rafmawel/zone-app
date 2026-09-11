@@ -9,12 +9,11 @@ import {
 } from './firestore';
 import { resetSportWeek } from './weekTracking';
 import {
+  analyzeWeakPoints,
   DEFAULT_BODYWEIGHT_KG,
   detectLevel,
-  detectWeakPoints,
   exercisesForLevel,
   higherLevel,
-  staleWeakPoints,
   startNextMesocycle,
 } from './programEngine';
 
@@ -68,10 +67,11 @@ export async function finalizeMesocycle(
     detectLevel(snatch1RM, bodyweight, mesocycleNumber),
     program.level,
   );
-  // Stale-aware: a max older than 6 weeks no longer counts, so an out-of-date
-  // lift never fabricates a weakness; those ratios are reported as unevaluated.
-  const weakPoints = detectWeakPoints(after, afterDates);
-  const unevaluatedWeakPoints = staleWeakPoints(after, afterDates);
+  // Stale-aware: a max older than 6 weeks is estimated from the athlete's global
+  // progression rate (recent competition lifts vs. the start-of-cycle snapshot)
+  // rather than ignored; only when no rate can be computed does its ratio stay
+  // unevaluated.
+  const analysis = analyzeWeakPoints(after, afterDates, before, program.mesocycle_start);
 
   const oldPool = new Set(exercisesForLevel(program.level));
   const newExercises = exercisesForLevel(newLevel).filter((id) => !oldPool.has(id));
@@ -87,8 +87,9 @@ export async function finalizeMesocycle(
     level: newLevel,
     snatch_ratio: bodyweight > 0 ? Math.round((snatch1RM / bodyweight) * 100) / 100 : 0,
     bodyweight_kg: bodyweight,
-    weak_points: weakPoints,
-    unevaluated_weak_points: unevaluatedWeakPoints,
+    weak_points: analysis.weak_points,
+    estimated_maxes: analysis.estimated_maxes,
+    unevaluated_weak_points: analysis.unevaluated_weak_points,
     progression,
     new_exercises: newExercises,
   };

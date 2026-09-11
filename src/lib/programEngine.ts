@@ -154,20 +154,6 @@ function daysSince(dateStr: string, now: number): number {
   return Math.max(0, Math.floor((now - t) / 86400000));
 }
 
-/** A max is usable when it's present (>0) and — when a date is known — not stale. */
-function isMaxUsable(
-  id: string,
-  maxes: Record<string, number>,
-  maxesWithDates: Record<string, string> | undefined,
-  now: number,
-): boolean {
-  if ((maxes[id] ?? 0) <= 0) return false;
-  if (!maxesWithDates) return true; // no dates supplied → legacy behaviour (presence only)
-  const d = maxesWithDates[id];
-  if (!d) return true; // a value but no date → don't penalise
-  return daysSince(d, now) <= WEAKPOINT_STALE_DAYS;
-}
-
 function weakPointPresent(key: WeakPoint, maxes: Record<string, number>): boolean {
   const clean = maxes.clean_and_jerk ?? 0;
   const snatch = maxes.snatch ?? 0;
@@ -187,21 +173,15 @@ function weakPointPresent(key: WeakPoint, maxes: Record<string, number>): boolea
 }
 
 /**
- * Detect the athlete's weak points from their estimated 1RMs (keyed by exercise
- * id). A ratio is only evaluated when both of its lifts are known AND — when
- * `maxesWithDates` (exercise id → ISO date) is supplied — recorded within the
- * last {@link WEAKPOINT_STALE_DAYS} days, so a stale or missing max never
- * fabricates a weakness. Omitting `maxesWithDates` keeps the legacy
- * presence-only behaviour.
+ * Detect the athlete's weak points from a map of usable 1RMs (keyed by exercise
+ * id). A ratio is evaluated when both of its lifts are present (>0). Staleness
+ * is handled upstream by {@link analyzeWeakPoints} (a stale max is estimated
+ * from progression or omitted), so this stays a pure presence check.
  */
-export function detectWeakPoints(
-  maxes: Record<string, number>,
-  maxesWithDates?: Record<string, string>,
-): WeakPoint[] {
-  const now = Date.now();
+export function detectWeakPoints(maxes: Record<string, number>): WeakPoint[] {
   const weak: WeakPoint[] = [];
   for (const key of WEAK_POINTS) {
-    const usable = WEAK_POINT_LIFTS[key].every((id) => isMaxUsable(id, maxes, maxesWithDates, now));
+    const usable = WEAK_POINT_LIFTS[key].every((id) => (maxes[id] ?? 0) > 0);
     if (usable && weakPointPresent(key, maxes)) weak.push(key);
   }
   return weak;
@@ -214,35 +194,113 @@ export interface UnevaluatedWeakPoint {
   weeks_ago: number;
 }
 
+// Competition lifts whose recent progress drives the global progression rate.
+const RATE_LIFTS = ['snatch', 'clean_and_jerk', 'front_squat', 'back_squat_high'];
+// Lifts referenced by the weak-point ratios (candidates for stale estimation).
+const RATIO_LIFTS = ['clean_and_jerk', 'front_squat', 'snatch', 'snatch_pull', 'strict_press'];
+
 /**
- * Weak points that couldn't be evaluated because a required max is STALE
- * (present but older than {@link WEAKPOINT_STALE_DAYS}). Missing maxes are
- * skipped silently — there's no date to report. Returns [] with no dates.
+ * Global daily progression rate (fractional gain per day) inferred from the
+ * recently-tested competition lifts: for each fresh lift, its growth since the
+ * baseline snapshot (`baselineMaxes` recorded at `baselineDate`) divided by the
+ * days elapsed, averaged. Returns null when no fresh competition lift has a
+ * baseline to compare against — the caller then leaves stale ratios unevaluated.
  */
-export function staleWeakPoints(
+export function progressionRatePerDay(
   maxes: Record<string, number>,
   maxesWithDates: Record<string, string>,
-): UnevaluatedWeakPoint[] {
+  baselineMaxes: Record<string, number>,
+  baselineDate: string | undefined,
+  now: number = Date.now(),
+): number | null {
+  if (!baselineDate) return null;
+  const baseTime = new Date(baselineDate).getTime();
+  if (!Number.isFinite(baseTime)) return null;
+  const rates: number[] = [];
+  for (const id of RATE_LIFTS) {
+    const cur = maxes[id] ?? 0;
+    const base = baselineMaxes[id] ?? 0;
+    const d = maxesWithDates[id];
+    if (cur <= 0 || base <= 0 || !d) continue;
+    if (daysSince(d, now) > WEAKPOINT_STALE_DAYS) continue; // must be recently tested
+    const elapsedDays = (new Date(d).getTime() - baseTime) / 86400000;
+    if (elapsedDays <= 0) continue;
+    rates.push((cur / base - 1) / elapsedDays);
+  }
+  if (rates.length === 0) return null;
+  return rates.reduce((a, b) => a + b, 0) / rates.length;
+}
+
+export interface EstimatedMax {
+  exercise_id: string;
+  /** Current value estimated from the global progression rate. */
+  estimated: number;
+  weeks_ago: number;
+}
+
+export interface WeakPointAnalysis {
+  weak_points: WeakPoint[];
+  /** Stale maxes whose current value was estimated from progression. */
+  estimated_maxes: EstimatedMax[];
+  /** Weak points still unevaluable — a required max is stale and no rate exists. */
+  unevaluated_weak_points: UnevaluatedWeakPoint[];
+}
+
+/**
+ * Analyse weak points, estimating any stale (> {@link WEAKPOINT_STALE_DAYS})
+ * ratio max from the athlete's global progression rate rather than ignoring it:
+ * `estimated = staleValue × (1 + ratePerDay × ageInDays)`. When no rate can be
+ * computed (no fresh competition lift with a baseline), a stale max stays
+ * unevaluated and its ratio is reported as such.
+ */
+export function analyzeWeakPoints(
+  maxes: Record<string, number>,
+  maxesWithDates: Record<string, string>,
+  baselineMaxes: Record<string, number>,
+  baselineDate: string | undefined,
+): WeakPointAnalysis {
   const now = Date.now();
-  const out: UnevaluatedWeakPoint[] = [];
+  const rate = progressionRatePerDay(maxes, maxesWithDates, baselineMaxes, baselineDate, now);
+
+  const effective: Record<string, number> = {};
+  const estimated: EstimatedMax[] = [];
+  const staleUnevaluable: Record<string, number> = {}; // exercise id → weeks ago
+
+  for (const id of RATIO_LIFTS) {
+    const value = maxes[id] ?? 0;
+    if (value <= 0) continue; // missing → omit (silent; ratio simply not evaluated)
+    const d = maxesWithDates[id];
+    const ageDays = d ? daysSince(d, now) : 0;
+    if (!d || ageDays <= WEAKPOINT_STALE_DAYS) {
+      effective[id] = value; // fresh (or undated → trusted)
+      continue;
+    }
+    // Stale: estimate from the global rate, else mark unevaluable.
+    if (rate !== null) {
+      const est = Math.max(0, Math.round(value * (1 + rate * ageDays)));
+      effective[id] = est;
+      estimated.push({ exercise_id: id, estimated: est, weeks_ago: Math.floor(ageDays / 7) });
+    } else {
+      staleUnevaluable[id] = Math.floor(ageDays / 7);
+    }
+  }
+
+  const weak_points = detectWeakPoints(effective);
+
+  const unevaluated_weak_points: UnevaluatedWeakPoint[] = [];
   for (const key of WEAK_POINTS) {
-    const lifts = WEAK_POINT_LIFTS[key];
-    if (lifts.every((id) => isMaxUsable(id, maxes, maxesWithDates, now))) continue; // evaluable
-    const staleId = lifts.find(
-      (id) =>
-        (maxes[id] ?? 0) > 0 &&
-        maxesWithDates[id] &&
-        daysSince(maxesWithDates[id], now) > WEAKPOINT_STALE_DAYS,
-    );
-    if (staleId) {
-      out.push({
+    if (WEAK_POINT_LIFTS[key].every((id) => (effective[id] ?? 0) > 0)) continue; // evaluated
+    const blockingId = WEAK_POINT_LIFTS[key].find((id) => id in staleUnevaluable);
+    if (blockingId) {
+      unevaluated_weak_points.push({
         weak_point: key,
-        exercise_id: staleId,
-        weeks_ago: Math.floor(daysSince(maxesWithDates[staleId], now) / 7),
+        exercise_id: blockingId,
+        weeks_ago: staleUnevaluable[blockingId],
       });
     }
   }
-  return out;
+
+  return { weak_points, estimated_maxes: estimated, unevaluated_weak_points };
 }
 
 // Targeted assistance work for each weak point, most-specific first.
