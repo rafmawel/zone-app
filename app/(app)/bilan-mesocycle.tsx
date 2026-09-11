@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { X } from 'lucide-react-native';
 import { auth } from '@/lib/firebase';
-import { getMesocycleBilan, type MesocycleBilan } from '@/lib/firestore';
+import { getMesocycleBilan, getUserProfile, type MesocycleBilan } from '@/lib/firestore';
 import { getExerciseById } from '@/data/exercises';
 import { colors } from '@/theme/colors';
 import { SafeScreen } from '@/components/ui/SafeScreen';
@@ -38,6 +38,8 @@ export default function BilanMesocycleScreen(): React.ReactElement {
   const router = useRouter();
   const [bilan, setBilan] = useState<MesocycleBilan | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  // Default true so the nudge never flashes before the profile has loaded.
+  const [bodyweightSet, setBodyweightSet] = useState<boolean>(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,7 +50,13 @@ export default function BilanMesocycleScreen(): React.ReactElement {
         return;
       }
       try {
-        const b = await getMesocycleBilan(user.uid);
+        const [b, profile] = await Promise.all([
+          getMesocycleBilan(user.uid),
+          getUserProfile(user.uid).catch(() => null),
+        ]);
+        if (!cancelled) {
+          setBodyweightSet(Boolean(profile?.bodyweight_kg && profile.bodyweight_kg > 0));
+        }
         // Normalize array fields so a partial/legacy doc can never crash render.
         if (!cancelled) {
           setBilan(
@@ -159,9 +167,14 @@ export default function BilanMesocycleScreen(): React.ReactElement {
               <ZoneText variant="heading" style={styles.levelValue}>
                 {LEVEL_LABELS[bilan.level] ?? bilan.level}
               </ZoneText>
-              {bilan.snatch_ratio > 0 ? (
+              {bodyweightSet && bilan.snatch_ratio > 0 ? (
                 <ZoneText variant="caption" color={colors.textSecondary} style={styles.levelSub}>
                   Ratio Snatch / poids de corps : {bilan.snatch_ratio.toFixed(2)}
+                </ZoneText>
+              ) : null}
+              {!bodyweightSet ? (
+                <ZoneText variant="caption" color={colors.warning} style={styles.levelSub}>
+                  Renseigne ton poids de corps pour une détection de niveau précise.
                 </ZoneText>
               ) : null}
             </View>
