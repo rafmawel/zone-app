@@ -276,10 +276,12 @@ export function readCurrentWeek(
 /**
  * Wipe every week tracking entry for `sport`: the per-week fields, the
  * `${sport}_current_week` pointer, and the per-session unlock state stored
- * under `items.${sport}_w<week>_s<session>`. Used when an athlete
- * reconfigures a sport from scratch so the queue restarts at week 1 with
- * session 1 available, instead of resuming halfway through the previous
- * cycle with stale "completed"/"skipped" statuses leaking through.
+ * under `items.${sport}_b<block>_w<week>_s<session>` (canonical) or the
+ * legacy `items.${sport}_w<week>_s<session>`. Used when an athlete
+ * reconfigures a sport from scratch — or rolls into a fresh mesocycle — so the
+ * queue restarts at week 1 with session 1 available, instead of resuming
+ * halfway through the previous cycle with stale "completed"/"skipped"
+ * statuses leaking through (canonical keys reuse the same block/week numbers).
  */
 export async function resetSportWeek(uid: string, sport: ProSport): Promise<void> {
   const ref = doc(db, 'users', uid, 'state', 'programme_queue');
@@ -288,7 +290,9 @@ export async function resetSportWeek(uid: string, sport: ProSport): Promise<void
   const data = snap.data() as Record<string, unknown>;
   const weekKeyPattern = new RegExp(`^${sport}_week_\\d+_`);
   const currentWeekKey = `${sport}_current_week`;
-  const itemKeyPattern = new RegExp(`^${sport}_w\\d+_s\\d+$`);
+  // Match both the canonical `{sport}_b{block}_w{week}_s{session}` keys and the
+  // legacy `{sport}_w{week}_s{session}` shape so neither leaks a stale status.
+  const itemKeyPattern = new RegExp(`^${sport}_(?:b\\d+_)?w\\d+_s\\d+$`);
 
   const remaining: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(data)) {

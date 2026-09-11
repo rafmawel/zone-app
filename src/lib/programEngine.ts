@@ -84,6 +84,74 @@ export function exerciseCountForLevel(level: string): number {
   return EXERCISES_BY_LEVEL[levelTier(level)];
 }
 
+/** Fallback body weight (kg) when the athlete's is unknown. */
+export const DEFAULT_BODYWEIGHT_KG = 75;
+
+/**
+ * Detect the athlete's training level from the Snatch/bodyweight ratio and the
+ * number of completed mesocycles (weightlifting strength standards).
+ *
+ * - Débutant : ratio < 0.65× BW, or fewer than 3 mesocycles completed
+ * - Intermédiaire : 0.65–0.95× BW
+ * - Avancé : > 0.95× BW
+ */
+export function detectLevel(
+  snatchMax: number,
+  bodyweightKg: number,
+  mesocyclesCompleted: number,
+): LevelKey {
+  const bw = bodyweightKg > 0 ? bodyweightKg : DEFAULT_BODYWEIGHT_KG;
+  const ratio = snatchMax / bw;
+  if (ratio < 0.65 || mesocyclesCompleted < 3) return 'debutant';
+  if (ratio < 0.95) return 'intermediaire';
+  return 'avance';
+}
+
+// Reference strength ratios in weightlifting — used to spot lagging qualities.
+export const REFERENCE_RATIOS = {
+  snatch_to_clean: 0.8, // Snatch ≈ 80% of the C&J
+  front_squat_to_clean: 1.1, // Front Squat ≈ 110% of the C&J
+  back_squat_to_clean: 1.35, // Back Squat ≈ 135% of the C&J
+  snatch_pull_to_snatch: 1.1, // Snatch Pull ≈ 110% of the Snatch
+  clean_pull_to_clean: 1.1, // Clean Pull ≈ 110% of the C&J
+  strict_press_to_jerk: 0.6, // Strict Press ≈ 60% of the Jerk
+} as const;
+
+export type WeakPoint = 'legs' | 'snatch_technique' | 'pull_strength' | 'overhead_strength';
+
+/**
+ * Detect the athlete's weak points from their estimated 1RMs (keyed by
+ * exercise id). A ratio is only evaluated when both lifts are known, so a
+ * missing max never fabricates a weakness.
+ */
+export function detectWeakPoints(maxes: Record<string, number>): WeakPoint[] {
+  const weak: WeakPoint[] = [];
+  const clean = maxes.clean_and_jerk ?? 0;
+  const snatch = maxes.snatch ?? 0;
+  const frontSquat = maxes.front_squat ?? 0;
+  const snatchPull = maxes.snatch_pull ?? 0;
+  const strictPress = maxes.strict_press ?? 0;
+
+  // Weak legs: squat too low relative to the C&J.
+  if (clean > 0 && frontSquat > 0 && frontSquat / clean < 1.0) weak.push('legs');
+  // Weak snatch technique: snatch too low relative to the C&J.
+  if (clean > 0 && snatch > 0 && snatch / clean < 0.75) weak.push('snatch_technique');
+  // Weak pull: snatch pull barely above the snatch.
+  if (snatch > 0 && snatchPull > 0 && snatchPull / snatch < 1.05) weak.push('pull_strength');
+  // Weak overhead: strict press too low relative to the C&J.
+  if (clean > 0 && strictPress > 0 && strictPress / clean < 0.55) weak.push('overhead_strength');
+
+  return weak;
+}
+
+// Targeted assistance work for each weak point, most-specific first.
+const ASSISTANCE_BY_WEAKPOINT: Record<WeakPoint, string[]> = {
+  legs: ['front_squat', 'back_squat_high', 'pause_squat'],
+  snatch_technique: ['snatch_balance', 'overhead_squat', 'hang_snatch'],
+  pull_strength: ['snatch_pull', 'clean_pull', 'romanian_deadlift'],
+  overhead_strength: ['strict_press', 'push_press', 'jerk_recovery'],
+};
+
 export interface ZoneAdaptation {
   weightMultiplier: number;
   setsDelta: number;
@@ -148,12 +216,18 @@ export function restBaseForExercise(exerciseId: string): number {
     'snatch_balance',
     'jerk_from_rack',
     'jerk_from_blocks',
+    'snatch_from_blocks',
+    'pause_snatch',
+    'clean_from_blocks',
+    'pause_clean',
+    'jerk_recovery',
   ]);
   const HEAVY = new Set([
     'back_squat_high',
     'back_squat_low',
     'front_squat',
     'overhead_squat',
+    'pause_squat',
     'deadlift',
   ]);
   const MEDIUM = new Set([
@@ -279,122 +353,203 @@ const PRILEPIN_ENFORCED = new Set([
   'back_squat_low',
 ]);
 
-// Catalyst Athletics intermediate baseline (Greg Everett / Bompa & Haff Soviet
-// block model). Each session lists five movements: main + (pull|technique) +
-// squat + (accessory|press). Beginners are filtered down to 3 by role
-// priority; advanced upgrade press variants. Percentages are the week-1 value
-// for the block; weeks ramp +2.5%/week (see weekIntensityDelta).
-const BLOCK_SESSIONS: Record<ProgramBlock, SessionBlueprint[]> = {
-  1: [
-    {
-      name: 'Snatch',
-      movements: [
-        { exercise_id: 'snatch', sets: 5, reps: 3, pct: 70, role: 'main' },
-        { exercise_id: 'overhead_squat', sets: 4, reps: 3, pct: 65, role: 'accessory' },
-        { exercise_id: 'snatch_pull', sets: 4, reps: 3, pct: 90, role: 'pull' },
-        { exercise_id: 'front_squat', sets: 4, reps: 4, pct: 75, role: 'squat' },
-        { exercise_id: 'strict_press', sets: 3, reps: 5, pct: 65, role: 'accessory' },
-      ],
-    },
-    {
-      name: 'Clean & Jerk',
-      movements: [
-        { exercise_id: 'clean_and_jerk', sets: 5, reps: 1, repsLabel: '2+1', pct: 70, role: 'main' },
-        { exercise_id: 'clean_pull', sets: 4, reps: 3, pct: 90, role: 'pull' },
-        { exercise_id: 'back_squat_high', sets: 4, reps: 4, pct: 78, role: 'squat' },
-        { exercise_id: 'snatch_balance', sets: 3, reps: 3, pct: 60, role: 'accessory' },
-        { exercise_id: 'push_press', sets: 3, reps: 5, pct: 70, role: 'accessory' },
-      ],
-    },
-    {
-      name: 'Technique & Strength',
-      movements: [
-        { exercise_id: 'hang_snatch', sets: 4, reps: 3, pct: 65, role: 'main' },
-        { exercise_id: 'power_clean', sets: 4, reps: 3, pct: 70, role: 'main' },
-        { exercise_id: 'overhead_squat', sets: 3, reps: 5, pct: 60, role: 'accessory' },
-        { exercise_id: 'romanian_deadlift', sets: 3, reps: 5, pct: 70, role: 'accessory' },
-        { exercise_id: 'back_squat_high', sets: 3, reps: 5, pct: 75, role: 'squat' },
-      ],
-    },
-  ],
-  2: [
-    {
-      name: 'Heavy Snatch',
-      movements: [
-        { exercise_id: 'snatch', sets: 6, reps: 2, pct: 80, role: 'main' },
-        { exercise_id: 'snatch_balance', sets: 4, reps: 3, pct: 70, role: 'accessory' },
-        { exercise_id: 'snatch_pull', sets: 5, reps: 2, pct: 97, role: 'pull' },
-        { exercise_id: 'front_squat', sets: 5, reps: 3, pct: 83, role: 'squat' },
-        { exercise_id: 'jerk_from_rack', sets: 4, reps: 2, pct: 80, role: 'accessory' },
-      ],
-    },
-    {
-      name: 'Heavy Clean & Jerk',
-      movements: [
-        { exercise_id: 'clean_and_jerk', sets: 6, reps: 1, repsLabel: '1+1', pct: 82, role: 'main' },
-        { exercise_id: 'clean_pull', sets: 5, reps: 2, pct: 100, role: 'pull' },
-        { exercise_id: 'back_squat_high', sets: 5, reps: 3, pct: 83, role: 'squat' },
-        { exercise_id: 'power_snatch', sets: 4, reps: 2, pct: 70, role: 'main' },
-        { exercise_id: 'strict_press', sets: 4, reps: 3, pct: 72, role: 'accessory' },
-      ],
-    },
-    {
-      name: 'Power',
-      movements: [
-        { exercise_id: 'hang_clean', sets: 4, reps: 2, pct: 78, role: 'main' },
-        { exercise_id: 'overhead_squat', sets: 4, reps: 3, pct: 72, role: 'accessory' },
-        { exercise_id: 'snatch_pull', sets: 4, reps: 2, pct: 95, role: 'pull' },
-        { exercise_id: 'front_squat', sets: 4, reps: 3, pct: 82, role: 'squat' },
-        { exercise_id: 'push_jerk', sets: 3, reps: 3, pct: 75, role: 'accessory' },
-      ],
-    },
-  ],
-  3: [
-    {
-      name: 'Snatch Peaking',
-      movements: [
-        {
-          exercise_id: 'snatch',
-          sets: 6,
-          reps: 1,
-          pct: 92,
-          role: 'main',
-          toMax: true,
-          display: 'montée à la max du jour + 2×1 @ 90%',
-        },
-        {
-          exercise_id: 'clean_and_jerk',
-          sets: 5,
-          reps: 1,
-          pct: 90,
-          role: 'main',
-          toMax: true,
-          display: 'montée à la max du jour',
-        },
-        { exercise_id: 'front_squat', sets: 3, reps: 2, pct: 90, role: 'squat' },
-        { exercise_id: 'snatch_balance', sets: 3, reps: 2, pct: 80, role: 'accessory' },
-      ],
-    },
-    {
-      name: 'Clean & Jerk Peaking',
-      movements: [
-        { exercise_id: 'clean_and_jerk', sets: 5, reps: 1, pct: 90, role: 'main' },
-        { exercise_id: 'snatch', sets: 5, reps: 1, pct: 90, role: 'main' },
-        { exercise_id: 'back_squat_high', sets: 4, reps: 2, pct: 89, role: 'squat' },
-        { exercise_id: 'jerk_from_rack', sets: 3, reps: 2, pct: 85, role: 'accessory' },
-      ],
-    },
-    {
-      name: 'Power & Peaking',
-      movements: [
-        { exercise_id: 'power_snatch', sets: 4, reps: 2, pct: 75, role: 'main' },
-        { exercise_id: 'power_clean', sets: 4, reps: 2, pct: 75, role: 'main' },
-        { exercise_id: 'front_squat', sets: 3, reps: 3, pct: 85, role: 'squat' },
-        { exercise_id: 'overhead_squat', sets: 3, reps: 3, pct: 75, role: 'accessory' },
-      ],
-    },
-  ],
+// ── Evolutive exercise selection ───────────────────────────────────────────
+// Which lifts appear per training tier, block (1/2/3) and session (A/B/C).
+// Index 0 is the session's focus. Movement parameters (sets/reps/%/role) come
+// from the volume tables below: competition lifts follow the per-level volume
+// (PARTIE 4); variants / pulls / squats / accessories use block defaults.
+const LEVEL_BLOCK_EXERCISES: Record<
+  WeightliftingLevelTier,
+  Record<ProgramBlock, string[][]>
+> = {
+  beginner: {
+    1: [
+      ['snatch', 'overhead_squat', 'snatch_pull', 'front_squat'],
+      ['clean_and_jerk', 'clean_pull', 'back_squat_high'],
+      ['power_snatch', 'power_clean', 'strict_press'],
+    ],
+    2: [
+      ['snatch', 'snatch_pull', 'front_squat'],
+      ['clean_and_jerk', 'jerk_from_rack', 'back_squat_high'],
+      ['power_snatch', 'power_clean', 'push_press'],
+    ],
+    3: [
+      ['snatch', 'front_squat'],
+      ['clean_and_jerk', 'back_squat_high'],
+      ['power_snatch', 'power_clean'],
+    ],
+  },
+  intermediate: {
+    1: [
+      ['snatch', 'hang_snatch', 'snatch_pull', 'overhead_squat', 'front_squat'],
+      ['clean_and_jerk', 'hang_clean', 'clean_pull', 'back_squat_high'],
+      ['snatch_balance', 'power_clean', 'push_press', 'romanian_deadlift'],
+    ],
+    2: [
+      ['snatch', 'snatch_from_blocks', 'snatch_pull', 'front_squat'],
+      ['clean_and_jerk', 'jerk_from_rack', 'clean_pull', 'back_squat_high'],
+      ['power_snatch', 'power_clean', 'push_press'],
+    ],
+    3: [
+      ['snatch', 'snatch_pull', 'front_squat'],
+      ['clean_and_jerk', 'back_squat_high'],
+      ['power_snatch', 'power_clean'],
+    ],
+  },
+  advanced: {
+    1: [
+      ['snatch', 'snatch_from_blocks', 'pause_snatch', 'snatch_pull', 'overhead_squat'],
+      ['clean_and_jerk', 'clean_from_blocks', 'pause_clean', 'clean_pull', 'front_squat'],
+      ['snatch_balance', 'jerk_recovery', 'back_squat_high', 'romanian_deadlift'],
+    ],
+    2: [
+      ['snatch', 'snatch_from_blocks', 'snatch_pull', 'front_squat'],
+      ['clean_and_jerk', 'jerk_from_rack', 'clean_pull', 'back_squat_high'],
+      ['power_snatch', 'power_clean', 'push_press'],
+    ],
+    3: [
+      ['snatch', 'front_squat'],
+      ['clean_and_jerk', 'back_squat_high'],
+      ['snatch', 'clean_and_jerk'],
+    ],
+  },
 };
+
+const SESSION_NAMES = ['Arraché', 'Épaulé-Jeté', 'Technique & Force'];
+
+interface LiftVolume {
+  pct: number;
+  sets: number;
+  reps: number;
+}
+
+// Competition lifts (snatch, clean & jerk): week-1 %, sets and reps per level
+// and block (PARTIE 4). The week ramp (+2.5%/wk) and Prilepin refine these.
+const COMP_VOLUME: Record<WeightliftingLevelTier, Record<ProgramBlock, LiftVolume>> = {
+  beginner: {
+    1: { pct: 70, sets: 5, reps: 3 },
+    2: { pct: 80, sets: 5, reps: 2 },
+    3: { pct: 88, sets: 4, reps: 2 },
+  },
+  intermediate: {
+    1: { pct: 72, sets: 6, reps: 3 },
+    2: { pct: 82, sets: 6, reps: 2 },
+    3: { pct: 90, sets: 5, reps: 1 },
+  },
+  advanced: {
+    1: { pct: 75, sets: 7, reps: 3 },
+    2: { pct: 85, sets: 7, reps: 2 },
+    3: { pct: 92, sets: 6, reps: 1 },
+  },
+};
+
+// Technical / speed variants (power, hang, blocks, pause): block defaults.
+const VARIANT_VOLUME: Record<ProgramBlock, LiftVolume> = {
+  1: { pct: 68, sets: 4, reps: 3 },
+  2: { pct: 75, sets: 4, reps: 2 },
+  3: { pct: 78, sets: 4, reps: 2 },
+};
+// Pulls above the lift (snatch / clean pull), % of the lift's own max.
+const PULL_VOLUME: Record<ProgramBlock, LiftVolume> = {
+  1: { pct: 90, sets: 4, reps: 3 },
+  2: { pct: 97, sets: 5, reps: 2 },
+  3: { pct: 95, sets: 4, reps: 2 },
+};
+// Squats (front / back / pause).
+const SQUAT_VOLUME: Record<ProgramBlock, LiftVolume> = {
+  1: { pct: 76, sets: 4, reps: 4 },
+  2: { pct: 83, sets: 5, reps: 3 },
+  3: { pct: 89, sets: 3, reps: 2 },
+};
+// Everything else (presses, overhead squat, snatch balance, RDL, recovery).
+const ACCESSORY_VOLUME: Record<ProgramBlock, LiftVolume> = {
+  1: { pct: 65, sets: 3, reps: 5 },
+  2: { pct: 72, sets: 4, reps: 3 },
+  3: { pct: 78, sets: 3, reps: 3 },
+};
+
+const COMPETITION_LIFTS = new Set(['snatch', 'clean_and_jerk']);
+const VARIANT_MAINS = new Set([
+  'power_snatch',
+  'power_clean',
+  'hang_snatch',
+  'hang_clean',
+  'snatch_from_blocks',
+  'clean_from_blocks',
+  'pause_snatch',
+  'pause_clean',
+]);
+const PULL_LIFTS = new Set(['snatch_pull', 'clean_pull']);
+const SQUAT_LIFTS = new Set(['front_squat', 'back_squat_high', 'back_squat_low', 'pause_squat']);
+
+/** Assemble one movement (params + role) for an exercise at a tier and block. */
+function movementFor(
+  exerciseId: string,
+  tier: WeightliftingLevelTier,
+  block: ProgramBlock,
+): MovementBlueprint {
+  let vol: LiftVolume;
+  let role: MovementRole;
+  if (COMPETITION_LIFTS.has(exerciseId)) {
+    vol = COMP_VOLUME[tier][block];
+    role = 'main';
+  } else if (VARIANT_MAINS.has(exerciseId)) {
+    vol = VARIANT_VOLUME[block];
+    role = 'main';
+  } else if (PULL_LIFTS.has(exerciseId)) {
+    vol = PULL_VOLUME[block];
+    role = 'pull';
+  } else if (SQUAT_LIFTS.has(exerciseId)) {
+    vol = SQUAT_VOLUME[block];
+    role = 'squat';
+  } else {
+    vol = ACCESSORY_VOLUME[block];
+    role = 'accessory';
+  }
+  // Volume nudge on supporting work by tier (competition lifts are already
+  // tier-scaled via COMP_VOLUME): advanced adds a set on squats / pulls,
+  // beginners drop one on the rest.
+  let sets = vol.sets;
+  if (role !== 'main') {
+    if (tier === 'advanced' && (role === 'squat' || role === 'pull')) sets += 1;
+    else if (tier === 'beginner') sets = Math.max(2, sets - 1);
+  }
+  return { exercise_id: exerciseId, sets, reps: vol.reps, pct: vol.pct, role };
+}
+
+/**
+ * Build the session blueprint for a tier / block / session index, injecting up
+ * to two weak-point assistance movements into block 1's third session (C).
+ */
+function buildLevelBlueprint(
+  tier: WeightliftingLevelTier,
+  block: ProgramBlock,
+  sessionIdx: number,
+  weakPoints: WeakPoint[],
+): SessionBlueprint {
+  const ids = LEVEL_BLOCK_EXERCISES[tier][block][sessionIdx] ?? [];
+  const movements = ids.map((id) => movementFor(id, tier, block));
+
+  if (block === 1 && sessionIdx === 2 && weakPoints.length > 0) {
+    const present = new Set(ids);
+    const extra: string[] = [];
+    for (const wp of weakPoints) {
+      const pick = ASSISTANCE_BY_WEAKPOINT[wp].find(
+        (id) => !present.has(id) && !extra.includes(id),
+      );
+      if (pick) extra.push(pick);
+      if (extra.length >= 2) break;
+    }
+    for (const id of extra) {
+      const m = movementFor(id, tier, block);
+      // Assistance is supplementary volume: keep it light (accessory rest, one
+      // set fewer than its primary prescription).
+      movements.push({ ...m, role: 'accessory', sets: Math.max(2, m.sets - 1) });
+    }
+  }
+
+  return { name: SESSION_NAMES[sessionIdx] ?? `Séance ${sessionIdx + 1}`, movements };
+}
 
 // Deload week: three differentiated A/B/C sessions, 60-65% intensity, -50%
 // volume. Pattern is preserved (squat + technique) but fatigue is dropped.
@@ -439,13 +594,18 @@ function resolveBaseMax(exerciseId: string, lookup: Map<string, number>): number
     case 'power_snatch':
     case 'overhead_squat':
     case 'snatch_balance':
+    case 'snatch_from_blocks':
+    case 'pause_snatch':
       return snatch;
     case 'clean_and_jerk':
     case 'clean_pull':
     case 'hang_clean':
     case 'power_clean':
+    case 'clean_from_blocks':
+    case 'pause_clean':
       return clean;
     case 'front_squat':
+    case 'pause_squat':
       return front;
     case 'back_squat_high':
       return front > 0 ? front * 1.18 : 0;
@@ -466,92 +626,11 @@ function resolveBaseMax(exerciseId: string, lookup: Map<string, number>): number
       return clean > 0 ? clean * 1.0 : 0;
     case 'jerk_from_rack':
     case 'jerk_from_blocks':
+    case 'jerk_recovery':
       return clean > 0 ? clean * 0.95 : 0;
     default:
       return 0;
   }
-}
-
-// Beginners skip hang variations and snatch balance until they've built a
-// base in Block 1 (motor pattern safety). Push press / jerk_from_rack require
-// overhead competency and are also excluded; the engine substitutes strict
-// press for them so the press slot is preserved.
-const BEGINNER_BLOCK_1_FORBIDDEN = new Set([
-  'hang_snatch',
-  'hang_clean',
-  'snatch_balance',
-]);
-
-function substituteForBeginner(m: MovementBlueprint): MovementBlueprint {
-  if (m.exercise_id === 'push_press') {
-    return { ...m, exercise_id: 'strict_press', pct: m.pct - 5 };
-  }
-  if (m.exercise_id === 'jerk_from_rack' || m.exercise_id === 'push_jerk') {
-    return { ...m, exercise_id: 'strict_press', pct: Math.max(50, m.pct - 15), role: 'accessory' };
-  }
-  return m;
-}
-
-// Advanced lifters upgrade the press slot: strict press → push press,
-// push press → jerk from rack (in Block 2+, when overhead intensity is
-// already high). Block 1 keeps push press to lay technical foundation.
-function upgradeForAdvanced(m: MovementBlueprint, block: ProgramBlock): MovementBlueprint {
-  if (m.exercise_id === 'strict_press') {
-    return { ...m, exercise_id: 'push_press', pct: m.pct + 5 };
-  }
-  if (m.exercise_id === 'push_press' && block !== 1) {
-    return { ...m, exercise_id: 'jerk_from_rack', pct: m.pct + 5 };
-  }
-  return m;
-}
-
-// Beginner sessions reduce to 3 movements in role priority order:
-// main → pull → squat, then accessory fills if a role is missing.
-function pickBeginnerMovements(movements: MovementBlueprint[]): MovementBlueprint[] {
-  const picked: MovementBlueprint[] = [];
-  const used = new Set<number>();
-  const priorities: MovementRole[] = ['main', 'pull', 'squat'];
-  for (const role of priorities) {
-    const idx = movements.findIndex((m, i) => !used.has(i) && m.role === role);
-    if (idx >= 0) {
-      picked.push(movements[idx]);
-      used.add(idx);
-      if (picked.length === 3) return picked;
-    }
-  }
-  for (let i = 0; i < movements.length && picked.length < 3; i += 1) {
-    if (!used.has(i)) picked.push(movements[i]);
-  }
-  return picked;
-}
-
-function levelizeSession(
-  session: SessionBlueprint,
-  tier: WeightliftingLevelTier,
-  block: ProgramBlock,
-): MovementBlueprint[] {
-  if (tier === 'beginner') {
-    const filtered = session.movements
-      .filter((m) => !(block === 1 && BEGINNER_BLOCK_1_FORBIDDEN.has(m.exercise_id)))
-      .map(substituteForBeginner);
-    return pickBeginnerMovements(filtered).map((m) => ({
-      ...m,
-      // Main competition lifts keep full set count so volume hits Prilepin
-      // minimums (5 × 3 snatch, 5 × (2+1) clean & jerk). Pull / squat /
-      // accessories take the -1 to ease total beginner volume.
-      sets: m.role === 'main' ? m.sets : Math.max(2, m.sets - 1),
-    }));
-  }
-  if (tier === 'advanced') {
-    return session.movements
-      .map((m) => upgradeForAdvanced(m, block))
-      .map((m) =>
-        m.role === 'main' || m.role === 'squat'
-          ? { ...m, sets: m.sets + 1 }
-          : m,
-      );
-  }
-  return session.movements.slice();
 }
 
 /** Week-over-week intensity ramp inside a block: +2.5% per week (wk1..3). */
@@ -671,20 +750,6 @@ interface BuiltWeightliftingSession {
   adaptation: ZoneAdaptation;
 }
 
-function selectBlueprint(
-  block: ProgramBlock,
-  week: number,
-  dayOfWeek: number,
-): { blueprint: SessionBlueprint; isDeload: boolean } {
-  if (week >= 4) {
-    const idx = (Math.max(1, dayOfWeek) - 1) % DELOAD_SESSIONS.length;
-    return { blueprint: DELOAD_SESSIONS[idx], isDeload: true };
-  }
-  const sessions = BLOCK_SESSIONS[block];
-  const idx = (Math.max(1, dayOfWeek) - 1) % sessions.length;
-  return { blueprint: sessions[idx], isDeload: false };
-}
-
 function buildWeightliftingSession(params: GenerateParams): BuiltWeightliftingSession {
   const { program, maxes, dayOfWeek, zoneScore } = params;
   const recentRir = params.recentRir ?? [];
@@ -693,16 +758,23 @@ function buildWeightliftingSession(params: GenerateParams): BuiltWeightliftingSe
   const tier = levelTier(program.level);
   const adaptation = adaptToZoneScore(zoneScore);
 
-  const { blueprint, isDeload } = selectBlueprint(block, week, dayOfWeek);
-  const movements = isDeload
-    ? blueprint.movements
-    : levelizeSession(blueprint, tier, block);
+  const maxLookup = new Map<string, number>();
+  for (const m of maxes) maxLookup.set(m.exercise_id, m.estimated_1rm);
+
+  const isDeload = week >= 4;
+  let movements: MovementBlueprint[];
+  if (isDeload) {
+    const idx = (Math.max(1, dayOfWeek) - 1) % DELOAD_SESSIONS.length;
+    movements = DELOAD_SESSIONS[idx].movements;
+  } else {
+    const oneRms: Record<string, number> = {};
+    for (const [id, oneRm] of maxLookup) oneRms[id] = oneRm;
+    const idx = (Math.max(1, dayOfWeek) - 1) % 3;
+    movements = buildLevelBlueprint(tier, block, idx, detectWeakPoints(oneRms)).movements;
+  }
   const intensityDelta = isDeload
     ? 0
     : weekIntensityDelta(week) + rirIntensityDelta(recentRir);
-
-  const maxLookup = new Map<string, number>();
-  for (const m of maxes) maxLookup.set(m.exercise_id, m.estimated_1rm);
 
   const exercises: SessionExercise[] = [];
   const preview: SessionExercisePreview[] = [];
@@ -890,4 +962,53 @@ export function checkAndAdvanceProgram(
     current_week: week,
     current_day: dayInWeek,
   };
+}
+
+/** Weeks in a full mesocycle: 3 blocks × 4 weeks. */
+export const MESOCYCLE_WEEKS = 12;
+
+/**
+ * Has the athlete finished the current mesocycle? True once every session of
+ * the 12-week cycle (3 blocks × 4 weeks × sessions/week) has been completed
+ * since `mesocycle_start`.
+ */
+export function isMesocycleComplete(program: UserProgram, completedSince: number): boolean {
+  const spw = Math.max(1, program.sessions_per_week);
+  return completedSince >= MESOCYCLE_WEEKS * spw;
+}
+
+/**
+ * Roll the programme into a fresh mesocycle: reset to block 1 / week 1 / day 1,
+ * re-anchor `mesocycle_start`, bump the completed counter, and store the new
+ * level plus the start-of-cycle 1RM snapshot (for the next bilan).
+ */
+export function startNextMesocycle(
+  program: UserProgram,
+  newLevel: LevelKey,
+  todayStr: string,
+  startMaxes: Record<string, number>,
+): UserProgram {
+  return {
+    ...program,
+    level: newLevel,
+    current_block: 1,
+    current_week: 1,
+    current_day: 1,
+    mesocycle_start: todayStr,
+    mesocycle_start_block: 1,
+    mesocycles_completed: (program.mesocycles_completed ?? 0) + 1,
+    mesocycle_start_maxes: startMaxes,
+  };
+}
+
+/** Every distinct exercise id offered at a given level across all blocks. */
+export function exercisesForLevel(level: string): string[] {
+  const tier = levelTier(level);
+  const out = new Set<string>();
+  for (const block of [1, 2, 3] as ProgramBlock[]) {
+    for (const session of LEVEL_BLOCK_EXERCISES[tier][block]) {
+      for (const id of session) out.add(id);
+    }
+  }
+  return [...out];
 }
