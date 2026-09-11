@@ -14,6 +14,7 @@ import {
   detectWeakPoints,
   exercisesForLevel,
   higherLevel,
+  staleWeakPoints,
   startNextMesocycle,
 } from './programEngine';
 
@@ -39,9 +40,13 @@ export async function finalizeMesocycle(
   // Read the freshest maxes so any PRs reconciled during the closing session
   // are reflected in the "after" values.
   const after: Record<string, number> = {};
+  const afterDates: Record<string, string> = {};
   try {
     const maxes = await getExerciseMaxes(uid);
-    for (const m of maxes) after[m.exercise_id] = m.estimated_1rm;
+    for (const m of maxes) {
+      after[m.exercise_id] = m.estimated_1rm;
+      if (m.date) afterDates[m.exercise_id] = m.date;
+    }
   } catch {
     // best effort — an empty "after" degrades the bilan gracefully
   }
@@ -63,7 +68,10 @@ export async function finalizeMesocycle(
     detectLevel(snatch1RM, bodyweight, mesocycleNumber),
     program.level,
   );
-  const weakPoints = detectWeakPoints(after);
+  // Stale-aware: a max older than 6 weeks no longer counts, so an out-of-date
+  // lift never fabricates a weakness; those ratios are reported as unevaluated.
+  const weakPoints = detectWeakPoints(after, afterDates);
+  const unevaluatedWeakPoints = staleWeakPoints(after, afterDates);
 
   const oldPool = new Set(exercisesForLevel(program.level));
   const newExercises = exercisesForLevel(newLevel).filter((id) => !oldPool.has(id));
@@ -80,6 +88,7 @@ export async function finalizeMesocycle(
     snatch_ratio: bodyweight > 0 ? Math.round((snatch1RM / bodyweight) * 100) / 100 : 0,
     bodyweight_kg: bodyweight,
     weak_points: weakPoints,
+    unevaluated_weak_points: unevaluatedWeakPoints,
     progression,
     new_exercises: newExercises,
   };

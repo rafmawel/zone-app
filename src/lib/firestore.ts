@@ -451,6 +451,12 @@ export interface MesocycleBilan {
   snatch_ratio: number;
   bodyweight_kg: number;
   weak_points: string[];
+  /** Weak points not evaluated because a required max is stale (>6 weeks). */
+  unevaluated_weak_points?: {
+    weak_point: string;
+    exercise_id: string;
+    weeks_ago: number;
+  }[];
   progression: MesocycleProgressionEntry[];
   /** Exercise ids newly unlocked at the new level. */
   new_exercises: string[];

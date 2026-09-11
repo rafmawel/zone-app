@@ -135,29 +135,114 @@ export const REFERENCE_RATIOS = {
 
 export type WeakPoint = 'legs' | 'snatch_technique' | 'pull_strength' | 'overhead_strength';
 
-/**
- * Detect the athlete's weak points from their estimated 1RMs (keyed by
- * exercise id). A ratio is only evaluated when both lifts are known, so a
- * missing max never fabricates a weakness.
- */
-export function detectWeakPoints(maxes: Record<string, number>): WeakPoint[] {
-  const weak: WeakPoint[] = [];
+/** A max older than this many days is treated as stale for weak-point analysis. */
+export const WEAKPOINT_STALE_DAYS = 42; // 6 weeks
+
+const WEAK_POINTS: WeakPoint[] = ['legs', 'snatch_technique', 'pull_strength', 'overhead_strength'];
+
+/** The two lifts each weak-point ratio needs — both must be usable to evaluate it. */
+const WEAK_POINT_LIFTS: Record<WeakPoint, string[]> = {
+  legs: ['clean_and_jerk', 'front_squat'],
+  snatch_technique: ['clean_and_jerk', 'snatch'],
+  pull_strength: ['snatch', 'snatch_pull'],
+  overhead_strength: ['clean_and_jerk', 'strict_press'],
+};
+
+function daysSince(dateStr: string, now: number): number {
+  const t = new Date(dateStr).getTime();
+  if (!Number.isFinite(t)) return 0;
+  return Math.max(0, Math.floor((now - t) / 86400000));
+}
+
+/** A max is usable when it's present (>0) and — when a date is known — not stale. */
+function isMaxUsable(
+  id: string,
+  maxes: Record<string, number>,
+  maxesWithDates: Record<string, string> | undefined,
+  now: number,
+): boolean {
+  if ((maxes[id] ?? 0) <= 0) return false;
+  if (!maxesWithDates) return true; // no dates supplied → legacy behaviour (presence only)
+  const d = maxesWithDates[id];
+  if (!d) return true; // a value but no date → don't penalise
+  return daysSince(d, now) <= WEAKPOINT_STALE_DAYS;
+}
+
+function weakPointPresent(key: WeakPoint, maxes: Record<string, number>): boolean {
   const clean = maxes.clean_and_jerk ?? 0;
   const snatch = maxes.snatch ?? 0;
   const frontSquat = maxes.front_squat ?? 0;
   const snatchPull = maxes.snatch_pull ?? 0;
   const strictPress = maxes.strict_press ?? 0;
+  switch (key) {
+    case 'legs': // squat too low relative to the C&J
+      return frontSquat / clean < 1.0;
+    case 'snatch_technique': // snatch too low relative to the C&J
+      return snatch / clean < 0.75;
+    case 'pull_strength': // snatch pull barely above the snatch
+      return snatchPull / snatch < 1.05;
+    case 'overhead_strength': // strict press too low relative to the C&J
+      return strictPress / clean < 0.55;
+  }
+}
 
-  // Weak legs: squat too low relative to the C&J.
-  if (clean > 0 && frontSquat > 0 && frontSquat / clean < 1.0) weak.push('legs');
-  // Weak snatch technique: snatch too low relative to the C&J.
-  if (clean > 0 && snatch > 0 && snatch / clean < 0.75) weak.push('snatch_technique');
-  // Weak pull: snatch pull barely above the snatch.
-  if (snatch > 0 && snatchPull > 0 && snatchPull / snatch < 1.05) weak.push('pull_strength');
-  // Weak overhead: strict press too low relative to the C&J.
-  if (clean > 0 && strictPress > 0 && strictPress / clean < 0.55) weak.push('overhead_strength');
-
+/**
+ * Detect the athlete's weak points from their estimated 1RMs (keyed by exercise
+ * id). A ratio is only evaluated when both of its lifts are known AND — when
+ * `maxesWithDates` (exercise id → ISO date) is supplied — recorded within the
+ * last {@link WEAKPOINT_STALE_DAYS} days, so a stale or missing max never
+ * fabricates a weakness. Omitting `maxesWithDates` keeps the legacy
+ * presence-only behaviour.
+ */
+export function detectWeakPoints(
+  maxes: Record<string, number>,
+  maxesWithDates?: Record<string, string>,
+): WeakPoint[] {
+  const now = Date.now();
+  const weak: WeakPoint[] = [];
+  for (const key of WEAK_POINTS) {
+    const usable = WEAK_POINT_LIFTS[key].every((id) => isMaxUsable(id, maxes, maxesWithDates, now));
+    if (usable && weakPointPresent(key, maxes)) weak.push(key);
+  }
   return weak;
+}
+
+export interface UnevaluatedWeakPoint {
+  weak_point: WeakPoint;
+  /** The stale lift that blocked evaluation. */
+  exercise_id: string;
+  weeks_ago: number;
+}
+
+/**
+ * Weak points that couldn't be evaluated because a required max is STALE
+ * (present but older than {@link WEAKPOINT_STALE_DAYS}). Missing maxes are
+ * skipped silently — there's no date to report. Returns [] with no dates.
+ */
+export function staleWeakPoints(
+  maxes: Record<string, number>,
+  maxesWithDates: Record<string, string>,
+): UnevaluatedWeakPoint[] {
+  const now = Date.now();
+  const out: UnevaluatedWeakPoint[] = [];
+  for (const key of WEAK_POINTS) {
+    const lifts = WEAK_POINT_LIFTS[key];
+    if (lifts.every((id) => isMaxUsable(id, maxes, maxesWithDates, now))) continue; // evaluable
+    const staleId = lifts.find(
+      (id) =>
+        (maxes[id] ?? 0) > 0 &&
+        maxesWithDates[id] &&
+        daysSince(maxesWithDates[id], now) > WEAKPOINT_STALE_DAYS,
+    );
+    if (staleId) {
+      out.push({
+        weak_point: key,
+        exercise_id: staleId,
+        weeks_ago: Math.floor(daysSince(maxesWithDates[staleId], now) / 7),
+      });
+    }
+  }
+  return out;
 }
 
 // Targeted assistance work for each weak point, most-specific first.

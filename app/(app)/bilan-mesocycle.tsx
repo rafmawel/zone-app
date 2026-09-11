@@ -65,6 +65,7 @@ export default function BilanMesocycleScreen(): React.ReactElement {
                   ...b,
                   progression: b.progression ?? [],
                   weak_points: b.weak_points ?? [],
+                  unevaluated_weak_points: b.unevaluated_weak_points ?? [],
                   new_exercises: b.new_exercises ?? [],
                 }
               : null,
@@ -181,20 +182,29 @@ export default function BilanMesocycleScreen(): React.ReactElement {
 
             <View style={styles.card}>
               <ZoneText style={styles.cardTitle}>POINTS À TRAVAILLER</ZoneText>
-              {bilan.weak_points.length > 0 ? (
-                bilan.weak_points.map((wp) => (
-                  <View key={wp} style={styles.bulletRow}>
-                    <View style={[styles.bullet, { backgroundColor: colors.warning }]} />
-                    <ZoneText variant="label" style={styles.bulletText}>
-                      {WEAK_POINT_LABELS[wp] ?? wp}
-                    </ZoneText>
-                  </View>
-                ))
-              ) : (
+              {bilan.weak_points.map((wp) => (
+                <View key={wp} style={styles.bulletRow}>
+                  <View style={[styles.bullet, { backgroundColor: colors.warning }]} />
+                  <ZoneText variant="label" style={styles.bulletText}>
+                    {WEAK_POINT_LABELS[wp] ?? wp}
+                  </ZoneText>
+                </View>
+              ))}
+              {(bilan.unevaluated_weak_points ?? []).map((u) => (
+                <View key={u.weak_point} style={styles.bulletRow}>
+                  <View style={[styles.bullet, styles.bulletMuted]} />
+                  <ZoneText variant="caption" color={colors.textMuted} style={styles.bulletText}>
+                    Non évalué — max {exName(u.exercise_id)} obsolète (dernière mise à jour il y a{' '}
+                    {u.weeks_ago} semaine{u.weeks_ago > 1 ? 's' : ''})
+                  </ZoneText>
+                </View>
+              ))}
+              {bilan.weak_points.length === 0 &&
+              (bilan.unevaluated_weak_points ?? []).length === 0 ? (
                 <ZoneText variant="caption" color={colors.textSecondary}>
                   Ratios équilibrés — continue comme ça.
                 </ZoneText>
-              )}
+              ) : null}
             </View>
 
             <View style={styles.card}>
@@ -287,7 +297,8 @@ const styles = StyleSheet.create({
   levelSub: { marginTop: 6 },
   bulletRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5, gap: 10 },
   bullet: { width: 8, height: 8, borderRadius: 4 },
-  bulletText: { fontSize: 15, color: colors.textPrimary },
+  bulletMuted: { backgroundColor: colors.textMuted },
+  bulletText: { fontSize: 15, color: colors.textPrimary, flex: 1 },
   newSub: { marginBottom: 8 },
   footer: { marginTop: 28 },
 });
