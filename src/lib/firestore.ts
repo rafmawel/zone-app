@@ -49,6 +49,9 @@ export interface UserProfile {
   created_at: Timestamp | null;
   onboarding_completed: boolean;
   level: Level | null;
+  /** Body weight in kg, used for strength-to-bodyweight ratios (level
+   *  detection). Optional — falls back to a default when unknown. */
+  bodyweight_kg?: number;
   health_data_source: HealthDataSource;
   sessions_organization: SessionsOrganization;
   optimize_global_progression?: boolean;
@@ -145,6 +148,12 @@ export interface UserProgram {
   /** Block the current mesocycle started on (fixed). Lets advancement stay
    *  idempotent — derived from a fixed base, never from the live block. */
   mesocycle_start_block?: ProgramBlock;
+  /** How many full mesocycles (block 1→2→3) the athlete has completed.
+   *  Drives level detection and evolves the exercise pool. Defaults to 0. */
+  mesocycles_completed?: number;
+  /** Snapshot of estimated 1RMs (by exercise id) captured when the current
+   *  mesocycle started, so the end-of-mesocycle bilan can show progression. */
+  mesocycle_start_maxes?: Record<string, number>;
   sessions_per_week: number;
   level: string;
   goal: string;
@@ -424,6 +433,44 @@ export async function getExerciseMaxes(uid: string): Promise<ExerciseMax[]> {
 
 export async function saveExerciseMax(uid: string, max: ExerciseMax): Promise<void> {
   await setDoc(doc(db, 'users', uid, 'maxes', max.exercise_id), max);
+}
+
+export interface MesocycleProgressionEntry {
+  exercise_id: string;
+  before: number;
+  after: number;
+}
+
+/** End-of-mesocycle report, written when a mesocycle rolls over. */
+export interface MesocycleBilan {
+  /** The mesocycle that just finished (1-based). */
+  mesocycle_number: number;
+  /** Detected level for the NEXT mesocycle. */
+  level: string;
+  /** Snatch / bodyweight ratio at the rollover. */
+  snatch_ratio: number;
+  bodyweight_kg: number;
+  weak_points: string[];
+  progression: MesocycleProgressionEntry[];
+  /** Exercise ids newly unlocked at the new level. */
+  new_exercises: string[];
+  created_at: Timestamp | null;
+}
+
+export async function saveMesocycleBilan(
+  uid: string,
+  bilan: Omit<MesocycleBilan, 'created_at'>,
+): Promise<void> {
+  await setDoc(doc(db, 'users', uid, 'state', 'mesocycle_bilan'), {
+    ...bilan,
+    created_at: serverTimestamp(),
+  });
+}
+
+export async function getMesocycleBilan(uid: string): Promise<MesocycleBilan | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'mesocycle_bilan'));
+  if (!snap.exists()) return null;
+  return snap.data() as MesocycleBilan;
 }
 
 export interface SavePlannedSessionInput {

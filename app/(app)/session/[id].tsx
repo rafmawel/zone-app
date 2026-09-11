@@ -36,7 +36,9 @@ import {
   computeRestSeconds,
   estimateOneRepMax,
   isFailedSet,
+  isMesocycleComplete,
 } from '@/lib/programEngine';
+import { finalizeMesocycle } from '@/lib/mesocycle';
 import { parseQueueKey } from '@/lib/queueKeys';
 import { computeAndSaveWorkloadEntry } from '@/lib/pro';
 import { recordSessionComplete, setCurrentWeek, startWeek } from '@/lib/weekTracking';
@@ -89,6 +91,7 @@ export default function SessionScreen(): React.ReactElement {
   const [pr, setPr] = useState<ResultPR | null>(null);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
   const [weekAdvanceMsg, setWeekAdvanceMsg] = useState<string | null>(null);
+  const [mesocycleDone, setMesocycleDone] = useState<boolean>(false);
   const [infoVisible, setInfoVisible] = useState<boolean>(false);
   const startedAtRef = useRef<number>(Date.now());
   const ringProgress = useSharedValue(0);
@@ -339,19 +342,35 @@ export default function SessionScreen(): React.ReactElement {
           user.uid,
           program.mesocycle_start,
         );
-        const advanced = checkAndAdvanceProgram(program, completedSince);
-        await saveUserProgram(user.uid, advanced);
-        await setCurrentWeek(user.uid, 'weightlifting', advanced.current_week).catch(
-          () => undefined,
-        );
-        if (advanced.current_block !== program.current_block) {
-          setWeekAdvanceMsg(
-            `Bloc ${program.current_block} terminé ! Bloc ${advanced.current_block} · semaine 1 démarrée.`,
+        if (isMesocycleComplete(program, completedSince)) {
+          // Mesocycle finished: build the bilan and roll into the next cycle
+          // (recomputes level + weak points, resets the queue). The summary's
+          // "close" then routes to the bilan screen.
+          try {
+            await finalizeMesocycle(user.uid, program);
+            setMesocycleDone(true);
+            setWeekAdvanceMsg('Mésocycle terminé ! 🎉 Découvre ton bilan.');
+          } catch {
+            // If the rollover fails, fall back to the normal advance so the
+            // athlete is never left without a next session.
+            const advanced = checkAndAdvanceProgram(program, completedSince);
+            await saveUserProgram(user.uid, advanced).catch(() => undefined);
+          }
+        } else {
+          const advanced = checkAndAdvanceProgram(program, completedSince);
+          await saveUserProgram(user.uid, advanced);
+          await setCurrentWeek(user.uid, 'weightlifting', advanced.current_week).catch(
+            () => undefined,
           );
-        } else if (advanced.current_week !== program.current_week) {
-          setWeekAdvanceMsg(
-            `Semaine ${program.current_week} terminée ! Semaine ${advanced.current_week} démarrée.`,
-          );
+          if (advanced.current_block !== program.current_block) {
+            setWeekAdvanceMsg(
+              `Bloc ${program.current_block} terminé ! Bloc ${advanced.current_block} · semaine 1 démarrée.`,
+            );
+          } else if (advanced.current_week !== program.current_week) {
+            setWeekAdvanceMsg(
+              `Semaine ${program.current_week} terminée ! Semaine ${advanced.current_week} démarrée.`,
+            );
+          }
         }
       }
     } catch {
@@ -361,6 +380,10 @@ export default function SessionScreen(): React.ReactElement {
 
   const onReturnToDashboard = (): void => {
     endSession();
+    if (mesocycleDone) {
+      router.replace('/(app)/bilan-mesocycle');
+      return;
+    }
     router.replace('/(app)/');
   };
 
@@ -409,7 +432,7 @@ export default function SessionScreen(): React.ReactElement {
 
   const totalSets = currentExercise.sets.length;
 
-  // Deload = week 4 of any block (mirrors the engine's selectBlueprint).
+  // Deload = week 4 of any block (mirrors the engine's session selection).
   //
   // The session doc has no block/week fields, so they come from its queue_key:
   // the session was generated for the week that key names, and state/program

@@ -1884,6 +1884,204 @@ export const EXERCISES: Exercise[] = [
     default_reps: '6-10',
     default_rest_seconds: 75,
   },
+  {
+    id: 'snatch_from_blocks',
+    name: 'Snatch depuis Blocs',
+    name_en: 'Snatch from Blocks',
+    sport: 'weightlifting',
+    category: 'olympic_lift',
+    difficulty: 'advanced',
+    equipment: ['barbell', 'rack'],
+    muscles_primary: ['quadriceps', 'glutes', 'traps', 'shoulders', 'lower_back'],
+    muscles_secondary: ['core', 'forearms', 'upper_back', 'hamstrings'],
+    description:
+      "Arraché partant de blocs placés au niveau des genoux (ou des cuisses). Supprime le premier tirage pour isoler l'explosivité du deuxième tirage et la vitesse sous la barre.",
+    setup:
+      "Barre sur les blocs à hauteur des genoux, prise d'arraché large, dos plat, épaules au-dessus de la barre, gainage serré.",
+    execution:
+      "Depuis l'arrêt complet sur les blocs, extension explosive des hanches puis tire-toi sous la barre en réception squat overhead, bras verrouillés. Relève-toi.",
+    cues: [
+      "Départ immobile, pas de rebond sur les blocs",
+      "Explose depuis les hanches",
+      "Barre au plus près du corps",
+      "Reçois vite sous la barre",
+    ],
+    feeling:
+      "Explosion sèche du deuxième tirage, sans la fatigue du sol.",
+    common_errors: [
+      "Rebondir sur les blocs au lieu de partir de l'arrêt",
+      "Tirer avec les bras trop tôt",
+      "Barre qui s'éloigne du corps",
+    ],
+    default_sets: 4,
+    default_reps: '2-3',
+    default_rest_seconds: 180,
+  },
+  {
+    id: 'pause_snatch',
+    name: 'Snatch avec Pause',
+    name_en: 'Pause Snatch',
+    sport: 'weightlifting',
+    category: 'olympic_lift',
+    difficulty: 'advanced',
+    equipment: ['barbell'],
+    muscles_primary: ['quadriceps', 'hamstrings', 'glutes', 'traps', 'shoulders', 'lower_back'],
+    muscles_secondary: ['core', 'forearms', 'upper_back'],
+    description:
+      "Arraché avec une pause de 2-3 s sous les genoux au premier tirage. Renforce la position, la patience et le placement avant l'explosion.",
+    setup:
+      "Position d'arraché classique : prise large, dos plat, hanches hautes, épaules au-dessus de la barre.",
+    execution:
+      "Décolle la barre lentement, marque une pause de 2-3 s juste sous les genoux en gardant le dos plat et les épaules devant, puis explose des hanches et reçois en squat overhead.",
+    cues: [
+      "Dos plat et épaules devant pendant la pause",
+      "Poids réparti sur tout le pied",
+      "Explose après la pause, pas pendant",
+      "Barre proche des tibias",
+    ],
+    feeling:
+      "Tension maintenue dans les jambes et le dos, puis explosion nette après la pause.",
+    common_errors: [
+      "Épaules qui reculent pendant la pause",
+      "Hanches qui montent trop vite",
+      "Perdre le gainage à la reprise",
+    ],
+    default_sets: 4,
+    default_reps: '2-3',
+    default_rest_seconds: 180,
+  },
+  {
+    id: 'clean_from_blocks',
+    name: 'Épaulé depuis Blocs',
+    name_en: 'Clean from Blocks',
+    sport: 'weightlifting',
+    category: 'olympic_lift',
+    difficulty: 'advanced',
+    equipment: ['barbell', 'rack'],
+    muscles_primary: ['quadriceps', 'glutes', 'hamstrings', 'traps', 'lower_back'],
+    muscles_secondary: ['core', 'shoulders', 'forearms', 'upper_back'],
+    description:
+      "Épaulé partant de blocs au niveau des genoux. Supprime le premier tirage pour charger lourd le deuxième tirage et la réception en front squat.",
+    setup:
+      "Barre sur les blocs à hauteur des genoux, prise d'épaulé, dos plat, épaules au-dessus de la barre, coudes tournés vers l'extérieur.",
+    execution:
+      "Depuis l'arrêt sur les blocs, extension explosive des hanches, tire-toi sous la barre et reçois en front squat coudes hauts. Relève-toi.",
+    cues: [
+      "Départ immobile sur les blocs",
+      "Extension complète des hanches",
+      "Coudes hauts et rapides à la réception",
+      "Trajet vertical de la barre",
+    ],
+    feeling:
+      "Deuxième tirage puissant, réception ferme en position de front rack.",
+    common_errors: [
+      "Rebondir sur les blocs",
+      "Coudes bas à la réception (barre roule)",
+      "Barre qui part en avant",
+    ],
+    default_sets: 4,
+    default_reps: '2-3',
+    default_rest_seconds: 180,
+  },
+  {
+    id: 'pause_clean',
+    name: 'Épaulé avec Pause',
+    name_en: 'Pause Clean',
+    sport: 'weightlifting',
+    category: 'olympic_lift',
+    difficulty: 'advanced',
+    equipment: ['barbell'],
+    muscles_primary: ['quadriceps', 'glutes', 'hamstrings', 'traps', 'lower_back'],
+    muscles_secondary: ['core', 'shoulders', 'forearms', 'upper_back'],
+    description:
+      "Épaulé avec une pause de 2-3 s sous les genoux. Grave la position du tirage et le placement du dos avant l'explosion finale.",
+    setup:
+      "Position d'épaulé classique : prise serrée, dos plat, hanches sous les épaules, épaules au-dessus de la barre.",
+    execution:
+      "Décolle la barre, marque une pause de 2-3 s juste sous les genoux, dos plat et épaules devant, puis explose des hanches et reçois en front squat coudes hauts.",
+    cues: [
+      "Dos plat et gainé pendant la pause",
+      "Épaules devant la barre",
+      "Explose après la pause",
+      "Coudes hauts et rapides à la réception",
+    ],
+    feeling:
+      "Jambes et dos sous tension, puis épaulé explosif après la pause.",
+    common_errors: [
+      "Hanches qui montent avant les épaules",
+      "Perdre le placement du dos",
+      "Coudes lents à la réception",
+    ],
+    default_sets: 4,
+    default_reps: '2-3',
+    default_rest_seconds: 180,
+  },
+  {
+    id: 'jerk_recovery',
+    name: 'Jerk Recovery',
+    name_en: 'Jerk Recovery',
+    sport: 'weightlifting',
+    category: 'olympic_lift',
+    difficulty: 'advanced',
+    equipment: ['barbell', 'rack'],
+    muscles_primary: ['shoulders', 'triceps', 'quadriceps', 'core'],
+    muscles_secondary: ['glutes', 'upper_back', 'traps', 'calves'],
+    description:
+      "Relevé de la position de réception du jeté avec une charge supra-maximale prise au rack. Renforce la stabilité overhead et la confiance à tenir lourd bras tendus.",
+    setup:
+      "Barre au rack au-dessus des épaules, sors-la en position bras verrouillés au-dessus de la tête, pieds largeur de hanches, gainage serré.",
+    execution:
+      "En partant bras tendus au-dessus de la tête, marque un léger creux de fente ou de flexion puis remonte en poussant contre la barre. Stabilise à chaque répétition sans laisser la charge avancer.",
+    cues: [
+      "Barre dans l'axe des épaules et des hanches",
+      "Coudes verrouillés en permanence",
+      "Gainage total, côtes basses",
+      "Pousse le sol, tête neutre",
+    ],
+    feeling:
+      "Charge lourde bras tendus, tout le tronc et les épaules travaillent à stabiliser.",
+    common_errors: [
+      "Barre qui dérive vers l'avant",
+      "Coudes qui fléchissent",
+      "Cambrure lombaire excessive",
+    ],
+    default_sets: 3,
+    default_reps: '2-3',
+    default_rest_seconds: 150,
+  },
+  {
+    id: 'pause_squat',
+    name: 'Pause Squat',
+    name_en: 'Pause Squat',
+    sport: 'both',
+    category: 'squat',
+    difficulty: 'intermediate',
+    equipment: ['barbell', 'rack'],
+    muscles_primary: ['quadriceps', 'glutes', 'core'],
+    muscles_secondary: ['hamstrings', 'lower_back', 'upper_back'],
+    description:
+      "Front squat avec une pause de 2-3 s en position basse. Développe la force en sortie de trou et la solidité du gainage sous charge.",
+    setup:
+      "Barre en front rack sur les deltoïdes antérieurs, coudes hauts, pieds largeur d'épaules.",
+    execution:
+      "Descends de façon contrôlée sous la parallèle, tiens la position basse 2-3 s sans relâcher le gainage, puis remonte en poussant fort depuis les talons.",
+    cues: [
+      "Coudes hauts pendant toute la pause",
+      "Reste gainé en position basse",
+      "Ne rebondis pas au fond",
+      "Pousse depuis les talons à la remontée",
+    ],
+    feeling:
+      "Position basse exigeante, forte tension dans les quadriceps à la remontée.",
+    common_errors: [
+      "Relâcher le gainage pendant la pause",
+      "Coudes qui tombent",
+      "Rebondir au fond au lieu de tenir",
+    ],
+    default_sets: 4,
+    default_reps: '3-4',
+    default_rest_seconds: 150,
+  },
 ];
 
 export const EXERCISE_CATEGORIES: { key: ExerciseCategory | 'all' | ExerciseSport; label: string }[] = [

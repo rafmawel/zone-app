@@ -34,6 +34,16 @@ export async function initializeUserProgram(uid: string): Promise<UserProgram> {
   const equipment = first?.equipment ?? 'barre_disques';
   const sessions = first?.sessions_per_week ?? 3;
 
+  // Snapshot the athlete's known 1RMs so the first end-of-mesocycle bilan can
+  // show progression (best-effort — empty when no maxes are set yet).
+  const startMaxes: Record<string, number> = {};
+  try {
+    const maxes = await getExerciseMaxes(uid);
+    for (const m of maxes) startMaxes[m.exercise_id] = m.estimated_1rm;
+  } catch {
+    // best effort — leave the snapshot empty
+  }
+
   const program: UserProgram = {
     uid,
     sport_key: sportKey,
@@ -42,6 +52,8 @@ export async function initializeUserProgram(uid: string): Promise<UserProgram> {
     current_day: 1,
     mesocycle_start: todayDateString(),
     mesocycle_start_block: 1,
+    mesocycles_completed: 0,
+    mesocycle_start_maxes: startMaxes,
     sessions_per_week: sessions,
     level,
     goal,
