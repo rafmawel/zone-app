@@ -107,6 +107,22 @@ export function detectLevel(
   return 'avance';
 }
 
+const LEVEL_RANK: Record<string, number> = {
+  debutant: 0,
+  intermediaire: 1,
+  avance: 2,
+  confirme: 3,
+};
+
+/**
+ * The higher of two levels by rank. Used so a re-detected level never
+ * *downgrades* the athlete — e.g. the `< 3 mesocycles → débutant` rule in
+ * `detectLevel` must not demote someone who onboarded as intermediate/advanced.
+ */
+export function higherLevel(a: string, b: string): string {
+  return (LEVEL_RANK[a] ?? 0) >= (LEVEL_RANK[b] ?? 0) ? a : b;
+}
+
 // Reference strength ratios in weightlifting — used to spot lagging qualities.
 export const REFERENCE_RATIOS = {
   snatch_to_clean: 0.8, // Snatch ≈ 80% of the C&J
@@ -542,8 +558,9 @@ function buildLevelBlueprint(
     }
     for (const id of extra) {
       const m = movementFor(id, tier, block);
-      // Assistance is supplementary volume: keep it light (accessory rest, one
-      // set fewer than its primary prescription).
+      // Assistance is supplementary volume: accessory rest, one set fewer than
+      // its primary prescription. (Squats stay under Prilepin downstream, so a
+      // front/back squat added here is still clamped to its productive range.)
       movements.push({ ...m, role: 'accessory', sets: Math.max(2, m.sets - 1) });
     }
   }
@@ -984,7 +1001,7 @@ export function isMesocycleComplete(program: UserProgram, completedSince: number
  */
 export function startNextMesocycle(
   program: UserProgram,
-  newLevel: LevelKey,
+  newLevel: string,
   todayStr: string,
   startMaxes: Record<string, number>,
 ): UserProgram {

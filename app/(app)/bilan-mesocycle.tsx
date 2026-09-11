@@ -49,7 +49,19 @@ export default function BilanMesocycleScreen(): React.ReactElement {
       }
       try {
         const b = await getMesocycleBilan(user.uid);
-        if (!cancelled) setBilan(b);
+        // Normalize array fields so a partial/legacy doc can never crash render.
+        if (!cancelled) {
+          setBilan(
+            b
+              ? {
+                  ...b,
+                  progression: b.progression ?? [],
+                  weak_points: b.weak_points ?? [],
+                  new_exercises: b.new_exercises ?? [],
+                }
+              : null,
+          );
+        }
       } catch {
         // leave bilan null → graceful empty state
       } finally {

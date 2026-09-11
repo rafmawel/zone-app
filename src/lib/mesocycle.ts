@@ -13,6 +13,7 @@ import {
   detectLevel,
   detectWeakPoints,
   exercisesForLevel,
+  higherLevel,
   startNextMesocycle,
 } from './programEngine';
 
@@ -56,7 +57,12 @@ export async function finalizeMesocycle(
 
   const snatch1RM = after.snatch ?? 0;
   const mesocycleNumber = (program.mesocycles_completed ?? 0) + 1;
-  const newLevel = detectLevel(snatch1RM, bodyweight, mesocycleNumber);
+  // Never downgrade: the "< 3 mesocycles → débutant" gate must not demote an
+  // athlete who onboarded (or was already detected) at a higher level.
+  const newLevel = higherLevel(
+    detectLevel(snatch1RM, bodyweight, mesocycleNumber),
+    program.level,
+  );
   const weakPoints = detectWeakPoints(after);
 
   const oldPool = new Set(exercisesForLevel(program.level));
@@ -78,17 +84,26 @@ export async function finalizeMesocycle(
     new_exercises: newExercises,
   };
 
+  // Order matters for crash-safety. Roll the programme LAST: it re-anchors
+  // `mesocycle_start` (to tomorrow, so today's closing session isn't recounted),
+  // the only write that stops `isMesocycleComplete` from firing again. If an
+  // earlier step throws, the rollover simply re-fires on the next session finish
+  // and retries — rather than leaving the queue cleared but never rolled, or
+  // rolled while the old completed keys still block the new cycle.
+
+  // 1. Clear the weightlifting queue so the new cycle's block-1 sessions unlock
+  //    (canonical keys reuse the same block/week numbers → they'd stay
+  //    "completed"). Not swallowed: a failure must re-fire, not silently strand.
+  await resetSportWeek(uid, 'weightlifting');
+
+  // 2. Persist the bilan for the summary screen.
   await saveMesocycleBilan(uid, bilan);
 
-  // Start the next mesocycle tomorrow so today's closing session isn't recounted
-  // (the session count that drives block/week advancement runs from this date).
+  // 3. Commit the rollover.
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const next = startNextMesocycle(program, newLevel, todayDateString(tomorrow), after);
   await saveUserProgram(uid, next);
-
-  // Clear the weightlifting queue so the new cycle's block-1 sessions unlock.
-  await resetSportWeek(uid, 'weightlifting').catch(() => undefined);
 
   return bilan;
 }
