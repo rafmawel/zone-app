@@ -60,6 +60,7 @@ import {
   buildSessionPlan,
   calculateVDOTPaces,
   formatPace,
+  formatStepDuration,
   raceLabel,
   runningPaceFactor,
 } from '@/lib/runningEngine';
@@ -782,7 +783,7 @@ export default function EntrainerScreen(): React.ReactElement {
                     </ZoneText>
                     {previewItem.runningSteps.map((st, i) => {
                       const dur = st.durationSeconds
-                        ? `${Math.round(st.durationSeconds / 60)} min`
+                        ? formatStepDuration(st.durationSeconds)
                         : st.distanceMeters
                           ? `${st.distanceMeters} m`
                           : '';
