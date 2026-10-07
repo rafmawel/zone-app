@@ -210,6 +210,19 @@ export function formatElapsed(seconds: number): string {
   return `${m}:${ss.toString().padStart(2, '0')}`;
 }
 
+/**
+ * Human duration for a session step: "20 s" under a minute, "1 min" on whole
+ * minutes, "1 min 30" otherwise (rounding to minutes turned 20 s strides into
+ * "0 min" and a 90 s recovery into "2 min").
+ */
+export function formatStepDuration(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  if (total < 60) return `${total} s`;
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return s === 0 ? `${m} min` : `${m} min ${s.toString().padStart(2, '0')}`;
+}
+
 export function paceFromDistanceTime(distanceMeters: number, timeSeconds: number): number {
   if (distanceMeters <= 0 || timeSeconds <= 0) return 0;
   return timeSeconds / (distanceMeters / 1000);
@@ -279,10 +292,11 @@ export interface BuildSessionParams {
   withStrides?: boolean;
   /** Mark an EF as the recovery slot: shorter and slower than baseline. */
   recovery?: boolean;
-  /** Goal race distance — drives race-pace selection for AS / Block 3 IV. */
+  /** Goal race distance — AS runs at the pace the current VDOT predicts over
+   *  this distance. */
   goalDistance?: RaceDistance;
-  /** Goal finishing time in seconds; when set, race pace is derived from
-   *  goal_time / distance instead of from VDOT zones. */
+  /** Goal finishing time in seconds. Shown as an indicative "allure objectif"
+   *  only; never used to prescribe a training pace (those come from `vdot`). */
   goalTimeSeconds?: number;
   /** Training goal. Drives session-type selection (via getWeeklySessionTypes)
    *  and, for 5k, shorter easy runs / warm-ups. Defaults to `semi_marathon`
@@ -293,31 +307,36 @@ export interface BuildSessionParams {
 }
 
 /**
- * Resolve the target race pace (sec / km) for race-specific work.
+ * Race pace (sec / km) the athlete can run over the goal distance TODAY,
+ * predicted from their CURRENT VDOT (Daniels-Gilbert race equivalence).
  *
- * Order of precedence:
- *   1. Explicit `goalTimeSeconds` + `goalDistance` (athlete's actual goal)
- *   2. Daniels zone matching the goal distance (M for marathon/semi,
- *      T for 10 km, I for 5 km)
- *   3. Threshold pace as a sensible fallback
+ * Training paces always come from the current VDOT, never from the goal
+ * (Daniels): it is the VDOT that rises with re-tests, not the paces that get
+ * artificially accelerated. Falls back to threshold pace without a distance.
  */
-function racePace(
+function currentRacePace(
+  vdot: number,
   paces: VDOTPaces,
   goalDistance: RaceDistance | undefined,
-  goalTimeSeconds: number | undefined,
 ): number {
-  if (
-    goalTimeSeconds &&
-    goalTimeSeconds > 0 &&
-    goalDistance &&
-    RACE_METERS[goalDistance]
-  ) {
-    return Math.round(goalTimeSeconds / (RACE_METERS[goalDistance] / 1000));
+  if (!goalDistance || !RACE_METERS[goalDistance]) return paces.T;
+  const meters = RACE_METERS[goalDistance];
+  const seconds = raceTimeForVdot(vdot, meters);
+  return seconds > 0 ? Math.round(seconds / (meters / 1000)) : paces.T;
+}
+
+/**
+ * The goal race pace (sec / km), for INDICATIVE display only ("ton allure
+ * objectif le jour J"). Never use it as a prescribed training pace.
+ */
+function goalRacePace(
+  goalDistance: RaceDistance | undefined,
+  goalTimeSeconds: number | undefined,
+): number | null {
+  if (!goalTimeSeconds || goalTimeSeconds <= 0 || !goalDistance || !RACE_METERS[goalDistance]) {
+    return null;
   }
-  if (!goalDistance) return paces.T;
-  if (goalDistance === '5km') return paces.I;
-  if (goalDistance === '10km') return paces.T;
-  return paces.M;
+  return Math.round(goalTimeSeconds / (RACE_METERS[goalDistance] / 1000));
 }
 
 /**
@@ -687,18 +706,19 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
       break;
     }
     case 'IV': {
-      // Block 3: race-pace 800 m intervals (5-6 × 800 m, 2 min rest).
-      // Block 1/2: classic VO2max 1000 m reps at I pace, 1:1 rest.
+      // VO2max intervals are ALWAYS run at Daniels I pace from the current
+      // VDOT, in every block and phase. Block 3 only changes the format
+      // (shorter 800 m reps, 2 min rest); it never swaps in the goal race
+      // pace, which would prescribe the paces of a fitter athlete.
+      // Block 1/2: classic 1000 m reps at I pace, 1:1 rest.
       if (short5k) {
-        // 5k VO2max: short 800 m reps with a fixed 2-min recovery, rep count
+        // 5k VO2max: short 800 m reps with a fixed 90 s recovery, rep count
         // capped so the whole session stays ≲ 40 min even at low VDOT (where
-        // reps run slow). Block 3 uses race pace, earlier blocks I pace.
+        // reps run slow).
         const reps = level === 'beginner' ? 3 : level === 'intermediate' ? 4 : 5;
-        const pace5k =
-          block === 3 ? racePace(paces, params.goalDistance, params.goalTimeSeconds) : paces.I;
         steps = [...qWarm];
         for (let i = 1; i <= reps; i += 1) {
-          steps.push(workDistance(`Intervalle ${i}/${reps} · 800 m`, 800, pace5k));
+          steps.push(workDistance(`Intervalle ${i}/${reps} · 800 m`, 800, paces.I));
           if (i < reps) steps.push(recoveryStep(1.5, paces.E_slow));
         }
         steps.push(cooldown(paces, cdMin));
@@ -709,17 +729,14 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
       if (block === 3) {
         const reps =
           level === 'beginner' ? 4 : level === 'intermediate' ? 5 : 6;
-        const pace = racePace(paces, params.goalDistance, params.goalTimeSeconds);
         steps = [...qWarm];
         for (let i = 1; i <= reps; i += 1) {
-          steps.push(
-            workDistance(`Intervalle ${i}/${reps} · 800 m allure course`, 800, pace),
-          );
+          steps.push(workDistance(`Intervalle ${i}/${reps} · 800 m`, 800, paces.I));
           if (i < reps) steps.push(recoveryStep(2, paces.E_slow));
         }
         steps.push(cooldown(paces, cdMin));
         message =
-          'Intervalles à l’allure visée. Sens la cadence et la position du corps, pas la souffrance.';
+          'VO2max en format court. Tiens la même allure sur chaque intervalle : régularité, pas héroïsme.';
       } else {
         const reps =
           level === 'beginner' ? 3 : level === 'intermediate' ? 4 : 5;
@@ -797,11 +814,12 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
       break;
     }
     case 'AS': {
-      // Race-pace continuous block. Pace comes from goal time when set,
-      // otherwise from the Daniels zone matching the goal distance.
+      // Race-pace continuous block, at the pace the athlete can race the goal
+      // distance TODAY (current VDOT). The goal pace is only shown as
+      // indicative text below, never prescribed until the VDOT supports it.
       const minutes =
         level === 'beginner' ? 20 : level === 'intermediate' ? 25 : 30;
-      const pace = racePace(paces, params.goalDistance, params.goalTimeSeconds);
+      const pace = currentRacePace(vdot, paces, params.goalDistance);
       steps = [
         ...qWarm,
         workStep(`Allure spécifique · ${minutes} min`, minutes, pace),
@@ -823,6 +841,12 @@ export function buildSessionPlan(params: BuildSessionParams): RunningSessionPlan
     const goalLabel = RACE_LABEL[params.goalDistance];
     const goalTime = formatElapsed(params.goalTimeSeconds);
     message += ` Cette sortie te prépare pour ${goalTime} au ${goalLabel.toLowerCase()}.`;
+    // Race-specific sessions show the goal pace as a target to grow into —
+    // indicative only; the prescribed paces above come from the current VDOT.
+    const goalPace = goalRacePace(params.goalDistance, params.goalTimeSeconds);
+    if (goalPace !== null && (type === 'AS' || (type === 'IV' && block === 3))) {
+      message += ` Ton allure objectif le jour J : ${formatPace(goalPace)} (indicatif : tes allures d’entraînement suivent ton VDOT actuel).`;
+    }
   }
 
   const factor = params.paceFactor ?? 1;
